@@ -1,0 +1,90 @@
+name: Type Check
+
+# ============================================================================
+# Pyright static type checker (Phase 3 of the pre-commit migration).
+#
+# CURRENT MODE: REPORT-ONLY. Same rationale as Security Audit — the first
+# full pass reports hundreds of legitimate typing gaps (SQLAlchemy Column
+# dynamic attrs, Pydantic v2 computed fields, untyped third-party wrappers).
+# Blocking PRs on day one freezes merges.
+#
+# PROMOTION PATH:
+#   1. Current: `basic` mode, job `continue-on-error: true`, errors printed.
+#   2. Fix errors file-by-file, tightening `pyproject.toml [tool.pyright]`
+#      (rules at "warning" -> "error", sections moved out of exclude list).
+#   3. Flip typeCheckingMode to "strict" and remove continue-on-error.
+#
+# We install only the direct deps pyright needs to resolve imports. Heavy
+# AI libs (torch, transformers, llama-cpp-python) are installed via a
+# dedicated CPU-only job to keep wall-clock under 5 min.
+# ============================================================================
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'run_service.py'
+      - 'pyproject.toml'
+      - 'requirements.txt'
+      - '.github/workflows/type-check.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'run_service.py'
+      - 'pyproject.toml'
+      - 'requirements.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pyright:
+    name: Pyright (basic mode, report-only)
+    runs-on: ubuntu-latest
+    # Report-only: never blocks. See header comment for promotion path.
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.8'
+          cache: 'pip'
+
+      - name: Install runtime dependencies
+        # pyright resolves imports against the installed interpreter. We
+        # install the full requirements.txt (minus the CPU-only torch pin
+        # override) so imports like sqlalchemy, celery, pydantic_ai resolve.
+        # Uses --prefer-binary to avoid compiling native extensions; some
+        # extras (torch) may fall back to slim wheels.
+        run: |
+          python -m pip install --upgrade pip
+          # Install PyTorch CPU first so the later `pip install -r requirements.txt`
+          # does not try to pull the GPU wheel (requirements.txt has torch==2.5.1
+          # but defaults to the default PyPI index which serves CPU for
+          # manylinux runners anyway).
+          pip install --index-url https://download.pytorch.org/whl/cpu \
+              torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
+          # Skip the HuggingFace spaCy wheel URL and marker-pdf/surya-ocr
+          # (not used in the codebase, was previously filtered in Dockerfile).
+          grep -v -E '^(https://|surya-ocr|marker-pdf|llama-cpp-python|torch==|torchvision==|torchaudio==)' requirements.txt \
+            | grep -v '^#' | grep -v '^$' \
+            > /tmp/ci-requirements.txt
+          pip install --prefer-binary -r /tmp/ci-requirements.txt || true
+          # Always install pyright explicitly (in case it was filtered).
+          pip install --upgrade pyright
+
+      - name: Run pyright
+        run: |
+          pyright --stats || true
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Pyright is in report-only mode. See job log above for the current"
+          echo "error/warning count. Promotion path is documented in"
+          echo ".github/workflows/type-check.yml header + pyproject.toml [tool.pyright]."

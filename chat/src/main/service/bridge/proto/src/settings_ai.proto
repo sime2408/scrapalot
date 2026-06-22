@@ -1,0 +1,250 @@
+syntax = "proto3";
+
+package scrapalot.settings;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.settings";
+option java_outer_classname = "SettingsAIServiceProto";
+
+// Settings AI Service — model providers, models, embedding, RAG strategies, service status
+service SettingsAIService {
+  // Model Providers CRUD
+  rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
+  rpc CreateProvider(CreateProviderRequest) returns (ProviderResponse);
+  rpc UpdateProvider(UpdateProviderRequest) returns (ProviderResponse);
+  rpc DeleteProvider(DeleteProviderRequest) returns (scrapalot.common.StatusResponse);
+
+  // Models
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+  rpc SetSelectedModel(SetSelectedModelRequest) returns (SelectedModelResponse);
+
+  // Embedding
+  rpc GetEmbeddingConfig(EmbeddingConfigRequest) returns (EmbeddingConfigResponse);
+  rpc SetEmbeddingConfig(SetEmbeddingConfigRequest) returns (scrapalot.common.StatusResponse);
+  rpc ListEmbeddingModels(scrapalot.common.Empty) returns (ListModelsResponse);
+
+  // RAG strategies
+  rpc ListRagStrategies(scrapalot.common.Empty) returns (RagStrategiesResponse);
+
+  // Service status
+  rpc GetServiceStatus(scrapalot.common.Empty) returns (ServiceStatusResponse);
+  rpc GetServiceLogs(ServiceLogsRequest) returns (ServiceLogsResponse);
+
+  // User settings sync (Kotlin → Python push)
+  rpc SyncUserSetting(SyncUserSettingRequest) returns (scrapalot.common.StatusResponse);
+
+  // System agent configuration (admin only)
+  rpc GetSystemAgentConfig(scrapalot.common.Empty) returns (SystemAgentConfigResponse);
+  rpc SetSystemAgentConfig(SetSystemAgentConfigRequest) returns (scrapalot.common.StatusResponse);
+
+  // Speech services configuration (STT + TTS providers, stored in server_settings)
+  rpc GetSpeechConfig(scrapalot.common.Empty) returns (SpeechConfigResponse);
+  rpc SetSpeechConfig(SetSpeechConfigRequest) returns (scrapalot.common.StatusResponse);
+
+  // Admin-managed global system prompt (Layer 1 of system_prompt_builder).
+  // Stored in Python's server_settings(setting_key='admin_default_system_prompt')
+  // as JSON {"prompt": "..."}. Admin-only; applies system-wide.
+  rpc GetAdminDefaultSystemPrompt(scrapalot.common.Empty) returns (AdminDefaultSystemPromptResponse);
+  rpc SetAdminDefaultSystemPrompt(SetAdminDefaultSystemPromptRequest) returns (scrapalot.common.StatusResponse);
+}
+
+// Provider messages
+message ListProvidersRequest {
+  string user_id = 1;
+  int32 page = 2;
+  int32 limit = 3;
+  string provider_id = 4; // optional filter
+}
+
+message ListProvidersResponse {
+  repeated ProviderInfo providers = 1;
+  string pagination_json = 2; // JSON for pagination info
+}
+
+message ProviderInfo {
+  string id = 1;
+  string name = 2;
+  string api_base = 3;
+  string provider_type = 4;
+  string status = 5;
+  string icon = 6;
+  bool is_enabled = 7;
+  string created_at = 8;
+  string updated_at = 9;
+  repeated ModelInfo models = 10;
+  bool has_api_key = 11;
+}
+
+message ModelInfo {
+  string id = 1;
+  string provider_id = 2;
+  string model_name = 3;
+  string display_name = 4;
+  string model_type = 5;
+  int32 context_window = 6;
+  int32 dimensions = 7;
+  string icon = 8;
+  bool is_default = 9;
+}
+
+message CreateProviderRequest {
+  string user_id = 1;
+  string name = 2;
+  string api_key = 3;
+  string api_base = 4;
+  string provider_type = 5;
+  bool auto_sync = 6;
+}
+
+message UpdateProviderRequest {
+  string user_id = 1;
+  string provider_id = 2;
+  string name = 3;
+  string api_key = 4;
+  string api_base = 5;
+  string provider_type = 6;
+  bool auto_sync = 7;
+  repeated string selected_model_names = 8; // When non-empty, keep only these models and delete the rest
+}
+
+message DeleteProviderRequest {
+  string user_id = 1;
+  string provider_id = 2;
+}
+
+message ProviderResponse {
+  bool success = 1;
+  ProviderInfo provider = 2;
+  string error = 3;
+}
+
+// Model messages
+message ListModelsRequest {
+  string user_id = 1;
+}
+
+message ListModelsResponse {
+  repeated ModelInfo models = 1;
+}
+
+message SetSelectedModelRequest {
+  string user_id = 1;
+  string model_id = 2;
+  string model_name = 3;
+  string provider_type = 4;
+}
+
+message SelectedModelResponse {
+  bool success = 1;
+  string model_id = 2;
+  string display_name = 3;
+  string provider_type = 4;
+  string error = 5;
+}
+
+// Embedding messages
+message EmbeddingConfigRequest {
+  string user_id = 1;
+}
+
+message EmbeddingConfigResponse {
+  string embedding_model = 1;
+  string provider = 2;
+  string settings_json = 3; // Full settings as JSON
+}
+
+message SetEmbeddingConfigRequest {
+  string user_id = 1;
+  string embedding_model = 2;
+}
+
+// RAG strategies
+message RagStrategiesResponse {
+  string strategies_json = 1; // JSON array of strategy objects
+}
+
+// Service status
+message ServiceStatusResponse {
+  string service_name = 1;
+  string version = 2;
+  string status = 3;
+  string api_base = 4;
+  string host = 5;
+  int32 port = 6;
+  double uptime_seconds = 7;
+  string memory_usage = 8;
+  double cpu_percent = 9;
+  string system_info_json = 10;
+}
+
+// Service logs
+message ServiceLogsRequest {
+  string user_id = 1;
+  int32 lines = 2;
+  bool auto_sync = 3;
+  string level = 4;
+  string time_range = 5;
+}
+
+message ServiceLogsResponse {
+  string logs_json = 1; // JSON array of log entries
+}
+
+// User settings sync (pushed from Kotlin backend)
+message SyncUserSettingRequest {
+  string user_id = 1;
+  string setting_key = 2;
+  string setting_value_json = 3;  // JSON-encoded setting value
+  string operation = 4;           // "UPSERT" or "DELETE"
+}
+
+// System agent configuration (stored in Python server_settings table)
+message SystemAgentConfigResponse {
+  string provider_type = 1;   // openai, anthropic, ollama, vllm, lmstudio
+  string model_name = 2;      // gpt-4o-mini, claude-sonnet-4-6-20260301, etc.
+  string api_key = 3;         // API key (masked for GET response)
+  string api_base = 4;        // Custom endpoint URL (for ollama, vllm, lmstudio)
+  string config_json = 5;     // Full config as JSON (includes model_overrides)
+  bool has_api_key = 6;       // Whether an API key is configured
+}
+
+message SetSystemAgentConfigRequest {
+  string provider_type = 1;   // openai, anthropic, ollama, vllm, lmstudio
+  string model_name = 2;      // Model name
+  string api_key = 3;         // API key (empty string to keep existing)
+  string api_base = 4;        // Custom endpoint URL
+  string config_json = 5;     // Full config as JSON (optional, for model_overrides)
+}
+
+// Speech services configuration (STT + TTS)
+message SpeechConfigResponse {
+  string stt_provider = 1;         // openai, faster_whisper
+  string stt_model = 2;            // whisper-1, base, small, medium, large-v3
+  string tts_provider = 3;         // edge, google, elevenlabs
+  string tts_default_voice = 4;    // en-US-AriaNeural, etc.
+  bool has_stt_api_key = 5;        // Whether OpenAI STT API key is configured
+  bool has_elevenlabs_key = 6;     // Whether ElevenLabs API key is configured
+  string config_json = 7;          // Full config as JSON
+}
+
+message SetSpeechConfigRequest {
+  string stt_provider = 1;         // openai, faster_whisper
+  string stt_model = 2;            // whisper-1, base, small, medium, large-v3
+  string tts_provider = 3;         // edge, google, elevenlabs
+  string tts_default_voice = 4;    // Voice ID
+  string stt_api_key = 5;          // OpenAI API key (empty = keep existing)
+  string elevenlabs_api_key = 6;   // ElevenLabs key (empty = keep existing)
+  string config_json = 7;          // Extra config as JSON
+}
+
+// Admin-managed global system prompt (Layer 1 of system_prompt_builder)
+message AdminDefaultSystemPromptResponse {
+  string prompt = 1;       // The admin-set system prompt body (may be empty)
+  bool is_set = 2;         // True if a row exists in server_settings
+}
+
+message SetAdminDefaultSystemPromptRequest {
+  string prompt = 1;       // New body (empty string deletes the row)
+}

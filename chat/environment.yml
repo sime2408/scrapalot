@@ -1,0 +1,54 @@
+# Scrapalot-Chat Conda Environment
+#
+# Installation:
+#   conda env create -f environment.yml
+#   conda activate scrapalot-chat
+#   pip install -r requirements.txt
+#
+# For GPU support (NVIDIA CUDA):
+#   pip install -r requirements-gpu.txt --force-reinstall
+#
+# For iGPU/AMD systems:
+#   Environment works with CPU fallback automatically
+#   PyMuPDF4LLM provides fast CPU processing for clean PDFs
+#   Docling provides accurate OCR for scanned documents (slower on CPU)
+
+name: scrapalot-chat
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python version
+  - python=3.12
+
+  # Core system libraries
+  - pip>=24.0
+  - setuptools>=75.0.0
+  - wheel
+
+  # Database drivers
+  - postgresql  # PostgreSQL client libraries
+  - libpq      # Required for psycopg2
+
+  # Image processing (required by Docling, Pillow)
+  - pillow>=10.4.0,<12.0.0
+  - libjpeg-turbo
+  - libpng
+  - libtiff
+
+  # PDF processing
+  - poppler  # Required for PDF utilities
+
+  # Optional: faster HTTP requests
+  - brotli
+  - zlib
+
+  # Development tools (optional, comment out for production)
+  - ipython
+  - jupyter
+
+  # Install Python packages via pip
+  - pip:
+      # Main requirements will be installed separately
+      # Run: pip install -r requirements.txt after environment creation

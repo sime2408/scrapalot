@@ -1,0 +1,35 @@
+# GPU override — apply ONLY on hosts with NVIDIA GPUs + the NVIDIA Container
+# Toolkit (nvidia runtime). Usage:
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.gpu.yaml up -d
+#
+# The base docker-compose.yaml stays GPU-free on purpose: a `devices:
+# [driver: nvidia]` reservation makes `docker compose up` FAIL on a host
+# without the nvidia runtime (e.g. the CPU-only Hetzner prod box), so the GPU
+# bits live here and are layered in only when deploying to a GPU server.
+#
+# This override ONLY grants GPU device access — it does NOT change the image.
+# The image must carry CUDA torch to actually USE the GPU (the default ships
+# torch +cpu). Two supported ways:
+#   - CI/GPU server: build scrapalot-chat:latest with `--build-arg TORCH_VARIANT=gpu`
+#     (the deploy-backend.yml `gpu` input does this) — :latest then IS the GPU image.
+#   - Local: build a tagged GPU image and run with SCRAPALOT_CHAT_IMAGE=scrapalot-chat:gpu
+#     docker compose -f docker-compose.yaml -f docker-compose.gpu.yaml up -d
+services:
+  scrapalot-chat:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  scrapalot-workers:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

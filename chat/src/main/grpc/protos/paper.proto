@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+// Paper Generation Service
+// Generates formatted papers from deep research results, notes, and citations.
+
+package scrapalot.paper;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.paper";
+option java_outer_classname = "PaperProto";
+
+service PaperService {
+  // Generate a paper from research sources
+  rpc GeneratePaper(GeneratePaperRequest) returns (GeneratePaperResponse);
+
+  // Get paper generation status (for async/Celery jobs)
+  rpc GetPaperStatus(GetPaperStatusRequest) returns (GetPaperStatusResponse);
+
+  // Download a generated paper file
+  rpc GetPaperFile(GetPaperFileRequest) returns (GetPaperFileResponse);
+
+  // List available paper templates
+  rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse);
+}
+
+message GeneratePaperRequest {
+  string user_id = 1;
+  string research_plan_id = 2;       // Link to deep research plan
+  string template_key = 3;            // "scientific_paper", "literature_review", etc.
+  string output_format = 4;           // "pdf", "docx", "markdown"
+
+  // Sources
+  string synthesis_report = 5;        // Deep research synthesis markdown
+  string notes_content = 6;           // Notes editor content (HTML or markdown)
+  string discoveries_json = 7;        // JSON array of Discovery objects
+
+  // Author metadata
+  string author_name = 8;
+  string author_affiliation = 9;
+  repeated string keywords = 10;
+  string citation_style = 11;         // "ieee", "apa", "chicago", etc.
+
+  // Optional section overrides
+  repeated SectionOverride section_overrides = 12;
+}
+
+message SectionOverride {
+  string key = 1;
+  string title = 2;
+  string custom_instructions = 3;
+}
+
+message GeneratePaperResponse {
+  string paper_id = 1;
+  string title = 2;
+  string status = 3;                  // "completed", "processing", "failed"
+  string markdown_path = 4;
+  string pdf_path = 5;
+  string docx_path = 6;
+  int32 total_sections = 7;
+  int32 total_words = 8;
+  int32 total_citations = 9;
+  string error_message = 10;
+}
+
+message GetPaperStatusRequest {
+  string paper_id = 1;
+  string user_id = 2;
+}
+
+message GetPaperStatusResponse {
+  string paper_id = 1;
+  string status = 2;
+  float progress = 3;
+  string current_stage = 4;
+}
+
+message GetPaperFileRequest {
+  string paper_id = 1;
+  string user_id = 2;
+  string format = 3;                  // "pdf", "docx", "markdown", "bib"
+}
+
+message GetPaperFileResponse {
+  bytes file_content = 1;
+  string filename = 2;
+  string content_type = 3;
+}
+
+message ListTemplatesRequest {}
+
+message ListTemplatesResponse {
+  repeated PaperTemplateInfo templates = 1;
+}
+
+message PaperTemplateInfo {
+  string key = 1;
+  string name = 2;
+  repeated string section_titles = 3;
+  string description = 4;
+}

@@ -1,0 +1,732 @@
+syntax = "proto3";
+
+package scrapalot.inspection;
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.inspection";
+option java_outer_classname = "InspectionProto";
+
+// Data Inspector service for document evaluation, graph analysis,
+// and RAG trace monitoring.
+service InspectionService {
+  rpc GetDocumentEvaluation(DocEvalRequest) returns (DocEvalResponse);
+  rpc GetCollectionEvaluation(CollectionEvalRequest) returns (CollectionEvalResponse);
+  rpc GetChunkInspection(ChunkInspectionRequest) returns (ChunkInspectionResponse);
+  rpc GetGraphSubgraph(SubgraphRequest) returns (SubgraphResponse);
+  rpc GetNodeNeighbors(NodeNeighborsRequest) returns (NodeNeighborsResponse);
+  rpc GetGraphStats(GraphStatsRequest) returns (GraphStatsResponse);
+  rpc GetEntityRelationships(EntityRelRequest) returns (EntityRelResponse);
+  rpc GetRAGTraces(RAGTracesRequest) returns (RAGTracesResponse);
+  rpc GetStrategyDistribution(StrategyDistRequest) returns (StrategyDistResponse);
+  rpc GetLLMTraces(LLMTracesRequest) returns (LLMTracesResponse);
+  rpc GetLLMTraceSummary(LLMTraceSummaryRequest) returns (LLMTraceSummaryResponse);
+  rpc CleanupOrphanedTraces(CleanupOrphanedTracesRequest) returns (CleanupOrphanedTracesResponse);
+  rpc RunLLMEvaluation(LLMEvalRequest) returns (stream LLMEvalProgress);
+  rpc GetRelatedBooks(RelatedBooksRequest) returns (RelatedBooksResponse);
+  rpc GetCrossBookGraph(CrossBookGraphRequest) returns (CrossBookGraphResponse);
+  rpc GetGraphSyncStatus(GraphSyncStatusRequest) returns (GraphSyncStatusResponse);
+  rpc GetGraphQualityAudit(GraphQualityAuditRequest) returns (GraphQualityAuditResponse);
+  rpc GetAgentCostAnalysis(AgentCostAnalysisRequest) returns (AgentCostAnalysisResponse);
+  rpc GetKnowledgeGaps(KnowledgeGapsRequest) returns (KnowledgeGapsResponse);
+}
+
+// ============================================================
+// Document Evaluation
+// ============================================================
+
+message DocEvalRequest {
+  string document_id = 1;
+}
+
+message ParseQuality {
+  int32 heading_count = 1;
+  int32 list_count = 2;
+  int32 table_count = 3;
+  int32 code_block_count = 4;
+  int32 image_ref_count = 5;
+  int32 total_chunks = 6;
+  float structure_score = 7;
+}
+
+message ChunkSizeStats {
+  float mean = 1;
+  float std = 2;
+  int32 min = 3;
+  int32 max = 4;
+  float median = 5;
+}
+
+message ChunkQuality {
+  int32 total_chunks = 1;
+  ChunkSizeStats size_distribution = 2;
+  float metadata_completeness = 3;
+  float micro_chunk_ratio = 4;
+  int32 empty_chunk_count = 5;
+}
+
+message EmbeddingCoverage {
+  int32 total_embeddings = 1;
+  int32 zero_embedding_docs = 2;
+  float embedding_density = 3;
+  int32 pages_without_embeddings = 4;
+}
+
+message GraphIntegrity {
+  float hierarchy_completeness = 1;
+  int32 orphan_count = 2;
+  float entity_coverage = 3;
+  float relationship_density = 4;
+  int32 total_nodes = 5;
+  int32 total_relationships = 6;
+}
+
+message DocEvalResponse {
+  bool success = 1;
+  string document_id = 2;
+  string document_title = 3;
+  string collection_id = 4;
+  ParseQuality parse_quality = 5;
+  ChunkQuality chunk_quality = 6;
+  EmbeddingCoverage embedding_coverage = 7;
+  GraphIntegrity graph_integrity = 8;
+  float overall_score = 9;
+  string evaluated_at = 10;
+  string error = 11;
+  string processing_stats_json = 12;
+}
+
+// ============================================================
+// Collection Evaluation
+// ============================================================
+
+message CollectionEvalRequest {
+  string collection_id = 1;
+}
+
+message CrossDocumentEntities {
+  int32 shared_entity_count = 1;
+  map<string, int32> entities_by_type = 2;
+  int32 cross_doc_relationship_count = 3;
+  string top_shared_entities_json = 4;
+}
+
+message CollectionEvalResponse {
+  bool success = 1;
+  string collection_id = 2;
+  int32 document_count = 3;
+  float avg_parse_quality = 4;
+  float avg_chunk_quality = 5;
+  float avg_embedding_coverage = 6;
+  float avg_graph_integrity = 7;
+  float overall_score = 8;
+  repeated string failed_documents = 9;
+  CrossDocumentEntities cross_document_entities = 10;
+  string evaluated_at = 11;
+  string error = 12;
+}
+
+// ============================================================
+// Chunk Inspection
+// ============================================================
+
+message ChunkInspectionRequest {
+  string document_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message ChunkItem {
+  int32 chunk_index = 1;
+  string text = 2;
+  int32 size = 3;
+  string metadata_json = 4;
+  string embedding_id = 5;
+  bool has_embedding = 6;
+  string section_heading = 7;
+  string chapter_title = 8;
+  int32 page_number = 9;
+}
+
+message ChunkInspectionResponse {
+  bool success = 1;
+  string document_id = 2;
+  int32 total_chunks = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+  repeated ChunkItem chunks = 6;
+  string error = 7;
+}
+
+// ============================================================
+// Graph Subgraph (Cytoscape format)
+// ============================================================
+
+message SubgraphRequest {
+  optional string workspace_id = 1;
+  optional string collection_id = 2;
+  optional string document_id = 3;
+  int32 depth = 4;
+  int32 max_nodes = 5;
+}
+
+message SubgraphResponse {
+  bool success = 1;
+  string nodes_json = 2;
+  string edges_json = 3;
+  int32 total_nodes = 4;
+  int32 total_edges = 5;
+  bool truncated = 6;
+  string error = 7;
+}
+
+// ============================================================
+// Node Neighbors (Progressive Graph Navigation)
+// ============================================================
+
+message NodeNeighborsRequest {
+  string node_element_id = 1;
+  repeated string exclude_node_ids = 2;
+  int32 max_neighbors = 3;
+}
+
+message NeighborNode {
+  string neo_id = 1;
+  repeated string labels = 2;
+  string properties_json = 3;
+  int32 neighbor_count = 4;
+}
+
+message NeighborEdge {
+  string rel_id = 1;
+  string rel_type = 2;
+  string source = 3;
+  string target = 4;
+  string properties_json = 5;
+}
+
+message NodeNeighborsResponse {
+  bool success = 1;
+  repeated NeighborNode nodes = 2;
+  repeated NeighborEdge edges = 3;
+  int32 total_neighbor_count = 4;
+  int32 returned_count = 5;
+  string error = 6;
+}
+
+// ============================================================
+// Graph Stats
+// ============================================================
+
+message GraphStatsRequest {}
+
+message GraphStatsResponse {
+  bool success = 1;
+  int32 total_nodes = 2;
+  int32 total_edges = 3;
+  map<string, int32> node_counts_by_type = 4;
+  map<string, int32> edge_counts_by_type = 5;
+  float avg_degree = 6;
+  string error = 7;
+}
+
+// ============================================================
+// Entity Relationships
+// ============================================================
+
+message EntityRelRequest {
+  optional string query = 1;
+  optional string entity_type = 2;
+  int32 limit = 3;
+}
+
+message EntityRelResponse {
+  bool success = 1;
+  string entities_json = 2;
+  string relationships_json = 3;
+  int32 total_entities = 4;
+  int32 total_relationships = 5;
+  string error = 6;
+}
+
+// ============================================================
+// RAG Traces
+// ============================================================
+
+message RAGTracesRequest {
+  int32 limit = 1;
+  int32 page = 2;
+  optional string strategy_filter = 3;
+  optional string mode_filter = 4;
+  optional string from_date = 5;
+  optional string to_date = 6;
+  optional string user_id = 7;
+}
+
+message RAGTraceItem {
+  string id = 1;
+  string session_id = 2;
+  string user_id = 3;
+  string query = 4;
+  string selected_strategy = 5;
+  string selected_orchestrator = 6;
+  string strategy_type = 7;
+  string mode = 8;
+  float confidence = 9;
+  string reasoning = 10;
+  string alternative_strategies_json = 11;
+  string query_characteristics_json = 12;
+  int32 latency_ms = 13;
+  int32 token_count = 14;
+  string created_at = 15;
+  string graph_traversal_stats_json = 16;
+}
+
+message RAGTracesResponse {
+  bool success = 1;
+  repeated RAGTraceItem traces = 2;
+  int32 total = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+  string error = 6;
+}
+
+// ============================================================
+// Strategy Distribution
+// ============================================================
+
+message StrategyDistRequest {
+  optional string from_date = 1;
+  optional string to_date = 2;
+}
+
+message StrategyDistItem {
+  string strategy_name = 1;
+  int32 count = 2;
+  float avg_latency_ms = 3;
+  float avg_tokens = 4;
+  float avg_confidence = 5;
+}
+
+message StrategyDistResponse {
+  bool success = 1;
+  repeated StrategyDistItem distributions = 2;
+  int32 total_traces = 3;
+  string error = 4;
+}
+
+// ============================================================
+// LLM Traces (full execution data from llm_traces table)
+// ============================================================
+
+message LLMTracesRequest {
+  int32 limit = 1;
+  int32 page = 2;
+  optional string chat_mode_filter = 3;
+  optional string provider_filter = 4;
+  optional string model_filter = 5;
+  optional string from_date = 6;
+  optional string to_date = 7;
+  optional string user_id = 8;
+}
+
+message LLMTraceItem {
+  string id = 1;
+  string session_id = 2;
+  string user_id = 3;
+  string workspace_id = 4;
+  string assistant_message_id = 5;
+  string query = 6;
+  string chat_mode = 7;
+  string collection_ids_json = 8;
+  string document_ids_json = 9;
+  int32 top_k = 10;
+  float similarity_threshold = 11;
+  string strategy_name = 12;
+  string strategy_type = 13;
+  bool agentic_routing = 14;
+  string retrieved_chunks_json = 15;
+  int32 retrieved_chunk_count = 16;
+  int32 system_prompt_length = 17;
+  int32 context_token_estimate = 18;
+  int32 history_message_count = 19;
+  bool has_conversation_summary = 20;
+  string provider = 21;
+  string model = 22;
+  int32 input_tokens = 23;
+  int32 output_tokens = 24;
+  int32 total_tokens = 25;
+  float cost_usd = 26;
+  int32 latency_ms = 27;
+  int32 duration_ms = 28;
+  string response_preview = 29;
+  string source_analysis_json = 30;
+  string created_at = 31;
+}
+
+message LLMTracesResponse {
+  bool success = 1;
+  repeated LLMTraceItem traces = 2;
+  int32 total = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+  string error = 6;
+}
+
+message LLMTraceSummaryRequest {
+  optional string from_date = 1;
+  optional string to_date = 2;
+}
+
+message LLMTraceSummaryResponse {
+  bool success = 1;
+  int32 total_traces = 2;
+  float total_cost_usd = 3;
+  int32 total_tokens = 4;
+  float avg_latency_ms = 5;
+  string provider_distribution_json = 6;
+  string chat_mode_distribution_json = 7;
+  string model_distribution_json = 8;
+  string error = 9;
+}
+
+// ============================================================
+// LLM Evaluation (Streaming)
+// ============================================================
+
+message LLMEvalRequest {
+  int32 sample_size = 1;
+}
+
+message LLMJudgeScore {
+  string trace_id = 1;
+  float faithfulness_score = 2;
+  float context_relevance_score = 3;
+  float completeness_score = 4;
+  float overall_score = 5;
+  string reasoning = 6;
+}
+
+message LLMEvalProgress {
+  int32 completed = 1;
+  int32 total = 2;
+  float progress = 3;
+  LLMJudgeScore current_result = 4;
+  string status = 5;
+  float avg_faithfulness = 6;
+  float avg_context_relevance = 7;
+  float avg_completeness = 8;
+}
+
+// ============================================================
+// Related Books (Cross-Book Entity Relationships)
+// ============================================================
+
+message RelatedBooksRequest {
+  optional string book_id = 1;
+  optional string document_id = 2;
+  int32 limit = 3;
+}
+
+message SharedEntityInfo {
+  string name = 1;
+  string entity_type = 2;
+  float confidence = 3;
+}
+
+message RelatedBookItem {
+  string book_id = 1;
+  string document_id = 2;
+  string title = 3;
+  string filename = 4;
+  int32 shared_entity_count = 5;
+  repeated string entity_types = 6;
+  repeated SharedEntityInfo shared_entities = 7;
+}
+
+message RelatedBooksResponse {
+  bool success = 1;
+  repeated RelatedBookItem related_books = 2;
+  int32 total_count = 3;
+  string error = 4;
+}
+
+message CrossBookGraphRequest {
+  optional string collection_id = 1;
+  int32 limit = 2;
+}
+
+message CrossBookGraphNode {
+  string id = 1;
+  string title = 2;
+  string document_id = 3;
+  string filename = 4;
+  string collection_id = 5;
+  int32 entity_count = 6;
+  int32 chapter_count = 7;
+}
+
+message CrossBookGraphEdge {
+  string source = 1;
+  string target = 2;
+  int32 shared_entity_count = 3;
+  repeated string entity_types = 4;
+  repeated string top_entities = 5;
+}
+
+message CrossBookGraphResponse {
+  bool success = 1;
+  repeated CrossBookGraphNode nodes = 2;
+  repeated CrossBookGraphEdge edges = 3;
+  string error = 4;
+}
+
+// ============================================================
+// Graph Sync Status (Entity Extraction Progress)
+// ============================================================
+
+message GraphSyncStatusRequest {
+  optional string collection_id = 1;
+  optional string status_filter = 2;
+  int32 limit = 3;
+  int32 page = 4;
+}
+
+message GraphSyncStatusItem {
+  string document_id = 1;
+  string collection_id = 2;
+  string status = 3;
+  int32 chunks_expected = 4;
+  int32 chunks_created = 5;
+  int32 entities_extracted = 6;
+  string error_message = 7;
+  string started_at = 8;
+  string completed_at = 9;
+  string updated_at = 10;
+  string document_title = 11;
+}
+
+message GraphSyncSummary {
+  int32 total_documents = 1;
+  int32 pending_count = 2;
+  int32 hierarchy_done_count = 3;
+  int32 entity_running_count = 4;
+  int32 completed_count = 5;
+  int32 failed_count = 6;
+  int32 total_entities_extracted = 7;
+  int32 total_chunks = 8;
+  float avg_entities_per_doc = 9;
+  string latest_completed_at = 10;
+}
+
+message GraphSyncStatusResponse {
+  bool success = 1;
+  repeated GraphSyncStatusItem items = 2;
+  GraphSyncSummary summary = 3;
+  int32 total = 4;
+  int32 page = 5;
+  int32 page_size = 6;
+  string error = 7;
+}
+
+// ============================================================
+// Graph Quality Audit
+// ============================================================
+
+message GraphQualityAuditRequest {
+  optional string collection_id = 1;
+}
+
+message GraphQualityAuditResponse {
+  bool success = 1;
+  string error = 2;
+  float overall_score = 3;
+
+  // Coverage
+  CoverageStats coverage = 4;
+
+  // Hierarchy integrity
+  HierarchyIntegrity hierarchy = 5;
+
+  // Entity health
+  EntityHealth entity_health = 6;
+
+  // Relationship health
+  RelationshipHealth relationship_health = 7;
+
+  // Chunk alignment
+  ChunkAlignment chunk_alignment = 8;
+
+  // Per-collection breakdown
+  repeated CollectionAuditItem collections = 9;
+
+  // Cross-book connectivity
+  CrossBookHealth cross_book_health = 10;
+}
+
+message CoverageStats {
+  int32 pg_documents = 1;
+  int32 neo4j_books = 2;
+  int32 missing_in_graph = 3;
+  float coverage_pct = 4;
+  int32 sync_completed = 5;
+  int32 sync_running = 6;
+  int32 sync_failed = 7;
+  int32 sync_pending = 8;
+}
+
+message HierarchyIntegrity {
+  int32 total_books = 1;
+  int32 total_chapters = 2;
+  int32 total_sections = 3;
+  int32 total_chunks = 4;
+  int32 orphan_chunks = 5;
+  int32 orphan_sections = 6;
+  int32 orphan_chapters = 7;
+  int32 books_without_chapters = 8;
+  float integrity_score = 9;
+}
+
+message EntityHealth {
+  int32 total_entities = 1;
+  int32 entities_with_mentions = 2;
+  int32 orphaned_entities = 3;
+  float health_pct = 4;
+  repeated EntityTypeBreakdown by_type = 5;
+}
+
+message EntityTypeBreakdown {
+  string entity_type = 1;
+  int32 total = 2;
+  int32 with_mentions = 3;
+  int32 orphaned = 4;
+}
+
+message RelationshipHealth {
+  int32 total_co_occurs = 1;
+  int32 valid_co_occurs = 2;
+  int32 stale_co_occurs = 3;
+  float co_occurs_health_pct = 4;
+  int32 total_shared_entity = 5;
+  int32 total_mentions = 6;
+  int32 total_contains = 7;
+}
+
+message ChunkAlignment {
+  int32 neo4j_chunks = 1;
+  int32 pg_embeddings = 2;
+  int32 matched = 3;
+  int32 neo4j_only = 4;
+  int32 pg_only = 5;
+  float alignment_pct = 6;
+}
+
+message CrossBookHealth {
+  int32 total_shared_links = 1;
+  int32 cross_collection_links = 2;
+  int32 within_collection_links = 3;
+  int32 connected_books = 4;
+  int32 disconnected_books = 5;
+  float avg_shared_per_pair = 6;
+  float connectivity_pct = 7;
+}
+
+message CollectionAuditItem {
+  string collection_id = 1;
+  string collection_name = 2;
+  int32 pg_documents = 3;
+  int32 neo4j_books = 4;
+  float coverage_pct = 5;
+  int32 total_entities = 6;
+  int32 total_chunks = 7;
+}
+
+// ============================================================
+// Agent Cost Analysis (System LLM Usage Tracking)
+// ============================================================
+
+message AgentCostAnalysisRequest {
+  optional string from_date = 1;
+  optional string to_date = 2;
+}
+
+message AgentCostItem {
+  string agent_type = 1;
+  int32 call_count = 2;
+  float total_cost_usd = 3;
+  int32 total_input_tokens = 4;
+  int32 total_output_tokens = 5;
+  int32 total_tokens = 6;
+  float avg_latency_ms = 7;
+  string model = 8;
+}
+
+message DailyCostItem {
+  string date = 1;
+  float cost_usd = 2;
+  int32 tokens = 3;
+  int32 calls = 4;
+}
+
+message AgentCostAnalysisResponse {
+  bool success = 1;
+  string error = 2;
+  float total_cost_usd = 3;
+  int32 total_tokens = 4;
+  int32 total_calls = 5;
+  float user_cost_usd = 6;
+  float system_cost_usd = 7;
+  repeated AgentCostItem agent_breakdown = 8;
+  repeated DailyCostItem daily_costs = 9;
+  map<string, float> model_costs = 10;
+}
+
+// Cleanup orphaned traces (session no longer exists)
+message CleanupOrphanedTracesRequest {
+  repeated string valid_session_ids = 1;
+}
+
+message CleanupOrphanedTracesResponse {
+  bool success = 1;
+  int32 rag_traces_deleted = 2;
+  int32 llm_traces_deleted = 3;
+  string error = 4;
+}
+
+// Knowledge Gap Detection
+message KnowledgeGapsRequest {}
+
+message GapEntity {
+  string name = 1;
+  string type = 2;
+  int32 connections = 3;
+  int32 doc_count = 4;
+}
+
+message GapSection {
+  string title = 1;
+  int32 chunks = 2;
+}
+
+message GapBook {
+  string title = 1;
+  string id = 2;
+}
+
+message KnowledgeGapsSummary {
+  int32 orphan_entities = 1;
+  int32 dead_end_entities = 2;
+  int32 isolated_books = 3;
+  int32 low_density_sections = 4;
+  int32 cross_doc_lonely_entities = 5;
+  int32 total_issues = 6;
+}
+
+message KnowledgeGapsResponse {
+  repeated GapEntity orphan_entities = 1;
+  repeated GapEntity dead_end_entities = 2;
+  repeated GapBook isolated_books = 3;
+  repeated GapSection low_density_sections = 4;
+  repeated GapEntity cross_doc_lonely_entities = 5;
+  KnowledgeGapsSummary summary = 6;
+  string error = 7;
+}

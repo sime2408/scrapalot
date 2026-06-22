@@ -1,0 +1,169 @@
+# ============================================================================
+# Scrapalot-Chat pre-commit hooks.
+#
+# Blocking by design: if any hook fails (or modifies files), the commit aborts.
+# After a formatter/autofixer runs, `git add` the changes and commit again.
+#
+# Install (once per clone):
+#     pip install pre-commit detect-secrets
+#     detect-secrets scan > .secrets.baseline   # only if baseline is empty
+#     pre-commit install
+#
+# Run on the whole repo:
+#     pre-commit run --all-files
+# ============================================================================
+default_install_hook_types: [pre-commit, commit-msg]
+default_language_version:
+  python: python3
+
+repos:
+  # --------------------------------------------------------------------------
+  # 0. Commit message validation (runs on `git commit` via commit-msg hook).
+  # Enforces Conventional Commits: feat/fix/docs/chore/refactor/... + optional
+  # scope. Merge and Revert commits are auto-allowed.
+  # Fully configured in pyproject.toml [tool.commitizen].
+  # --------------------------------------------------------------------------
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.12.1
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+
+  # --------------------------------------------------------------------------
+  # 1. File normalization (language-agnostic hygiene).
+  # --------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # configs/prompts.yaml has a legitimate duplicate `deep_research` block
+        # (line 9 + 2274) that pre-dates this migration. Excluded until a
+        # dedicated cleanup commit consolidates the two sections.
+        exclude: ^configs/prompts\.yaml$
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=5000]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # --------------------------------------------------------------------------
+  # 2. Python syntax modernization (py312+).
+  # Runs before the formatter so rewritten syntax gets formatted on the same pass.
+  # --------------------------------------------------------------------------
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.19.1
+    hooks:
+      - id: pyupgrade
+        args: [--py312-plus]
+
+  # --------------------------------------------------------------------------
+  # 3. Ruff — format + lint. Replaces black, isort, flake8, autopep8.
+  # Format first so the linter sees final whitespace.
+  # --------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Keep in sync with the `ruff` pin in requirements.txt so local `ruff check .`
+    # and the pre-commit hook always use the same rule set.
+    rev: v0.15.11
+    hooks:
+      - id: ruff-format
+        name: ruff (format)
+      - id: ruff
+        name: ruff (lint)
+        args: [--fix, --exit-non-zero-on-fix]
+
+  # --------------------------------------------------------------------------
+  # 4. Spell check — catches typos in code, comments, docs.
+  # --------------------------------------------------------------------------
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.28.4
+    hooks:
+      - id: typos
+        # Diagram artifacts (rendered SVG + mermaid source) carry short node IDs
+        # like `BA`/`FU` that typos flags as misspellings — they are not prose.
+        exclude: ^docs/diagrams/.*\.(svg|mmd)$
+
+  # --------------------------------------------------------------------------
+  # 5. Secret scanning — blocks API keys, tokens, credentials.
+  # Baseline is audited with: detect-secrets audit .secrets.baseline
+  # --------------------------------------------------------------------------
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+              alembic/versions/.*|
+              src/main/grpc/.*_pb2.*\.py|
+              .*\.lock$|
+              .*\.ipynb$|
+              poetry\.lock|
+              package-lock\.json|
+              yarn\.lock
+          )$
+
+  # --------------------------------------------------------------------------
+  # 6. Project-local: SQLAlchemy type-checker suppressions.
+  # Adds `# noinspection PyTypeChecker` before common ORM query patterns.
+  # --------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: sqlalchemy-fixes
+        name: SQLAlchemy type fixes
+        # Use `python` (conda) on Windows; Docker container uses python3 symlink.
+        # `python3` on Windows resolves to broken Chocolatey shim.
+        entry: python pre_commit_lint.py fix --no-auto-commit --sqlalchemy-only
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+  # --------------------------------------------------------------------------
+  # 7. Dependency vulnerability scan (opt-in, manual stage).
+  # Scans the currently-active Python environment for known CVEs.
+  # This hook does NOT run on `git commit` — it is invoked explicitly:
+  #     pre-commit run --hook-stage manual pip-audit
+  # The authoritative CVE gate lives in .github/workflows/security-audit.yml,
+  # which scans requirements*.txt on every pull request via osv-scanner.
+  # --------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: pip-audit
+        name: pip-audit (live env dependency scan)
+        # Runs in the developer's active Python env (conda scrapalot-chat or .venv)
+        # where the real dependency graph is installed. `language: python` does not
+        # work here because pre-commit's isolated venv contains a placeholder
+        # package that pip-audit cannot resolve against PyPI.
+        # Requires: pip install pip-audit (already in requirements.txt).
+        entry: pip-audit --strict --skip-editable
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [manual]
+
+  # --------------------------------------------------------------------------
+  # 8. Static type check (opt-in, manual stage).
+  # Pyright needs the real dependency graph to resolve SQLAlchemy / celery /
+  # pydantic-ai etc. Running it in a pre-commit venv produces hundreds of
+  # "reportMissingImports" false positives. The `docker exec` form below uses
+  # the real scrapalot-chat container where everything is installed.
+  # This hook does NOT run on `git commit` — invoke explicitly:
+  #     pre-commit run --hook-stage manual pyright
+  # Authoritative CI gate (non-blocking):
+  #     .github/workflows/type-check.yml
+  # --------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright (static type check, in container)
+        entry: docker exec -w /app scrapalot-chat pyright
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [manual]

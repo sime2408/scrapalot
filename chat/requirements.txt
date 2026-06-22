@@ -1,0 +1,283 @@
+#######################
+# Core Python Dependencies
+# Updated: 2025-10-04 11:55 - Disabled health check for debugging container restarts
+#######################
+# PostgreSQL drivers for Supabase and local development
+# Use psycopg2-binary for Docker builds (includes compiled binaries)
+psycopg2-binary==2.9.9
+asyncpg==0.30.0
+# Additional PostgreSQL utilities
+psycopg2==2.9.9
+fastapi==0.116.1
+fastapi-cors==0.0.6
+uvicorn[standard]>=0.32.0,<1.0.0  # Updated to support modern websockets API
+websockets>=15.0,<16.0  # Latest stable websockets with new asyncio implementation
+httpx==0.28.1  # HTTP client for OAuth API calls
+python-jose[cryptography]==3.4.0
+PyJWT==2.12.0  # JWT token handling for WebSocket authentication (CVE-2026-32597)
+passlib[bcrypt]==1.7.4
+# Pin bcrypt to 4.3.0 to avoid compatibility issues with bcrypt 5.0.0
+# bcrypt 5.0.0 introduced breaking changes that cause "password cannot be longer than 72 bytes" errors
+# even with short passwords due to passlib interaction issues
+bcrypt==4.3.0
+coloring==0.1.8
+rich==13.9.4
+python-multipart==0.0.26  # CVE-2026-40347, CVE-2026-24486
+sqlalchemy==2.0.44
+sqlmodel==0.0.27  # Modern SQL toolkit with Pydantic integration
+python-socketio==5.15.0  # Updated for Socket.IO v4/v5 client compatibility
+python-engineio==4.12.3  # Explicitly pin latest version for compatibility with socket.io-client 4.x
+
+# Real-time collaboration with Yjs CRDT
+y-py==0.6.2  # Python bindings for Yjs (CRDT for collaborative editing)
+
+# Scientific computing - NumPy compatibility for both local and Docker environments
+numpy>=1.26.0,<3.0  # Allow NumPy 2.x for Python 3.12 compatibility
+scikit-learn>=1.5.0,<2.0
+pandas>=2.2.0,<3.0  # Compatible with NumPy 2.x
+scipy>=1.13.0,<2.0
+
+# SQLite async support
+aiosqlite==0.19.0
+aiofiles==24.1.0
+
+# Connector dependencies
+slack-sdk==3.33.4  # Slack API client for Slack connector
+msal==1.31.1  # Microsoft Authentication Library for SharePoint/OneDrive
+Office365-REST-Python-Client==2.5.14  # Microsoft Graph and SharePoint API client
+atlassian-python-api==3.41.16  # Atlassian Confluence API client for Confluence connector
+
+#######################
+# LangChain (v1.x - Major upgrade from 0.3.x)
+#######################
+langchain==1.3.10
+langchain-core==1.4.8  # CVE-2026-40087 (bump required by langchain-text-splitters 1.1.2)
+langchain-community==0.4.2
+langchain-experimental==0.4.2
+langchain-text-splitters==1.1.2  # GHSA-fv5p-p927-qmxr
+langchain-postgres==0.0.17
+langchain-neo4j==0.10.0  # Re-enabled: 0.10 supports langchain-core 1.x and the numpy>=2 conflict is gone (env is on numpy 2.4). Provides Neo4jGraph/Neo4jVector (community removed Neo4jVector in 0.4.2).
+langchain-ollama==1.1.0
+langchain-openai==1.3.2  # GHSA-r7w7-9xr2-qq2r
+langchain-anthropic==1.4.6
+langchain-google-genai==4.2.5
+langchain-huggingface==1.2.2
+
+# Web search and crawling integrations
+duckduckgo-search==8.1.1  # Free search (no API key required) - used by langchain_community
+ddgs>=9.10.0  # DuckDuckGo search (successor to duckduckgo-search)
+firecrawl-py==4.11.0  # Advanced web crawling and content extraction (requires API key)
+tavily-python>=0.5.0  # Tavily web search API (1,000 free credits/month)
+
+#######################
+# AI/ML Dependencies
+#######################
+transformers>=4.46.0,<5.0.0  # Required for Docling's AutoModelForImageTextToText
+einops==0.8.1
+# PyTorch - Pinned versions to prevent dependency conflicts
+# These versions are compatible with current dependencies
+# Updated to fix torchvision::nms compatibility issue
+# Note: For local development with CPU-only, use: --index-url https://download.pytorch.org/whl/cpu
+# Docker: PyTorch is installed separately in Dockerfile with CPU index URL
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
+
+# Text-to-Speech with edge-tts (Microsoft Edge TTS)
+edge-tts>=7.2.7  # Free TTS API with word boundaries for highlighting
+#
+# For CUDA 12.1 (up to Hopper architecture sm_90):
+# pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
+#
+# For Blackwell architecture (sm_120) support:
+# Build PyTorch from source following instructions at:
+# https://pytorch.org/get-started/locally/#start-locally
+sentence-transformers==3.3.1
+accelerate==1.2.1
+
+# Pin sympy to prevent torch version conflicts
+# Note: xformers may require torch 2.7.0+, but keeping 2.5.1 for stability
+sympy==1.13.1
+
+# For running GGUF format models locally with GPU support:
+# CUDA 12.1 version (NVIDIA GPUs) - Pre-compiled wheel (recommended):
+# pip install llama-cpp-python==0.3.2 --extra-index-url https://jllllll.github.io/llama-cpp-python-cuBLAS-wheels/cu121
+#
+# CUDA 11.8 version (Legacy NVIDIA GPUs):
+# pip install llama-cpp-python==0.3.2 --extra-index-url https://jllllll.github.io/llama-cpp-python-cuBLAS-wheels/cu118
+#
+# Vulkan version (Universal GPU support - NVIDIA, AMD, Intel, Apple) - Build from source:
+# CMAKE_ARGS="-DLLAMA_VULKAN=ON" pip install llama-cpp-python==0.3.2 --no-cache-dir --force-reinstall
+#
+# CPU-only version (built from source for compatibility):
+llama-cpp-python==0.3.2
+
+#######################
+# Hugging Face
+#######################
+hf_xet==1.1.10
+huggingface-hub==0.35.3
+
+#######################
+# OpenAI & Other LLM APIs
+#######################
+openai==2.30.0  # Required by pydantic-ai>=1.77.0 (needs >=2.29.0) and langchain-openai (needs <3.0.0)
+ollama==0.6.2  # langchain-ollama 1.1.0 requires ollama>=0.6.1
+
+#######################
+# Google AI
+#######################
+google-genai>=1.66.0,<2.0.0  # New Google AI SDK (replaces google-generativeai), required by pydantic-ai and langchain-google-genai
+
+#######################
+# RAG & PDF Processing
+#######################
+tiktoken==0.12.0  # Minimum 0.12.0 required by pydantic-ai-slim[openai]
+pymupdf4llm==1.27.2.1  # PDF to markdown with AI layout detection (includes pymupdf + pymupdf-layout)
+liteparse>=2.1.1  # Apache-2.0 model-free PDF->markdown; shadow-comparison backend (vs AGPL pymupdf4llm)
+docling==2.103.0
+rapidocr>=3.6.0,<4.0  # CPU-optimized OCR for Docling (replaces EasyOCR on CPU)
+onnxruntime>=1.17.0,<2.0  # Required by RapidOCR as inference backend
+colorlog>=6.0  # Required by rapidocr (needs log_colors support)
+pillow>=10.4.0,<13.0.0  # docling 2.103 + torchvision pull pillow 12.x; keep a wide range
+# surya-ocr removed - not used in codebase (was pulled in by marker-pdf which is also unused)
+pydantic[email]==2.12.5
+pydantic-settings>=2.14.0,<3.0.0  # docling-core 2.80+ requires >=2.14.0; langchain-community needs >=2.10.1
+# NumPy 2.x compatibility packages
+# pandas and scipy already specified above
+# scipy already specified above
+numexpr==2.13.0
+h5py==3.14.0
+numba>=0.62.1  # Updated to support NumPy 2.3+
+#######################
+# Parsers
+#######################
+Markdown==3.9
+pyyaml==6.0.3
+
+#######################
+# NLP & Entity Extraction
+#######################
+spacy==3.8.7
+python-Levenshtein==0.27.1
+rapidfuzz==3.10.1  # For fuzzy string matching in Enhanced Tri-Modal Orchestrator
+
+#######################
+# Storage
+#######################
+alembic==1.16.5
+redis==6.4.0
+# Truly embedded Redis server with no external dependencies
+# redislite==6.2.912183  # Not supported on Windows
+fakeredis==2.32.1  # Minimum 2.32.1 required by pydocket (via fastmcp)
+neo4j==5.28.2
+pgvector==0.3.5  # Compatible with langchain-postgres 0.0.15 (requires <0.4)
+# CATEGORY_01 §1.1 Leiden Communities. Avoid graspologic — it pins numpy<2,
+# would downgrade pgvector + sentence-transformers. leidenalg is the actual
+# Leiden implementation; igraph is its C-backed graph engine (numpy-free).
+leidenalg==0.11.0
+igraph==1.0.0
+texttable==1.7.0  # leidenalg → igraph runtime dep, kept explicit for repro
+
+#######################
+# gRPC / Microservices
+#######################
+# Required for bridge infrastructure (Python <-> Kotlin communication)
+# Note: grpcio-tools 1.71.2 is the latest version compatible with protobuf<6.0.0
+# (required by google-ai-generativelanguage and grpcio-status)
+grpcio==1.76.0
+grpcio-tools==1.71.2  # Protobuf code generator for scripts/dev/generate_grpc_stubs.py
+
+#######################
+# Environment
+#######################
+python-dotenv==1.1.1
+
+#######################
+# System Utilities
+#######################
+psutil==7.1.0
+nvidia-ml-py==13.580.82
+
+#######################
+# MCP Server
+#######################
+fastmcp==2.14.6  # Minimum 2.14.0 required by pydantic-ai 1.77.0
+
+#######################
+# Pydantic AI - Agentic Framework
+#######################
+# Use pydantic-ai-slim with explicit extras instead of full pydantic-ai
+# Full pydantic-ai pulls ALL extras (huggingface, bedrock, cohere, etc.)
+# which causes dependency conflicts (e.g., huggingface-hub>=1.3.4 vs langchain/docling <1.0.0)
+pydantic-ai-slim[openai,anthropic,google,mcp,fastmcp]==1.77.0
+
+#######################
+# Background Task Processing
+#######################
+celery==5.5.3
+flower==2.0.1
+aiohttp==3.13.4  # CVE-2025-69223..30, CVE-2026-22815, CVE-2026-34513..25 (12 CVEs)
+
+#######################
+# Academic Connectors
+#######################
+scholarly>=1.7.11        # Google Scholar scraping
+arxiv>=2.2.0             # arXiv API client
+requests>=2.31.0         # HTTP requests for Semantic Scholar
+wikipedia-api>=0.7.1     # Wikipedia API client
+
+#######################
+# Cloud Storage Connectors
+#######################
+google-auth>=2.35.0      # Google authentication library (google.auth, google.oauth2)
+google-auth-oauthlib>=1.2.0  # OAuth2 flow for Google APIs
+google-api-python-client>=2.150.0  # Google API client (googleapiclient)
+dropbox>=12.0.2          # Dropbox API client
+pyzotero>=1.11.0         # Zotero Web API v3 client
+retry>=0.9.2             # Retry decorator for robust API calls (used by Notion connector)
+
+#######################
+# Testing Framework
+#######################
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.1.0
+
+#######################
+# Code Quality and Linting
+# Ruff replaces black + isort + flake8 + autopep8 + pylint (one tool, ~10-100x faster).
+# Tool versions are pinned in .pre-commit-config.yaml; ruff is listed here so
+# developers can run `ruff check .` / `ruff format .` directly outside pre-commit.
+# detect-secrets is installed separately for generating/auditing .secrets.baseline.
+#######################
+pre-commit>=3.8.0
+ruff>=0.15.11
+detect-secrets>=1.5.0
+# commitizen: enforces Conventional Commits via commit-msg hook.
+# Run `cz changelog` to regenerate CHANGELOG.md from commit history.
+commitizen>=4.12.1
+# pip-audit: opt-in manual scan via `pre-commit run --hook-stage manual pip-audit`.
+# Authoritative CVE gate lives in .github/workflows/security-audit.yml.
+pip-audit>=2.10.0
+# pyright: opt-in static type check via `pre-commit run --hook-stage manual pyright`
+# or `docker exec scrapalot-chat pyright /app/src`.
+# Authoritative CI gate (non-blocking) in .github/workflows/type-check.yml.
+pyright>=1.1.408
+
+# External books providers
+beautifulsoup4>=4.12.0
+ebooklib>=0.18  # EPUB parsing for document content extraction
+# libgen-api-modern removed - has broken imports, using Anna's Archive scraping instead
+stripe>=10.0.0,<11.0.0
+
+# Document conversion
+openpyxl>=3.1.0  # XLSX parsing for tabular document ingestion (pandas read_excel engine)
+xlrd>=2.0.1  # Legacy XLS parsing for tabular document ingestion (pandas read_excel engine)
+mammoth>=1.11.0  # DOCX to HTML conversion (better formatting than Docling)
+python-docx>=1.1.0  # DOCX generation for research report export
+htmldocx>=0.0.6  # HTML to DOCX conversion for research report export
+youtube-transcript-api>=1.2.0
+yt-dlp>=2024.1.0
+langdetect>=1.0.9  # Cross-language query detection for bilingual RAG

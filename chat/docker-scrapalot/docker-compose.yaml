@@ -1,0 +1,1034 @@
+# Caps Docker json-file logs so a chatty container can't fill the root
+# partition (disk-pressure incident 2026-04-17 when document_extras_service
+# was dumping 114 collection UUIDs per GetStorageUsage log line).
+# Services opt in via `logging: *default-logging`.
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+services:
+  # ============================================================================
+  # Infrastructure Services (Deploy Once)
+  # ============================================================================
+
+  # Portainer - Container Management UI
+  portainer:
+    image: portainer/portainer-ce:2.39.3
+    container_name: portainer
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - portainer_data:/data
+    ports:
+      - "9443:9443" # HTTPS UI
+      - "9000:9000" # HTTP UI
+    networks:
+      - scrapalot-network
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "/portainer", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # Nginx Proxy Manager - Reverse Proxy with SSL
+  nginx-proxy-manager:
+    image: "jc21/nginx-proxy-manager:latest"
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - "80:80" # HTTP
+      - "443:443" # HTTPS
+      - "81:81" # Admin UI
+    environment:
+      DB_SQLITE_FILE: "/data/database.sqlite"
+      DISABLE_IPV6: "true"
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+      - /var/www:/var/www:ro # Mount static sites directory (read-only)
+    networks:
+      - scrapalot-network
+    healthcheck:
+      test: ["CMD", "/bin/check-health"]
+      interval: 10s
+      timeout: 3s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 64M
+
+  # PostgreSQL with pgvector - Primary Database
+  pgvector:
+    image: pgvector/pgvector:pg18
+    container_name: pgvector
+    restart: unless-stopped
+    shm_size: 256mb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-scrapalot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scrapalot}
+      POSTGRES_DB: ${POSTGRES_DB:-scrapalot}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    # Port available for local development
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-15432}:5432" # Expose on host for service running on the host machine
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    networks:
+      - scrapalot-network
+      - host-connection # Added this network for host machine communication
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # PostgreSQL for Spring Boot Backend - Separate database instance
+  # NOTE: Runs on port 5433 to avoid conflict with Supabase (5432)
+  postgres-backend:
+    image: postgres:16-alpine
+    container_name: postgres-backend
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_USER: ${POSTGRES_BACKEND_USER:-scrapalot}
+      POSTGRES_PASSWORD: ${POSTGRES_BACKEND_PASSWORD:-scrapalot123}
+      POSTGRES_DB: ${POSTGRES_BACKEND_DB:-scrapalot_backend}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_BACKEND_PORT:-5433}:5432"
+    volumes:
+      - postgres_backend_data:/var/lib/postgresql/data
+      - ./init-backend-db.sh:/docker-entrypoint-initdb.d/init-backend-db.sh:ro
+    networks:
+      - scrapalot-network
+      - host-connection
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_BACKEND_USER:-scrapalot} -d ${POSTGRES_BACKEND_DB:-scrapalot_backend}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+    profiles: ["local", "microservices"]  # Required by scrapalot-backend
+
+  # Redis - Caching and Message Broker
+  redis:
+    image: redis:8-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: >
+      sh -c 'redis-server
+      $${REDIS_PASSWORD:+--requirepass "$${REDIS_PASSWORD}"}
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec'
+    environment:
+      # REDIS_PASSWORD passed from GitHub secrets via .env or CI/CD
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    # Port exposed for local development only
+    ports:
+      - "127.0.0.1:${REDIS_EXPOSED_PORT:-6479}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - scrapalot-network
+      - host-connection
+    healthcheck:
+      test: ["CMD", "redis-cli", "--pass", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1200M
+        reservations:
+          memory: 128M
+
+  # Neo4j - Knowledge Graph Database
+  neo4j:
+    image: neo4j:2025-community
+    container_name: neo4j
+    restart: unless-stopped
+    environment:
+      # Use NEO4J_AUTH format for cloud, fallback to old format for local
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-scrapalot123}
+      # Memory configuration (Neo4j 2025)
+      # Page cache MUST be >= store size (688MB as of March 2026) to prevent TransactionCommitFailed panics
+      - NEO4J_server_memory_pagecache_size=${NEO4J_PAGECACHE_SIZE:-768M}
+      # Heap raised from 384M to 768M. Phase 3 GraphRelationshipLinker for
+      # large books (>500 entities × 100+ chunks) was grinding at 9 s per
+      # UNWIND MATCH ... MERGE batch with the smaller heap because G1GC was
+      # doing near-continuous collection as each batch filled the young
+      # generation. 768M doubles the young-gen headroom and roughly halves
+      # Phase 3 time on books like 5df63f9b (881 entities, 167 chunks).
+      # Initial size uses the same var to avoid "Initial > Max" errors when
+      # NEO4J_HEAP_SIZE is overridden in .env.
+      - NEO4J_server_memory_heap_max__size=${NEO4J_HEAP_SIZE:-768M}
+      - NEO4J_server_memory_heap_initial__size=${NEO4J_HEAP_SIZE:-768M}
+      # Enable the JDK vector incubator module so Neo4j 2025's optimized
+      # vector codepath is available. Without this, the JVM logs
+      # "Java vector incubator module is not readable" at startup and
+      # falls back to the slow scalar implementation for vector ops
+      # (embeddings, similarity).
+      - NEO4J_server_jvm_additional=--add-modules=jdk.incubator.vector
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+      # Updated plugin configuration (NEO4JLABS_PLUGINS renamed to NEO4J_PLUGINS)
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+      # Advertise public IP for direct Bolt access
+      - NEO4J_server_bolt_advertised__address=46.224.25.110:7687
+      # Performance tuning to reduce CPU spikes (Neo4j 2025)
+      - NEO4J_db_checkpoint_iops_limit=300
+      - NEO4J_db_checkpoint_throughput_limit=8m
+      # Cap transaction-log (WAL) retention. The default lets heavy
+      # entity-extraction write churn grow /data/transactions to 2.3G (larger
+      # than the 2.0G store), which filled the disk on 2026-06-05 ("No space
+      # left on device" writing /logs/debug.log). Single-instance community
+      # Neo4j needs only enough WAL for crash recovery, so keep at most 1G —
+      # older segments are pruned on each checkpoint.
+      - NEO4J_db_tx__log_rotation_retention__policy=1G size
+    ports:
+      - "127.0.0.1:${NEO4J_HTTP_PORT:-7474}:7474"
+      - "127.0.0.1:${NEO4J_BOLT_PORT:-7687}:7687"
+      - "127.0.0.1:${NEO4J_HTTPS_PORT:-7473}:7473"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_plugins:/plugins
+    networks:
+      - scrapalot-network
+      - host-connection
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          # 1.0 → 2.0: with 1 vCPU G1GC concurrent threads were starved,
+          # so under heap pressure GC took the whole core and Bolt clients
+          # waited indefinitely (zombie reprocess_document tasks observed
+          # hanging >2 h with zero log activity). Two cores let GC work
+          # on one while requests progress on the other.
+          cpus: "2.0"
+          # 2G → 2.5G to accommodate raised heap (768M) + pagecache (768M)
+          # + JVM off-heap + driver buffers. Old 2G limit was 80% full at
+          # idle — one large graph write pushed to 99% and G1GC thrashed.
+          memory: 3g
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  # ============================================================================
+  # Application Services (Updated via CI/CD)
+  # ============================================================================
+
+  # Scrapalot Backend - FastAPI Application
+  scrapalot-chat:
+    # Use 'image' for cloud (pre-built), 'build' for local development
+    image: ${SCRAPALOT_CHAT_IMAGE:-scrapalot-chat:latest}
+    build:
+      context: ..
+      dockerfile: docker-scrapalot/Dockerfile
+      # Enable BuildKit for better caching
+      cache_from:
+        - scrapalot-chat:latest
+    container_name: scrapalot-chat
+    restart: unless-stopped
+    stop_grace_period: 90s
+    logging: *default-logging
+    # Ports exposed for local development
+    ports:
+      - "${SCRAPALOT_CHAT_PORT:-8090}:8090"
+    # Cloud storage - no local volumes needed, everything in R2
+    privileged: true # Required for s3fs mounting
+    cap_add:
+      - SYS_ADMIN # Required for FUSE mounting
+    devices:
+      - /dev/fuse:/dev/fuse # FUSE device for s3fs
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    environment:
+      # CPU thread caps — match the 2-CPU container limit. Without these, torch /
+      # numpy / MKL see the host's 8 cores and oversubscribe (8 threads fighting
+      # over 2 cores = context-switch thrashing), making CPU cross-encoder
+      # reranking + embeddings ~1.25x slower. Measured via tests/scripts/bench_reranker.py.
+      - OMP_NUM_THREADS=${RAG_CPU_THREADS:-2}
+      - MKL_NUM_THREADS=${RAG_CPU_THREADS:-2}
+      - OPENBLAS_NUM_THREADS=${RAG_CPU_THREADS:-2}
+      - NUMEXPR_NUM_THREADS=${RAG_CPU_THREADS:-2}
+      # Database Configuration - use local PostgreSQL by default, override for production
+      - POSTGRES_USER=${POSTGRES_USER:-scrapalot}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-scrapalot}
+      - POSTGRES_DB=${POSTGRES_DB:-scrapalot}
+      # Shared key (base64, 32 bytes) for decrypting MCP integration auth tokens.
+      # MUST match scrapalot-backend's MCP_ENCRYPTION_KEY. Empty = plaintext fallback.
+      - MCP_ENCRYPTION_KEY=${MCP_ENCRYPTION_KEY:-}
+      # Internal Docker port (always 5432 within the network). Do NOT
+      # parameterise with ${POSTGRES_PORT}: that .env var is the HOST port
+      # mapping (e.g. 15432) — feeding it here makes the chat container dial
+      # pgvector:15432, which is refused, so it silently falls back to SQLite
+      # and every /ready returns 503 (prod outage, commit e890828).
+      # CHAT_POSTGRES_HOST/PORT are dedicated overrides (default to the safe
+      # in-network pgvector:5432) used only when the stack runs against a
+      # remote DB over an SSH tunnel — set them in .env to host.docker.internal:15432.
+      - POSTGRES_HOST=${CHAT_POSTGRES_HOST:-pgvector}
+      - POSTGRES_PORT=${CHAT_POSTGRES_PORT:-5432}
+      - POSTGRES_FALLBACK_TO_SQLITE=false
+      - POSTGRES_SSL_MODE=${POSTGRES_SSL_MODE:-disable}
+
+      # Redis Configuration
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+
+      # Neo4j Configuration
+      - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-scrapalot123}
+
+      # API Keys
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - SERPAPI_KEY=${SERPAPI_KEY}
+      # Optional static Whisper STT bias for non-focused transcription;
+      # empty unless the operator sets the STT_OPENAI_PROMPT prod variable.
+      - STT_OPENAI_PROMPT=${STT_OPENAI_PROMPT:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GH_TOKEN=${GH_TOKEN}
+      - ANNAS_ARCHIVE_API_KEY=${ANNAS_ARCHIVE_API_KEY:-}
+      - ANNAS_MEMBER_SECRET_KEY=${ANNAS_MEMBER_SECRET_KEY:-}
+      - GOOGLE_BOOKS_API_KEY=${GOOGLE_BOOKS_API_KEY:-}
+      # Optional OCR escalation (Docling default → LLMWhisperer). INERT unless a
+      # key is set; see configs/config.yaml document_processing.ocr_escalation.
+      - OCR_ESCALATION_ENABLED=${OCR_ESCALATION_ENABLED:-false}
+      - LLMWHISPERER_API_KEY=${LLMWHISPERER_API_KEY:-}
+      - LLMWHISPERER_BASE_URL=${LLMWHISPERER_BASE_URL:-}
+      - OCR_ESCALATION_MIN_CHARS=${OCR_ESCALATION_MIN_CHARS:-80}
+      - OCR_ESCALATION_DAILY_PAGES=${OCR_ESCALATION_DAILY_PAGES:-100}
+
+      # OAuth Configuration (User Authentication)
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI}
+      - GOOGLE_OAUTH_ENABLED=true
+
+      # JWT Configuration (must match scrapalot-backend for token compatibility)
+      - JWT_SECRET=${JWT_SECRET:-8f4b6c2a1e9d7f3b5a0c8e6d4a2b0f1e}
+
+      # Application Configuration
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - ENABLE_MIGRATIONS=${ENABLE_MIGRATIONS:-1}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - BACKEND_BASE_URL=${BACKEND_BASE_URL}
+      - LLM_MODELS_DIRECTORY=/app/data/models
+
+      # HuggingFace Configuration
+      - HF_HOME=/app/data/models/huggingface
+      - HUGGINGFACE_HUB_CACHE=/app/data/models/huggingface
+      - HF_HUB_DISABLE_SYMLINKS=1
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=true
+      - HF_HUB_DISABLE_TELEMETRY=1
+      - HF_HUB_OFFLINE=0
+      - TRANSFORMERS_OFFLINE=0
+
+      # Vulkan configuration
+      - LLM_VULKAN_ENABLED=${LLM_VULKAN_ENABLED:-false}
+      - LLM_VULKAN_PREFER=${LLM_VULKAN_PREFER:-false}
+
+      # Python Configuration
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+
+      # Application Paths
+      - UPLOAD_PATH=/app/data/upload
+      - SCRAPALOT_CACHE_DIR=/app/data/cache
+
+      # Graph Configuration
+      - GRAPH_ENABLED=${GRAPH_ENABLED:-false}
+      - GRAPH_ENTITY_EXTRACTION=${GRAPH_ENTITY_EXTRACTION:-true}
+      - GRAPH_RELATIONSHIPS=${GRAPH_RELATIONSHIPS:-true}
+      - GRAPH_CROSS_BOOK=${GRAPH_CROSS_BOOK:-true}
+      - NEO4J_STRUCTURE_SYNC_ENABLED=${NEO4J_STRUCTURE_SYNC_ENABLED:-true}
+
+      # Stripe (billing) — Kotlin owns Stripe; Python only reads these for startup validation
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - STRIPE_TEST_MODE=${STRIPE_TEST_MODE:-true}
+
+      # LLM API keys are in the database (server_settings.system_agent_config)
+
+    volumes:
+      # Source code volume mount for development/testing feature branches
+      # NOTE: Using relative path for Windows development
+      - ../src:/app/src
+      - ../configs:/app/configs
+      - ../alembic:/app/alembic
+      - ../tests:/app/tests
+      - ../run_service.py:/app/run_service.py
+      # Keep persistent data separate from source code
+      - scrapalot_data:/app/data
+      # Docker socket for admin debug log access
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - scrapalot-network
+      - host-connection
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          # Real-time API: prioritize user-facing requests. On the 8 vCPU prod
+          # host the combined limit pool is 7.5 vCPU (chat 2.0 + workers 1.5 +
+          # backend 2.0 + gw 1.0 + neo4j 1.0), fitting inside 8 vCPU with 0.5
+          # vCPU of headroom — no overcommit. Reservation guarantees chat a
+          # 1.0 vCPU floor even when workers are running batch reprocess.
+          # Host spec: README_CLOUD_INFRA_05_INFRASTRUCTURE.md
+          cpus: "2.0"
+          memory: 8G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
+
+  # ============================================================================
+  # Scrapalot Workers - Celery Document Processing Workers
+  # ============================================================================
+
+  # CPU workers — reuse the scrapalot-chat image (no separate build needed)
+  scrapalot-workers:
+    image: ${SCRAPALOT_CHAT_IMAGE:-scrapalot-chat:latest}
+    container_name: scrapalot-workers
+    restart: unless-stopped
+    stop_grace_period: 120s
+    logging: *default-logging
+    # User-facing queues only: `documents` (process / reprocess / batch) and
+    # `fast` (summary backfill, lightweight tasks). The `graph_extraction`
+    # queue moved to its own `scrapalot-workers-graph` container so a
+    # multi-hour CO_OCCURS_WITH housekeeping run can no longer monopolise
+    # one of the two slots that should be servicing user uploads.
+    #
+    # `--beat` stays here — single scheduler in the system; beat dispatches
+    # tasks that the routing config sends to whichever queue is correct.
+    # `--schedule` writes persistent beat state under /tmp so a restart
+    # doesn't double-fire scheduled tasks.
+    # PRD prd_onyx_worker_stability.md Phase 3: supervisord runs 3
+    # independent Celery processes inside this single container:
+    #   - celery_worker_documents  (queue=documents,  pool=threads, concurrency=1)
+    #   - celery_worker_fast       (queue=fast,        pool=threads, concurrency=4)
+    #   - celery_beat              (scheduler)
+    # Plus a log-redirect tail piping all program logs to stdout for Docker.
+    #
+    # The documents-queue crash no longer takes beat or fast queue down;
+    # supervisord auto-restarts the crashed program within 10s. A 36-min
+    # reprocess on documents queue no longer starves Annas restores on
+    # fast queue (they share the container but run on separate Celery
+    # processes with independent thread pools).
+    #
+    # Config baked into the image at /app/supervisord.conf (see Dockerfile
+    # COPY around line ~205). To inspect runtime state inside the container:
+    #   docker exec scrapalot-workers supervisorctl status
+    #
+    # Earlier Phase 0/1/2 behaviour (single Celery process, --beat embedded)
+    # preserved verbatim in git history. Rollback = revert this command
+    # block + the Dockerfile supervisord COPY.
+    command: ["supervisord", "-c", "/app/supervisord.conf", "-n"]
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    environment:
+      # CPU thread caps — match the 2-CPU container limit (same rationale as
+      # scrapalot-chat): keep torch/numpy/MKL from oversubscribing the host's
+      # 8 cores during embedding + reranking. See tests/scripts/bench_reranker.py.
+      - OMP_NUM_THREADS=${RAG_CPU_THREADS:-2}
+      - MKL_NUM_THREADS=${RAG_CPU_THREADS:-2}
+      - OPENBLAS_NUM_THREADS=${RAG_CPU_THREADS:-2}
+      - NUMEXPR_NUM_THREADS=${RAG_CPU_THREADS:-2}
+      # Celery reads Redis URL from config.yaml (includes password) — no env var override
+      - CELERY_ENABLED=true
+
+      # Database Configuration (same as scrapalot-chat)
+      - POSTGRES_USER=${POSTGRES_USER:-scrapalot}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-scrapalot}
+      - POSTGRES_DB=${POSTGRES_DB:-scrapalot}
+      - POSTGRES_HOST=${CHAT_POSTGRES_HOST:-pgvector}
+      - POSTGRES_PORT=${CHAT_POSTGRES_PORT:-5432}
+      - POSTGRES_FALLBACK_TO_SQLITE=false
+      - POSTGRES_SSL_MODE=${POSTGRES_SSL_MODE:-disable}
+
+      # Redis Configuration
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+
+      # Neo4j Configuration
+      - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-ineedastrongerpassword}
+
+      # Graph Configuration
+      - GRAPH_ENABLED=${GRAPH_ENABLED:-true}
+      - GRAPH_ENTITY_EXTRACTION=${GRAPH_ENTITY_EXTRACTION:-true}
+      - GRAPH_RELATIONSHIPS=${GRAPH_RELATIONSHIPS:-true}
+      - GRAPH_CROSS_BOOK=${GRAPH_CROSS_BOOK:-true}
+
+      # HuggingFace Configuration
+      - HF_HOME=/app/data/models/huggingface
+      - HUGGINGFACE_HUB_CACHE=/app/data/models/huggingface
+      - HF_HUB_DISABLE_SYMLINKS=1
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=true
+      - HF_HUB_DISABLE_TELEMETRY=1
+      - HF_HUB_OFFLINE=0
+      - TRANSFORMERS_OFFLINE=0
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+
+      # External services consumed by Celery tasks. The
+      # scrapalot.restore_book_from_annas task needs the member secret
+      # to call /dyn/api/fast_download.json; without it the task fails
+      # immediately with "config error: ANNAS_MEMBER_SECRET_KEY missing".
+      # scrapalot-chat already has these (lines 304-305); the workers
+      # env block was missing them, observed live on doc ed98dbbd.
+      - ANNAS_ARCHIVE_API_KEY=${ANNAS_ARCHIVE_API_KEY:-}
+      - ANNAS_MEMBER_SECRET_KEY=${ANNAS_MEMBER_SECRET_KEY:-}
+      - GOOGLE_BOOKS_API_KEY=${GOOGLE_BOOKS_API_KEY:-}
+
+      # Optional OCR escalation (Docling default → LLMWhisperer). PDF parsing
+      # runs in THIS worker (documents queue), so it needs the same vars as
+      # scrapalot-chat. INERT unless LLMWHISPERER_API_KEY is set.
+      - OCR_ESCALATION_ENABLED=${OCR_ESCALATION_ENABLED:-false}
+      - LLMWHISPERER_API_KEY=${LLMWHISPERER_API_KEY:-}
+      - LLMWHISPERER_BASE_URL=${LLMWHISPERER_BASE_URL:-}
+      - OCR_ESCALATION_MIN_CHARS=${OCR_ESCALATION_MIN_CHARS:-80}
+      - OCR_ESCALATION_DAILY_PAGES=${OCR_ESCALATION_DAILY_PAGES:-100}
+
+      # Deep-research search providers. Autonomous research runs in this worker
+      # (scrapalot.run_deep_research), so it needs the same provider keys as
+      # scrapalot-chat (lines 329-331). Without them the worker fails with
+      # "Failed to create provider: tavily" mid-run and the research dies.
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - SERPAPI_KEY=${SERPAPI_KEY}
+
+      # LLM API keys are in the database (server_settings.system_agent_config)
+
+      # JWT Configuration (needed for any auth-related service calls)
+      - JWT_SECRET=${JWT_SECRET:-8f4b6c2a1e9d7f3b5a0c8e6d4a2b0f1e}
+
+      # Python Configuration
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+
+      # Application Paths
+      - UPLOAD_PATH=/app/data/upload
+      - LLM_MODELS_DIRECTORY=/app/data/models
+      - SCRAPALOT_CACHE_DIR=/app/data/cache
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+
+    volumes:
+      # Shared data volume — workers read document files uploaded by scrapalot-chat
+      - scrapalot_data:/app/data
+      # Source code mount for development (matches scrapalot-chat)
+      - ../src:/app/src
+      - ../configs:/app/configs
+
+    networks:
+      - scrapalot-network
+
+    deploy:
+      resources:
+        limits:
+          # PRD prd_onyx_worker_stability.md Phase 3 — bump CPU 1.5→2.0
+          # and memory 5G→8G to accommodate three supervisord-managed
+          # processes (documents worker + fast worker + beat) inside one
+          # container. Each Celery main process is ~600 MB (down from
+          # 1.8 GB in Phase 0 prefork era because Phase 1 spawn subprocess
+          # keeps heavy imports out of the Celery thread). 3 × 600 MB
+          # baseline ≈ 1.8 GB; add max 1 active reprocess subprocess
+          # peaking at ~3 GB and we land at ~5 GB peak. 8 GB cap leaves
+          # comfortable headroom for the fast queue's 4 concurrent
+          # threads under spikes. Host budget check (PRD §3.1):
+          # chat(8) + workers(8) + workers-graph(3) + neo4j(3) + pgvector(2)
+          # + backend/gw/ui/redis/npm(~5.4) = 29 GB overcommit on 16 GB
+          # host — fits because actual RSS is far below cap (chat 1.6,
+          # workers 0.6-3, etc.).
+          cpus: "2.0"
+          memory: 8G
+        reservations:
+          cpus: "0.25"
+          memory: 1G
+
+  # Dedicated graph-extraction worker. Sits on the `graph_extraction` queue:
+  # entity extraction, cross-book entity linking, all `housekeeping.*` tasks
+  # (CO_OCCURS_WITH recompute, PageRank, Leiden communities, fingerprints).
+  # These tasks routinely run 1-3 h on a multi-volume corpus — keeping them
+  # off `scrapalot-workers` means a CO_OCCURS_WITH MERGE pass can no longer
+  # block a user upload behind it.
+  #
+  # No `--beat` here. The scheduler lives on `scrapalot-workers` (single
+  # instance); beat-emitted housekeeping tasks land on `graph_extraction`
+  # via `task_routes` and this container picks them up.
+  scrapalot-workers-graph:
+    image: ${SCRAPALOT_CHAT_IMAGE:-scrapalot-chat:latest}
+    container_name: scrapalot-workers-graph
+    restart: unless-stopped
+    stop_grace_period: 120s
+    logging: *default-logging
+    # PRD prd_onyx_worker_stability.md Phase 0: threads pool on
+    # graph_extraction too. Heavy housekeeping tasks (CO_OCCURS_WITH
+    # recompute, PageRank) load networkx + scipy at runtime — same prefork
+    # OOM risk as the document workers. `--max-tasks-per-child` removed
+    # (irrelevant for threads pool).
+    command: >
+      celery -A src.main.workers.celery_app worker
+      --queues=graph_extraction
+      --concurrency=${GRAPH_WORKER_CONCURRENCY:-2}
+      --pool=threads
+      --loglevel=info
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    environment:
+      - CELERY_ENABLED=true
+      - POSTGRES_USER=${POSTGRES_USER:-scrapalot}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-scrapalot}
+      - POSTGRES_DB=${POSTGRES_DB:-scrapalot}
+      - POSTGRES_HOST=${CHAT_POSTGRES_HOST:-pgvector}
+      - POSTGRES_PORT=${CHAT_POSTGRES_PORT:-5432}
+      - POSTGRES_FALLBACK_TO_SQLITE=false
+      - POSTGRES_SSL_MODE=${POSTGRES_SSL_MODE:-disable}
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - NEO4J_URI=${NEO4J_URI:-bolt://neo4j:7687}
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-ineedastrongerpassword}
+      - GRAPH_ENABLED=${GRAPH_ENABLED:-true}
+      - GRAPH_ENTITY_EXTRACTION=${GRAPH_ENTITY_EXTRACTION:-true}
+      - GRAPH_RELATIONSHIPS=${GRAPH_RELATIONSHIPS:-true}
+      - GRAPH_CROSS_BOOK=${GRAPH_CROSS_BOOK:-true}
+      - HF_HOME=/app/data/models/huggingface
+      - HUGGINGFACE_HUB_CACHE=/app/data/models/huggingface
+      - HF_HUB_DISABLE_SYMLINKS=1
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=true
+      - HF_HUB_DISABLE_TELEMETRY=1
+      - HF_HUB_OFFLINE=0
+      - TRANSFORMERS_OFFLINE=0
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - JWT_SECRET=${JWT_SECRET:-8f4b6c2a1e9d7f3b5a0c8e6d4a2b0f1e}
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - UPLOAD_PATH=/app/data/upload
+      - LLM_MODELS_DIRECTORY=/app/data/models
+      - SCRAPALOT_CACHE_DIR=/app/data/cache
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    volumes:
+      - scrapalot_data:/app/data
+      - ../src:/app/src
+      - ../configs:/app/configs
+    networks:
+      - scrapalot-network
+    deploy:
+      resources:
+        limits:
+          # 1 vCPU is enough — graph tasks are network/IO bound on Neo4j
+          # MERGE / Cypher pipelines, not CPU. Going wider just contends
+          # with the user-upload workers for shared host CPU.
+          cpus: "1.0"
+          # 3 GB ceiling: graph tasks load spaCy + NetworkX + per-doc
+          # entity sets. Worst observed peak ~2.2 GB on a 90 k-pair
+          # CO_OCCURS_WITH merge.
+          memory: 3G
+        reservations:
+          cpus: "0.25"
+          memory: 1G
+
+  # Scrapalot UI - React/Vite Frontend
+  scrapalot-ui:
+    # Use 'image' for cloud (pre-built), 'build' for local development
+    image: ${SCRAPALOT_UI_IMAGE:-scrapalot-ui:latest}
+    build:
+      context: ../../scrapalot-ui
+      dockerfile: Dockerfile
+      args:
+        # IMPORTANT: These build args are ONLY used during 'docker compose build'
+        # For production deployment via GitHub Actions, these are passed by the workflow
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://api.scrapalot.app/api/v1}
+        - VITE_LLM_INFERENCE_ENDPOINT=${VITE_LLM_INFERENCE_ENDPOINT:-https://api.scrapalot.app/api/v1/llm-inference}
+        - VITE_APP_ENV=${VITE_APP_ENV:-production}
+        - VITE_ENABLE_DEBUG_LOGS=${VITE_ENABLE_DEBUG_LOGS:-false}
+        - VITE_ENABLE_PERFORMANCE_MONITORING=${VITE_ENABLE_PERFORMANCE_MONITORING:-true}
+    container_name: scrapalot-ui
+    restart: unless-stopped
+    # Port exposed for local development
+    ports:
+      - "${SCRAPALOT_UI_PORT:-3000}:3000"
+    environment:
+      # NOTE: VITE_ environment variables at runtime have NO EFFECT on Vite apps!
+      # Vite bakes environment variables into the JavaScript bundle at BUILD TIME.
+      # These runtime env vars are kept only for reference/debugging purposes.
+      # The actual values used by the app are baked into /app/dist/assets/index-*.js
+      - NODE_ENV=production
+    networks:
+      - scrapalot-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:3000",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ============================================================================
+  # Kotlin Services (Spring Boot)
+  # ============================================================================
+
+  # Scrapalot Backend - Spring Boot + Kotlin (Auth, CRUD, gRPC Server)
+  scrapalot-backend:
+    # Use 'image' for cloud (pre-built), 'build' for local development
+    image: ${SCRAPALOT_BACKEND_IMAGE:-scrapalot-backend:latest}
+    build:
+      context: ../../scrapalot-backend
+      dockerfile: Dockerfile
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-01}
+    container_name: scrapalot-backend
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${SCRAPALOT_BACKEND_PORT:-8091}:8091"  # HTTP API
+      - "${SCRAPALOT_GRPC_PORT:-9090}:9090"      # gRPC Server
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      scrapalot-chat:
+        condition: service_started  # Backend starts independently; circuit breaker handles chat unavailability
+    environment:
+      # Spring Profile
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: 8091
+
+      # Database Configuration (shares pgvector container with Python backend, different database)
+      # Python backend uses: scrapalot database
+      # Kotlin backend uses: scrapalot_backend database (created by init-db.sh)
+      POSTGRES_BACKEND_HOST: ${POSTGRES_BACKEND_HOST:-pgvector}
+      POSTGRES_BACKEND_PORT: ${POSTGRES_BACKEND_PORT:-5432}
+      POSTGRES_BACKEND_DB: ${POSTGRES_BACKEND_DB:-scrapalot_backend}
+      POSTGRES_BACKEND_USER: ${POSTGRES_BACKEND_USER:-scrapalot}
+      POSTGRES_BACKEND_PASSWORD: ${POSTGRES_BACKEND_PASSWORD:-scrapalot}
+
+      # Shared key (base64, 32 bytes) for encrypting MCP integration auth tokens
+      # at rest. MUST match scrapalot-chat's MCP_ENCRYPTION_KEY. Empty = plaintext.
+      MCP_ENCRYPTION_KEY: ${MCP_ENCRYPTION_KEY:-}
+
+      # Database Pool Configuration
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
+      DB_POOL_MIN_IDLE: ${DB_POOL_MIN_IDLE:-5}
+
+      # Hibernate Configuration (overrides application-prod.yaml)
+      HIBERNATE_DDL_AUTO: update
+
+      # Liquibase Configuration (Spring Boot properties)
+      SPRING_LIQUIBASE_ENABLED: ${SPRING_LIQUIBASE_ENABLED:-true}
+      SPRING_LIQUIBASE_DEFAULT_SCHEMA: ${SPRING_LIQUIBASE_DEFAULT_SCHEMA:-scrapalot}
+      SPRING_LIQUIBASE_CONTEXTS: ${SPRING_LIQUIBASE_CONTEXTS:-prod}
+
+      # Redis Configuration (Shared with Python backend)
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB_BACKEND:-1}  # Use DB 1 for Java backend (Python uses DB 0)
+
+      # JWT Configuration (MUST match Python backend)
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-14400000}  # 4h, matches application-prod.yaml
+      JWT_REFRESH_EXPIRATION_MS: ${JWT_REFRESH_EXPIRATION_MS:-7776000000}  # 90 days, matches application-prod.yaml
+
+      # Email / SMTP Configuration (Mailgun EU)
+      SMTP_HOST: ${SMTP_HOST:-smtp.eu.mailgun.org}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@scrapalot.app}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Scrapalot AI}
+      EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-hello@mail.scrapalot.app}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      EMAIL_BASE_URL: ${EMAIL_BASE_URL:-https://scrapalot.app}
+
+      # CORS Configuration
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://scrapalot.app,https://app.scrapalot.app}
+      CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-true}
+
+      # OAuth Configuration
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-https://api.scrapalot.app/api/v1/auth/google/callback}
+      FRONTEND_URL: ${FRONTEND_URL:-https://scrapalot.app}
+
+      # Python Chat Service URL (for HTTP proxy to Python AI settings)
+      PYTHON_CHAT_URL: ${PYTHON_CHAT_URL:-http://scrapalot-chat:8090}
+
+      # gRPC Configuration
+      GRPC_SERVER_PORT: 9090
+      GRPC_SERVER_ADDRESS: 0.0.0.0
+      GRPC_REFLECTION_ENABLED: ${GRPC_REFLECTION_ENABLED:-false}
+
+      # WebSocket Configuration
+      WEBSOCKET_ENABLED: ${WEBSOCKET_ENABLED:-true}
+
+      # Upload Configuration
+      UPLOAD_PATH: /app/data/upload
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-500MB}
+
+      # Logging Configuration
+      LOG_LEVEL_ROOT: ${LOG_LEVEL_ROOT:-WARN}
+      LOG_LEVEL_APP: ${LOG_LEVEL_APP:-INFO}
+
+      # Actuator Configuration
+      ACTUATOR_ENDPOINTS: ${ACTUATOR_ENDPOINTS:-health,info,metrics,prometheus}
+      MANAGEMENT_HEALTH_DISKSPACE_ENABLED: false  # Disable disk space warnings (volume is 89% full but functional)
+      MANAGEMENT_HEALTH_MAIL_ENABLED: false  # Disable mail health check (SMTP not configured in local dev)
+
+      # API Documentation (enabled for Gateway Swagger UI aggregation)
+      # Note: Spring Boot env var format - NO hyphens in property names
+      SPRINGDOC_APIDOCS_ENABLED: ${SPRINGDOC_APIDOCS_ENABLED:-true}
+      SPRINGDOC_SWAGGERUI_ENABLED: ${SPRINGDOC_SWAGGERUI_ENABLED:-true}
+
+      # Java Options
+      JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx2048m -XX:+UseG1GC -XX:MaxGCPauseMillis=200}
+
+      # Stripe Payment Integration
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_TEST_MODE: ${STRIPE_TEST_MODE:-true}
+      STRIPE_SUCCESS_URL: ${STRIPE_SUCCESS_URL:-https://scrapalot.app/dashboard?subscription=success}
+      STRIPE_CANCEL_URL: ${STRIPE_CANCEL_URL:-https://scrapalot.app/pricing}
+      STRIPE_PORTAL_RETURN_URL: ${STRIPE_PORTAL_RETURN_URL:-https://scrapalot.app/settings}
+
+      # GitHub Integration (for admin debug git info)
+      GH_TOKEN: ${GH_TOKEN:-}
+
+    volumes:
+      # Shared upload directory with Python backend (profile pictures, documents)
+      # NOTE: Both Backend and Chat share the same upload volume for seamless file access
+      - scrapalot_data:/app/data
+      - backend_logs:/var/log/scrapalot-backend
+      # Docker socket for admin debug (list containers, logs, network analysis)
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Host source repos for the admin debug "deployed commit" resolver.
+      # When an image is tagged only :latest (CI didn't bake a commit hash
+      # tag or OCI revision label, e.g. cached scrapalot-chat builds), the
+      # DockerService falls back to `git -C /opt/scrapalot/<repo> rev-parse
+      # HEAD` to identify what's running. Single-host deploy → host HEAD
+      # matches the running container. Read-only.
+      - /opt/scrapalot:/opt/scrapalot:ro
+
+    networks:
+      - scrapalot-network
+      - host-connection
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    deploy:
+      resources:
+        limits:
+          memory: 2560M  # 2.5GB
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # Scrapalot Gateway - Spring Cloud Gateway (API Gateway, Rate Limiting, Circuit Breaker)
+  scrapalot-gw:
+    # Use 'image' for cloud (pre-built), 'build' for local development
+    image: ${SCRAPALOT_GW_IMAGE:-scrapalot-gw:latest}
+    build:
+      context: ../../scrapalot-gw
+      dockerfile: Dockerfile.local
+    container_name: scrapalot-gw
+    restart: unless-stopped
+    ports:
+      - "${SCRAPALOT_GW_PORT:-8080}:8080"  # API Gateway HTTP
+    depends_on:
+      scrapalot-backend:
+        condition: service_healthy
+      scrapalot-chat:
+        condition: service_started  # Gateway starts independently; has its own circuit breaker
+      redis:
+        condition: service_healthy
+    environment:
+      # Spring Configuration
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: 8080
+      SPRING_CODEC_MAX_IN_MEMORY_SIZE: 512MB  # Default 256KB blocks large file uploads
+
+      # JWT Configuration (MUST match backend)
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-14400000}  # 4h, matches application-prod.yaml
+
+      # Redis Configuration
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB_GATEWAY:-2}  # Use DB 2 for gateway (Python: 0, Backend: 1)
+
+      # Backend Service
+      BACKEND_URL: http://scrapalot-backend:8091
+      BACKEND_TIMEOUT_MS: ${BACKEND_TIMEOUT_MS:-60000}
+
+      # Chat Service
+      CHAT_URL: http://scrapalot-chat:8090
+      CHAT_TIMEOUT_MS: ${CHAT_TIMEOUT_MS:-120000}
+
+      # gRPC Client
+      GRPC_CLIENT_HOST: scrapalot-backend
+      GRPC_CLIENT_PORT: 9090
+      GRPC_CLIENT_TIMEOUT_MS: ${GRPC_CLIENT_TIMEOUT_MS:-5000}
+
+      # CORS
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://scrapalot.app,http://localhost:3000}
+      CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-true}
+
+      # Rate Limiting
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_RESEARCHER_RATE: ${RATE_LIMIT_RESEARCHER_RATE:-10}
+      RATE_LIMIT_RESEARCHER_CAPACITY: ${RATE_LIMIT_RESEARCHER_CAPACITY:-20}
+      RATE_LIMIT_PROFESSIONAL_RATE: ${RATE_LIMIT_PROFESSIONAL_RATE:-50}
+      RATE_LIMIT_PROFESSIONAL_CAPACITY: ${RATE_LIMIT_PROFESSIONAL_CAPACITY:-100}
+      RATE_LIMIT_ENTERPRISE_RATE: ${RATE_LIMIT_ENTERPRISE_RATE:-1000}
+      RATE_LIMIT_ENTERPRISE_CAPACITY: ${RATE_LIMIT_ENTERPRISE_CAPACITY:-2000}
+
+      # Circuit Breaker
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-true}
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: ${CIRCUIT_BREAKER_FAILURE_THRESHOLD:-60}
+      CIRCUIT_BREAKER_SLOW_CALL_THRESHOLD: ${CIRCUIT_BREAKER_SLOW_CALL_THRESHOLD:-80}
+      CIRCUIT_BREAKER_WAIT_DURATION_SECONDS: ${CIRCUIT_BREAKER_WAIT_DURATION_SECONDS:-60}
+
+      # Logging
+      LOG_LEVEL_ROOT: ${LOG_LEVEL_ROOT:-WARN}
+      LOG_LEVEL_APP: ${LOG_LEVEL_APP:-INFO}
+      LOG_LEVEL_GATEWAY: ${LOG_LEVEL_GATEWAY:-INFO}
+
+      # Actuator
+      ACTUATOR_ENDPOINTS: ${ACTUATOR_ENDPOINTS:-health,info,metrics,prometheus}
+
+      # API Versioning
+      API_VERSION_ENABLED: ${API_VERSION_ENABLED:-true}
+      API_VERSIONS: ${API_VERSIONS:-v1,v2}
+
+      # Java Options
+      JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200}
+
+      # GitHub Integration (for CI/CD and API access)
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+
+    networks:
+      - scrapalot-network
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    deploy:
+      resources:
+        limits:
+          memory: 1024M  # 1GB
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+    labels:
+      com.scrapalot.service: "gateway"
+      com.scrapalot.version: "1.0.0"
+
+volumes:
+  pgvector_data:  # Shared PostgreSQL with pgvector for both Python and Kotlin backends
+  portainer_data:
+  npm_data:
+  npm_letsencrypt:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_plugins:
+  scrapalot_data:  # Shared upload directory for both Backend and Chat (profile pictures, documents)
+  backend_logs:    # Kotlin backend logs
+
+networks:
+  scrapalot-network:
+    external: true
+    name: docker-scrapalot_scrapalot-network
+  host-connection:
+    driver: bridge # Dedicated network for host-container communication

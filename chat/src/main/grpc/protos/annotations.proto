@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package scrapalot.annotation;
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.annotation";
+option java_outer_classname = "AnnotationServiceProto";
+
+// Annotation service — fetch document and collection annotations from Kotlin backend.
+// Kotlin is the owner of annotation data; Python reads via gRPC for RAG context enrichment.
+service AnnotationService {
+  // Fetch annotations for a specific document
+  rpc GetDocumentAnnotations(GetDocumentAnnotationsRequest) returns (AnnotationListResponse);
+
+  // Fetch annotations across all documents in a collection
+  rpc GetCollectionAnnotations(GetCollectionAnnotationsRequest) returns (AnnotationListResponse);
+}
+
+message GetDocumentAnnotationsRequest {
+  string document_id = 1;
+  string user_id = 2;
+  int32 max_results = 3;  // 0 = use server default
+}
+
+message GetCollectionAnnotationsRequest {
+  string collection_id = 1;
+  string user_id = 2;
+  int32 max_results = 3;  // 0 = use server default
+}
+
+message AnnotationListResponse {
+  repeated AnnotationMessage annotations = 1;
+  int32 total_count = 2;
+}
+
+message AnnotationMessage {
+  string id = 1;
+  string document_id = 2;
+  string user_id = 3;
+  string collection_id = 4;
+  int32 annotation_type = 5;    // 1=highlight, 2=note, 3=underline
+  string selected_text = 6;
+  string comment = 7;
+  string color = 8;             // hex color, e.g. "#ffd400"
+  string page_label = 9;
+  string position_json = 10;
+  string viewer_type = 11;      // "pdf" or "epub"
+  bool is_pinned = 12;
+  string created_at = 13;       // ISO 8601 timestamp
+  string updated_at = 14;       // ISO 8601 timestamp
+  string session_id = 15;
+  string sort_index = 16;
+}

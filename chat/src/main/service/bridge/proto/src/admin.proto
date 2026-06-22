@@ -1,0 +1,595 @@
+syntax = "proto3";
+
+package scrapalot.admin;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.admin";
+option java_outer_classname = "AdminProto";
+
+// Admin service for debug operations (Docker logs, GitHub workflows).
+// These operations require Python container access.
+service AdminService {
+  rpc TriggerAutofix(TriggerAutofixRequest) returns (TriggerAutofixResponse);
+  rpc GetDebugLogs(GetDebugLogsRequest) returns (GetDebugLogsResponse);
+  rpc RebuildGraph(RebuildGraphRequest) returns (RebuildGraphResponse);
+  rpc RebuildCrossBookRelationships(RebuildCrossBookRequest) returns (RebuildCrossBookResponse);
+
+  // 7.8 v3 prereq — re-run per-document CO_OCCURS_WITH creation for
+  // every completed document in a collection. Fixes the case where
+  // entity extraction completed earlier but produced zero cooccur
+  // edges (e.g. before the cypher-direction bug in
+  // graph_relationship_linker._create_cooccurrence_from_graph was
+  // fixed). Idempotent — uses MERGE.
+  rpc RelinkDocumentCooccurrence(RelinkDocumentCooccurrenceRequest) returns (RelinkDocumentCooccurrenceResponse);
+
+  // Graph housekeeping — read-only health report and destructive cleanup ops.
+  rpc GraphHealthCheck(GraphHealthCheckRequest) returns (GraphHealthCheckResponse);
+  rpc SweepGraphOrphans(SweepGraphOrphansRequest) returns (SweepGraphOrphansResponse);
+  rpc MergeDuplicateEntities(MergeDuplicateEntitiesRequest) returns (MergeDuplicateEntitiesResponse);
+  rpc CleanupMissingFileDocs(CleanupMissingFileDocsRequest) returns (CleanupMissingFileDocsResponse);
+
+  // Baseline census — read-only audit returning a structured snapshot
+  // (volume, ratios, duplicates, orphans, RAG usage, pain-point checks) plus
+  // a pre-rendered markdown report.
+  rpc GraphAudit(GraphAuditRequest) returns (GraphAuditResponse);
+
+  // Sweep `:Entity` nodes with no edges, optional `created_before_days`
+  // floor and a per-call deletion cap.
+  rpc SweepOrphanEntities(SweepOrphanEntitiesRequest) returns (SweepOrphanEntitiesResponse);
+
+  // Run the graph-utility evaluation harness against an eval set
+  // (JSONL) and return aggregated metrics per configuration plus a
+  // pre-rendered markdown report.
+  rpc EvaluateGraphUtility(EvaluateGraphUtilityRequest) returns (EvaluateGraphUtilityResponse);
+
+  // On-demand IDF recompute for all `:Entity` nodes. Normally
+  // runs nightly via Celery beat; this rpc is the admin-panel button.
+  rpc RecomputeEntityIdf(RecomputeEntityIdfRequest) returns (RecomputeEntityIdfResponse);
+
+  // Aggregated per-phase timing + LLM cost accounting from
+  // entity_extraction_metrics. Read-only; populated by phase_timer in the
+  // extraction pipeline.
+  rpc GetEntityExtractionMetrics(GetEntityExtractionMetricsRequest) returns (GetEntityExtractionMetricsResponse);
+
+  // Recompute structured weights on every CO_OCCURS_WITH edge.
+  // Nightly beat runs this at 04:00 UTC; this rpc is the admin-panel button.
+  rpc RecomputeCooccurrenceWeights(RecomputeCooccurrenceWeightsRequest) returns (RecomputeCooccurrenceWeightsResponse);
+
+  // Delete low-weight CO_OCCURS_WITH edges and snapshot them to
+  // Redis for 30 days. `dry_run=true` returns the candidate distribution
+  // without deleting. Percentile of 0 falls back to config default (0.10).
+  rpc PruneCooccurrenceEdges(PruneCooccurrenceEdgesRequest) returns (PruneCooccurrenceEdgesResponse);
+
+  // Compute PageRank centrality for documents in a single
+  // collection (or all eligible collections if collection_id is blank).
+  // Persists scores to documents.pagerank_score.
+  rpc RecomputePageRank(RecomputePageRankRequest) returns (RecomputePageRankResponse);
+
+  // Run the LLM typed-relationship classifier on one
+  // document's top-N entity pairs. Writes IS_A / PART_OF / INFLUENCES /
+  // CONTRADICTS / SYNONYM_OF typed edges with source_chunks provenance.
+  rpc ClassifyTypedRelationships(ClassifyTypedRelationshipsRequest) returns (ClassifyTypedRelationshipsResponse);
+
+  // Recompute per-collection fingerprints (centroid +
+  // top_entities + coverage). Empty collection_id → full nightly pass.
+  rpc RecomputeCollectionFingerprints(RecomputeCollectionFingerprintsRequest) returns (RecomputeCollectionFingerprintsResponse);
+
+  // Detect whether a set of collections qualifies for
+  // bridge mode (distant centroids + shared entities). Read-only.
+  rpc DetectCollectionBridge(DetectCollectionBridgeRequest) returns (DetectCollectionBridgeResponse);
+
+  // Hierarchical Leiden communities + LLM reports for one
+  // collection. Admin-triggered build; nightly beat handles automated reruns.
+  rpc BuildCommunities(BuildCommunitiesRequest) returns (BuildCommunitiesResponse);
+
+  // Read-only fetch of the persisted community hierarchy
+  // for one collection (level → list of communities with title / size / rating).
+  rpc GetCommunityHierarchy(GetCommunityHierarchyRequest) returns (GetCommunityHierarchyResponse);
+
+  // Full report (title, summary, rating, rating_explanation,
+  // findings, member entity ids) for one community. Drives the Communities tab
+  // side panel.
+  rpc GetCommunityReport(GetCommunityReportRequest) returns (GetCommunityReportResponse);
+
+  // Cross-factorial harness
+  // comparison. Kick off the (retriever × delivery_mode × prompt_variant)
+  // grid runner against the supplied eval-set sample. Returns the run_id
+  // immediately; the run executes asynchronously via asyncio.create_task.
+  // CI deploy-window guard runs internally — when active jobs / graph syncs
+  // are in flight, the run is recorded with status "blocked_deploy_window"
+  // and no cells are executed.
+  rpc RunHarnessComparison(RunHarnessComparisonRequest) returns (RunHarnessComparisonResponse);
+
+  // Companion to RunHarnessComparison — admin UI polls this until status
+  // transitions to "done" / "failed" / "blocked_deploy_window" and renders
+  // the summary table from the aggregated JSON.
+  rpc GetHarnessComparison(GetHarnessComparisonRequest) returns (GetHarnessComparisonResponse);
+}
+
+message TriggerAutofixRequest {
+  string user_id = 1;
+  string error_log = 2;
+  optional string error_context = 3;
+  optional string pr_body = 4;
+  string target_repo = 5; // "backend" or "frontend"
+}
+
+message TriggerAutofixResponse {
+  bool success = 1;
+  string message = 2;
+  optional string branch_name = 3;
+}
+
+message GetDebugLogsRequest {
+  string user_id = 1;
+  optional string container_name = 2;
+  optional int32 tail_lines = 3;
+}
+
+message GetDebugLogsResponse {
+  bool success = 1;
+  string logs = 2;
+  optional string error_context = 3;
+  optional string warning_context = 4;
+}
+
+message RebuildGraphRequest {
+  string user_id = 1;
+  optional string collection_id = 2;
+  // Cap the number of documents processed in a single dispatch. Used to
+  // run bulk rebuilds as a sequence of smaller batches instead of one
+  // long-running RPC that monopolises Neo4j + the event loop. 0 =
+  // unlimited (legacy behaviour).
+  int32 limit = 3;
+}
+
+message RebuildGraphResponse {
+  bool success = 1;
+  string message = 2;
+  int32 documents_processed = 3;
+  int32 entities_extracted = 4;
+}
+
+message RebuildCrossBookRequest {
+  string user_id = 1;
+  optional string collection_id = 2;
+}
+
+message RebuildCrossBookResponse {
+  bool success = 1;
+  string message = 2;
+  int32 relationships_created = 3;
+  int32 books_processed = 4;
+}
+
+// ---------- Graph Housekeeping ----------
+
+message GraphHealthCheckRequest {
+  string user_id = 1;
+}
+
+message GraphHealthCheckFinding {
+  string severity = 1;       // critical | warning | info
+  string category = 2;
+  string metric = 3;
+  string message = 4;
+  repeated string sample = 5;
+}
+
+message GraphHealthCheckResponse {
+  bool success = 1;
+  int32 critical_count = 2;
+  int32 warning_count = 3;
+  int32 info_count = 4;
+  repeated GraphHealthCheckFinding findings = 5;
+  // JSON-encoded summary stats for extensibility (totals, distributions, etc.)
+  string stats_json = 6;
+}
+
+message SweepGraphOrphansRequest {
+  string user_id = 1;
+  bool dry_run = 2;
+  bool purge_empty_workspaces = 3;
+}
+
+message SweepGraphOrphansResponse {
+  bool success = 1;
+  int32 orphan_chunks_deleted = 2;
+  int32 orphan_sections_deleted = 3;
+  int32 orphan_chapters_deleted = 4;
+  int32 orphan_books_deleted = 5;
+  int32 empty_workspaces_deleted = 6;
+  int32 total_deleted = 7;
+  string message = 8;
+}
+
+message MergeDuplicateEntitiesRequest {
+  string user_id = 1;
+  bool dry_run = 2;
+  int32 batch_size = 3;       // defaults to 500 if 0
+}
+
+message MergeDuplicateEntitiesResponse {
+  bool success = 1;
+  int32 groups_merged = 2;
+  int32 duplicate_nodes_removed = 3;
+  int32 edges_redirected = 4;
+  string message = 5;
+  // JSON array of duplicate-group previews, populated only when dry_run=true.
+  // Each entry: { canonical_name, primary_id, merge_count, labels: [...] }.
+  // Used by the admin merge wizard to show what WOULD be merged before
+  // the operator commits.
+  string sample_groups_json = 6;
+}
+
+message CleanupMissingFileDocsRequest {
+  string user_id = 1;
+  bool dry_run = 2;
+}
+
+message CleanupMissingFileDocsResponse {
+  bool success = 1;
+  int32 docs_processed = 2;
+  int32 pg_embeddings_deleted = 3;
+  int32 neo4j_nodes_deleted = 4;
+  string message = 5;
+}
+
+// ---------- Graph Audit (baseline) ----------
+
+message GraphAuditRequest {
+  string user_id = 1;
+}
+
+message GraphAuditResponse {
+  bool success = 1;
+  string measured_at = 2;            // ISO 8601 UTC
+  // Structured payload: AuditResult.to_dict() serialized as JSON. Keeps the
+  // proto stable as the audit grows new sections.
+  string audit_json = 3;
+  // Pre-rendered markdown report — same content the CLI writes to a file.
+  string markdown_report = 4;
+}
+
+// ---------- Sweep Orphan Entities ----------
+
+message SweepOrphanEntitiesRequest {
+  string user_id = 1;
+  bool dry_run = 2;
+  // Skip nodes created within the last N days (default 7). Pass 0 to disable
+  // the floor — only safe on a fully-quiesced graph.
+  int32 created_before_days = 3;
+  // Maximum nodes to delete in this call (defence in depth on first runs).
+  // 0 means no cap.
+  int32 limit = 4;
+}
+
+message SweepOrphanEntitiesResponse {
+  bool success = 1;
+  int32 candidates = 2;
+  int32 deleted = 3;
+  int32 created_before_days = 4;
+  repeated string sample_names = 5;
+  string message = 6;
+}
+
+// ---------- Evaluate Graph Utility ----------
+
+message EvaluateGraphUtilityRequest {
+  string user_id = 1;
+  // Path inside the scrapalot-chat container. Defaults to
+  // `tests/rag_eval/graph_utility_eval_set.jsonl` if blank.
+  string eval_set_path = 2;
+  // Optional explicit configuration list — JSON array of
+  //   {"name": "...", "strategy": "RAGSimilaritySearch"} objects.
+  // Defaults to the 3 retrieval-only configurations
+  // (vector_only, vector_plus_entity_expanded, tri_modal).
+  string configurations_json = 3;
+  // top-K for recall@K / precision@K. Defaults to 10.
+  int32 top_k = 4;
+}
+
+message EvaluateGraphUtilityResponse {
+  bool success = 1;
+  string started_at = 2;
+  string finished_at = 3;
+  // Structured payload: EvaluationRun.to_dict() serialized as JSON.
+  string run_json = 4;
+  // Pre-rendered markdown — same content the CLI writes to a file.
+  string markdown_report = 5;
+  string message = 6;
+}
+
+// ---------- Recompute Entity IDF ----------
+
+message RecomputeEntityIdfRequest {
+  string user_id = 1;
+  bool dry_run = 2;
+}
+
+message RecomputeEntityIdfResponse {
+  bool success = 1;
+  int32 total_documents = 2;
+  int32 total_entities = 3;
+  int32 updated = 4;
+  int32 skipped_no_mentions = 5;
+  double p50_idf = 6;
+  double p95_idf = 7;
+  double max_idf = 8;
+  double min_idf = 9;
+  // Top 10 rarest entities by IDF — JSON array of {id, name, df, idf}.
+  string sample_rare_entities_json = 10;
+  string message = 11;
+}
+
+// ---------- Entity Extraction Metrics ----------
+
+message GetEntityExtractionMetricsRequest {
+  string user_id = 1;
+  // Look-back window in days (default 7).
+  int32 window_days = 2;
+  // Maximum rows in the per-document breakdown.
+  int32 top_documents_limit = 3;
+}
+
+message GetEntityExtractionMetricsResponse {
+  bool success = 1;
+  // Single JSON payload (totals, per_phase, per_document_top) — keeps the
+  // proto stable as new aggregates arrive.
+  string summary_json = 2;
+  string message = 3;
+}
+
+// ---------- Cooccurrence weights ----------
+
+message RecomputeCooccurrenceWeightsRequest {
+  string user_id = 1;
+}
+
+message RelinkDocumentCooccurrenceRequest {
+  string user_id = 1;
+  string collection_id = 2;
+  // Min shared chunks for an entity pair to qualify (default 2).
+  int32 min_cooccurrence = 3;
+}
+
+message RelinkDocumentCooccurrenceResponse {
+  bool success = 1;
+  int32 documents_processed = 2;
+  int32 cooccurrence_edges_created = 3;
+  int32 chunk_entity_links_added = 4;
+  string message = 5;
+}
+
+message RecomputeCooccurrenceWeightsResponse {
+  bool success = 1;
+  int32 total_edges = 2;
+  int32 updated = 3;
+  int32 skipped = 4;
+  double p50_weighted = 5;
+  double p95_weighted = 6;
+  double max_weighted = 7;
+  int32 max_chunk_count = 8;
+  int32 max_document_count = 9;
+  // Top 10 heaviest edges — JSON array of {left, right, chunks, documents, weighted_score}.
+  string sample_top_edges_json = 10;
+  string message = 11;
+}
+
+message PruneCooccurrenceEdgesRequest {
+  string user_id = 1;
+  bool dry_run = 2;
+  // 0 = use config default, otherwise interpret as percentile in (0, 1).
+  double percentile = 3;
+}
+
+message PruneCooccurrenceEdgesResponse {
+  bool success = 1;
+  bool dry_run = 2;
+  double threshold_percentile = 3;
+  double threshold_value = 4;
+  int32 total_edges_before = 5;
+  int32 edges_deleted = 6;
+  string snapshot_key_prefix = 7;
+  // Sample of pruned candidates — JSON array, top 10 by lowest weight.
+  string sample_pruned_json = 8;
+  string message = 9;
+}
+
+// ---------- PageRank ----------
+
+message RecomputePageRankRequest {
+  string user_id = 1;
+  // Empty → full pass across every collection with ≥ min_books_for_pagerank
+  // documents. Non-empty → scope to just that collection.
+  string collection_id = 2;
+}
+
+message RecomputePageRankResponse {
+  bool success = 1;
+  int32 collections_processed = 2;
+  int32 books_scored = 3;
+  int32 books_considered = 4;
+  int32 edges_projected = 5;
+  int32 longest_duration_ms = 6;
+  // JSON list of per-collection PageRankResult dicts (top books, distribution,
+  // skipped collections). Kept as JSON to stay stable as the schema grows.
+  string results_json = 7;
+  string message = 8;
+}
+
+// ---------- Typed relationship classifier ----------
+
+message ClassifyTypedRelationshipsRequest {
+  string user_id = 1;
+  string document_id = 2;   // required
+  int32 max_pairs = 3;      // 0 → config default
+  double min_weight = 4;    // 0 → config default
+  double min_confidence = 5;// 0 → config default
+}
+
+message ClassifyTypedRelationshipsResponse {
+  bool success = 1;
+  string document_id = 2;
+  int32 pair_count = 3;
+  int32 llm_calls = 4;
+  int32 skipped_low_confidence = 5;
+  int32 skipped_none = 6;
+  // JSON object {IS_A: n, PART_OF: n, ...} of typed edges persisted.
+  string persisted_by_type_json = 7;
+  string message = 8;
+}
+
+// ---------- Collection fingerprints ----------
+
+message RecomputeCollectionFingerprintsRequest {
+  string user_id = 1;
+  // Empty → full pass across every collection with at least one embedded chunk.
+  string collection_id = 2;
+}
+
+message RecomputeCollectionFingerprintsResponse {
+  bool success = 1;
+  int32 collections_processed = 2;
+  int32 with_centroid = 3;
+  // JSON list of per-collection fingerprint dicts (chunk_count, coverage, sample).
+  string fingerprints_json = 4;
+  string message = 5;
+}
+
+message DetectCollectionBridgeRequest {
+  string user_id = 1;
+  repeated string collection_ids = 2;   // required, min 2
+}
+
+message DetectCollectionBridgeResponse {
+  bool success = 1;
+  // "distant" | "adjacent" | "overlapping" | "insufficient_data"
+  string mode = 2;
+  // Full BridgeVerdict.to_dict() — pair_distances, shared_entities,
+  // disqualified, thresholds. Kept as JSON so the schema can evolve.
+  string verdict_json = 3;
+  string message = 4;
+}
+
+// ---------- Communities (Leiden) ----------
+
+message BuildCommunitiesRequest {
+  string user_id = 1;
+  string collection_id = 2;
+  // RAGFlow default 12; admin tunables only.
+  int32 max_cluster_size = 3;
+  // false → algorithmic build only, no LLM calls (cheap).
+  bool generate_reports = 4;
+  int32 parallelism = 5;  // LLM concurrency; 0 → service default.
+}
+
+message BuildCommunitiesResponse {
+  bool success = 1;
+  int32 communities_total = 2;
+  int32 reports_written = 3;
+  // {level: count} JSON for the admin progress display.
+  string sizes_by_level_json = 4;
+  string message = 5;
+}
+
+message GetCommunityHierarchyRequest {
+  string user_id = 1;
+  string collection_id = 2;
+}
+
+message CommunitySummary {
+  string community_id = 1;
+  int32 level = 2;
+  int32 size = 3;
+  double weight = 4;
+  // optional — populated only after reports were generated
+  string title = 5;
+  double rating = 6;
+  // empty string when this community has no parent (level 0 with no recursion above).
+  string parent_community_id = 7;
+}
+
+message GetCommunityHierarchyResponse {
+  bool success = 1;
+  repeated CommunitySummary communities = 2;
+  string message = 3;
+}
+
+message GetCommunityReportRequest {
+  string user_id = 1;
+  string community_id = 2;
+}
+
+message Finding {
+  string summary = 1;
+  string explanation = 2;
+}
+
+message GetCommunityReportResponse {
+  bool success = 1;
+  string community_id = 2;
+  string title = 3;
+  string summary = 4;
+  double rating = 5;
+  string rating_explanation = 6;
+  repeated Finding findings = 7;
+  // member entity ids — drives the side-panel "view related entities" list
+  repeated string member_entity_ids = 8;
+  string message = 9;
+}
+
+// ---------- Harness Comparison ----------
+
+message RunHarnessComparisonRequest {
+  string user_id = 1;
+  // Opaque snapshot id for the eval set (rolled forward by the caller).
+  // The Python side currently uses a built-in mini eval set; richer eval-set
+  // loading is a follow-up.
+  string eval_set_id = 2;
+  // Grid axes — empty list defers to the config.yaml defaults.
+  repeated string retrievers = 3;
+  repeated string delivery_modes = 4;
+  repeated string prompt_variants = 5;
+  // 0 = use the full eval set.
+  int32 sample_size = 6;
+  // 0 = use the config.yaml default (4).
+  int32 max_concurrent = 7;
+}
+
+message RunHarnessComparisonResponse {
+  bool success = 1;
+  // UUID of the harness_comparison_runs row. Use this with
+  // GetHarnessComparison to poll status / fetch the summary.
+  string run_id = 2;
+  // Initial status — typically "queued" or "running"; "blocked_deploy_window"
+  // when the CI guard refused to start the run.
+  string status = 3;
+  string message = 4;
+}
+
+message GetHarnessComparisonRequest {
+  string user_id = 1;
+  string run_id = 2;
+}
+
+message GetHarnessComparisonResponse {
+  bool success = 1;
+  string run_id = 2;
+  // One of: queued | running | done | failed | blocked_deploy_window.
+  string status = 3;
+  string started_at = 4;
+  string completed_at = 5;
+  // Configuration snapshot the run was launched with — JSON.
+  string config_json = 6;
+  // Aggregated summary — JSON shape produced by
+  // harness_report.aggregate_summary. Empty until status="done".
+  string summary_json = 7;
+  // Pre-rendered markdown (harness_report.render_markdown). Empty until
+  // status="done".
+  string markdown_report = 8;
+  string error_message = 9;
+  string message = 10;
+}

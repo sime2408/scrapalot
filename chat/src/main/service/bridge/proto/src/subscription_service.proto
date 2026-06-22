@@ -1,0 +1,375 @@
+syntax = "proto3";
+
+// Scrapalot Bridge API - Subscription Service
+// Version: 1.0.0
+// Last Updated: 2026-01-31
+//
+// Handles subscription plans, usage limits, billing, and Stripe integration.
+// Both Python (scrapalot-chat) and Kotlin (scrapalot-backend) must use
+// matching versions of these proto files.
+
+package scrapalot.subscription;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.subscription";
+option java_outer_classname = "SubscriptionServiceProto";
+
+// Subscription Service
+// Handles subscription plans, user subscriptions, usage limits, and Stripe integration
+service SubscriptionService {
+  // ============================================
+  // PLAN MANAGEMENT
+  // ============================================
+
+  // List all active subscription plans
+  rpc ListPlans(ListPlansRequest) returns (PlanListResponse);
+
+  // Get a specific plan by ID
+  rpc GetPlan(common.UUID) returns (PlanResponse);
+
+  // Get plan by name (e.g., "free", "pro", "enterprise")
+  rpc GetPlanByName(GetPlanByNameRequest) returns (PlanResponse);
+
+  // ============================================
+  // USER SUBSCRIPTION
+  // ============================================
+
+  // Get user's current subscription
+  rpc GetUserSubscription(common.UUID) returns (UserSubscriptionResponse);
+
+  // Get user's subscription with plan details
+  rpc GetUserSubscriptionWithPlan(common.UUID) returns (UserSubscriptionWithPlanResponse);
+
+  // Create or update user subscription
+  rpc CreateSubscription(CreateSubscriptionRequest) returns (UserSubscriptionResponse);
+
+  // Cancel subscription (at period end)
+  rpc CancelSubscription(CancelSubscriptionRequest) returns (common.StatusResponse);
+
+  // Reactivate cancelled subscription
+  rpc ReactivateSubscription(common.UUID) returns (UserSubscriptionResponse);
+
+  // Change subscription plan
+  rpc ChangePlan(ChangePlanRequest) returns (UserSubscriptionResponse);
+
+  // ============================================
+  // USAGE LIMITS (for Python to check before operations)
+  // ============================================
+
+  // Check if user can perform an operation (storage, documents, tokens)
+  rpc CheckUsageLimit(UsageLimitRequest) returns (UsageLimitResponse);
+
+  // Get all usage limits and current usage for a user
+  rpc GetUsageSummary(common.UUID) returns (UsageSummaryResponse);
+
+  // Check multiple limits at once
+  rpc CheckMultipleLimits(CheckMultipleLimitsRequest) returns (CheckMultipleLimitsResponse);
+
+  // ============================================
+  // USAGE TRACKING (for Python to increment after operations)
+  // ============================================
+
+  // Increment usage counter
+  rpc IncrementUsage(IncrementUsageRequest) returns (common.StatusResponse);
+
+  // Decrement usage counter (e.g., when document is deleted)
+  rpc DecrementUsage(DecrementUsageRequest) returns (common.StatusResponse);
+
+  // Get detailed usage statistics
+  rpc GetUsageStats(GetUsageStatsRequest) returns (UsageStatsResponse);
+
+  // Reset usage counters (for billing period reset)
+  rpc ResetUsage(ResetUsageRequest) returns (common.StatusResponse);
+
+  // ============================================
+  // STRIPE INTEGRATION
+  // ============================================
+
+  // Create Stripe checkout session
+  rpc CreateCheckoutSession(CreateCheckoutSessionRequest) returns (CheckoutSessionResponse);
+
+  // Create Stripe customer portal session
+  rpc CreatePortalSession(common.UUID) returns (PortalSessionResponse);
+
+  // Handle Stripe webhook events
+  rpc HandleStripeWebhook(StripeWebhookRequest) returns (common.StatusResponse);
+
+  // Sync subscription from Stripe
+  rpc SyncFromStripe(SyncFromStripeRequest) returns (UserSubscriptionResponse);
+}
+
+// ============================================
+// PLAN MESSAGES
+// ============================================
+
+message ListPlansRequest {
+  bool include_inactive = 1; // Include inactive plans (admin only)
+}
+
+message GetPlanByNameRequest {
+  string name = 1; // "free", "pro", "enterprise"
+}
+
+message PlanResponse {
+  common.UUID id = 1;
+  string name = 2;
+  string display_name = 3;
+  string description = 4;
+
+  // Pricing
+  double price_monthly = 5;
+  double price_annual = 6;
+  string stripe_price_id_monthly = 7;
+  string stripe_price_id_annual = 8;
+
+  // Limits
+  int64 storage_limit_bytes = 9;
+  int32 documents_limit = 10;
+  int64 tokens_limit = 11;
+  int32 max_workspaces = 12;
+  int32 max_collections_per_workspace = 13;
+  int32 max_documents_per_collection = 14;
+
+  // Features (JSON as string)
+  string features = 15;
+
+  // Metadata
+  int32 sort_order = 16;
+  bool is_active = 17;
+  int32 trial_days = 18;
+
+  common.Timestamp created_at = 19;
+  common.Timestamp updated_at = 20;
+}
+
+message PlanListResponse {
+  repeated PlanResponse plans = 1;
+}
+
+// ============================================
+// USER SUBSCRIPTION MESSAGES
+// ============================================
+
+message UserSubscriptionResponse {
+  common.UUID id = 1;
+  common.UUID user_id = 2;
+  common.UUID subscription_plan_id = 3;
+
+  string status = 4; // "active", "cancelled", "past_due", "trialing"
+  string billing_cycle = 5; // "monthly", "annual"
+  string payment_method = 6;
+
+  // Stripe IDs
+  string stripe_subscription_id = 7;
+  string stripe_customer_id = 8;
+
+  // Billing period
+  common.Timestamp current_period_start = 9;
+  common.Timestamp current_period_end = 10;
+  bool cancel_at_period_end = 11;
+
+  // Timestamps
+  common.Timestamp subscribed_at = 12;
+  common.Timestamp cancelled_at = 13;
+  common.Timestamp created_at = 14;
+  common.Timestamp updated_at = 15;
+}
+
+message UserSubscriptionWithPlanResponse {
+  UserSubscriptionResponse subscription = 1;
+  PlanResponse plan = 2;
+}
+
+message CreateSubscriptionRequest {
+  common.UUID user_id = 1;
+  common.UUID plan_id = 2;
+  string billing_cycle = 3; // "monthly", "annual"
+  optional string stripe_subscription_id = 4;
+  optional string stripe_customer_id = 5;
+  optional string payment_method = 6;
+}
+
+message CancelSubscriptionRequest {
+  common.UUID user_id = 1;
+  bool cancel_immediately = 2; // false = cancel at period end
+  optional string reason = 3;
+}
+
+message ChangePlanRequest {
+  common.UUID user_id = 1;
+  common.UUID new_plan_id = 2;
+  string billing_cycle = 3; // "monthly", "annual"
+  bool prorate = 4; // Prorate charges
+}
+
+// ============================================
+// USAGE LIMIT MESSAGES
+// ============================================
+
+// Usage types that can be checked/incremented
+enum UsageType {
+  USAGE_TYPE_UNSPECIFIED = 0;
+  STORAGE_BYTES = 1;
+  DOCUMENTS = 2;
+  TOKENS = 3;
+  WORKSPACES = 4;
+  COLLECTIONS = 5;
+  API_CALLS = 6;
+}
+
+message UsageLimitRequest {
+  common.UUID user_id = 1;
+  UsageType usage_type = 2;
+  int64 requested_amount = 3; // Amount to check (e.g., file size in bytes)
+  optional common.UUID workspace_id = 4; // For workspace-scoped limits
+  optional common.UUID collection_id = 5; // For collection-scoped limits
+}
+
+message UsageLimitResponse {
+  bool allowed = 1;
+  int64 current_usage = 2;
+  int64 limit = 3;
+  int64 remaining = 4;
+  double usage_percentage = 5; // 0.0 - 100.0
+  string message = 6; // Human-readable message if denied
+
+  // Upgrade suggestion
+  bool upgrade_available = 7;
+  optional string suggested_plan = 8;
+}
+
+message UsageSummaryResponse {
+  common.UUID user_id = 1;
+  string plan_name = 2;
+
+  // Storage
+  int64 storage_used_bytes = 3;
+  int64 storage_limit_bytes = 4;
+  double storage_percentage = 5;
+
+  // Documents
+  int32 documents_used = 6;
+  int32 documents_limit = 7;
+  double documents_percentage = 8;
+
+  // Tokens (for current billing period)
+  int64 tokens_used = 9;
+  int64 tokens_limit = 10;
+  double tokens_percentage = 11;
+
+  // Workspaces
+  int32 workspaces_used = 12;
+  int32 workspaces_limit = 13;
+
+  // Billing period
+  common.Timestamp period_start = 14;
+  common.Timestamp period_end = 15;
+  int32 days_remaining = 16;
+}
+
+message CheckMultipleLimitsRequest {
+  common.UUID user_id = 1;
+  repeated SingleLimitCheck checks = 2;
+}
+
+message SingleLimitCheck {
+  UsageType usage_type = 1;
+  int64 requested_amount = 2;
+  optional common.UUID workspace_id = 3;
+  optional common.UUID collection_id = 4;
+}
+
+message CheckMultipleLimitsResponse {
+  bool all_allowed = 1;
+  repeated UsageLimitResponse results = 2;
+}
+
+// ============================================
+// USAGE TRACKING MESSAGES
+// ============================================
+
+message IncrementUsageRequest {
+  common.UUID user_id = 1;
+  UsageType usage_type = 2;
+  int64 amount = 3;
+  optional common.UUID workspace_id = 4;
+  optional common.UUID collection_id = 5;
+  optional string description = 6; // For audit log
+}
+
+message DecrementUsageRequest {
+  common.UUID user_id = 1;
+  UsageType usage_type = 2;
+  int64 amount = 3;
+  optional common.UUID workspace_id = 4;
+  optional common.UUID collection_id = 5;
+  optional string description = 6;
+}
+
+message GetUsageStatsRequest {
+  common.UUID user_id = 1;
+  optional common.Timestamp start_date = 2;
+  optional common.Timestamp end_date = 3;
+  optional UsageType filter_type = 4;
+}
+
+message UsageStatsResponse {
+  common.UUID user_id = 1;
+  repeated UsageRecord records = 2;
+  UsageSummaryResponse current_summary = 3;
+
+  // Trends
+  double storage_growth_rate = 4; // bytes per day
+  double document_growth_rate = 5; // documents per day
+  double avg_tokens_per_day = 6;
+}
+
+message UsageRecord {
+  common.Timestamp timestamp = 1;
+  UsageType usage_type = 2;
+  int64 amount = 3;
+  string action = 4; // "increment", "decrement", "reset"
+  optional string description = 5;
+}
+
+message ResetUsageRequest {
+  common.UUID user_id = 1;
+  repeated UsageType usage_types = 2; // Empty = reset all
+  string reason = 3;
+}
+
+// ============================================
+// STRIPE INTEGRATION MESSAGES
+// ============================================
+
+message CreateCheckoutSessionRequest {
+  common.UUID user_id = 1;
+  common.UUID plan_id = 2;
+  string billing_cycle = 3; // "monthly", "annual"
+  string success_url = 4;
+  string cancel_url = 5;
+  optional string coupon_code = 6;
+}
+
+message CheckoutSessionResponse {
+  string session_id = 1;
+  string checkout_url = 2;
+  common.Timestamp expires_at = 3;
+}
+
+message PortalSessionResponse {
+  string session_id = 1;
+  string portal_url = 2;
+}
+
+message StripeWebhookRequest {
+  string payload = 1; // Raw webhook payload
+  string signature = 2; // Stripe signature header
+}
+
+message SyncFromStripeRequest {
+  common.UUID user_id = 1;
+  optional string stripe_subscription_id = 2;
+}

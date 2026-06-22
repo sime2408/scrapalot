@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package scrapalot.ai;
+
+import "google/protobuf/empty.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.ai";
+option java_outer_classname = "DocumentsProto";
+
+// =============================================================================
+// Document Processing Service - AI-powered document processing
+// =============================================================================
+
+service DocumentProcessingService {
+  // Process a single document (chunking, embedding, indexing)
+  rpc ProcessDocument(ProcessDocumentRequest) returns (stream ProcessingStatusChunk);
+
+  // Process all pending documents in a collection
+  rpc ProcessPendingDocuments(ProcessPendingRequest) returns (stream ProcessingStatusChunk);
+
+  // Cancel processing job
+  rpc CancelProcessing(CancelProcessingRequest) returns (CancelProcessingResponse);
+
+  // Get processing status
+  rpc GetProcessingStatus(ProcessingStatusRequest) returns (ProcessingStatusResponse);
+
+  // Reprocess document (re-chunk, re-embed, re-index)
+  rpc ReprocessDocument(ReprocessDocumentRequest) returns (stream ProcessingStatusChunk);
+
+  // Cleanup embeddings for a collection
+  rpc CleanupEmbeddings(CleanupEmbeddingsRequest) returns (CleanupEmbeddingsResponse);
+}
+
+// =============================================================================
+// Messages
+// =============================================================================
+
+message ProcessDocumentRequest {
+  string document_id = 1;
+  string user_id = 2;           // User context (for logging)
+  string collection_id = 3;     // Collection UUID
+  string file_path = 4;         // Absolute file path on server
+  string owner_user_id = 5;     // Owner user ID for collection_workspace_map
+  string workspace_name = 6;    // Workspace name for collection_workspace_map
+  string collection_name = 7;   // Collection name for collection_workspace_map
+}
+
+message ProcessPendingRequest {
+  string collection_id = 1;
+  string user_id = 2;           // User context (for logging)
+  string workspace_id = 3;      // Workspace UUID
+}
+
+message CancelProcessingRequest {
+  string job_id = 1;
+  string user_id = 2;           // User context (for logging)
+}
+
+message CancelProcessingResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ProcessingStatusRequest {
+  string job_id = 1;
+  string user_id = 2;           // User context (for logging)
+}
+
+message ProcessingStatusResponse {
+  string job_id = 1;
+  string status = 2;            // pending, processing, completed, failed
+  float progress = 3;           // 0.0-100.0
+  optional string message = 4;
+  optional string error = 5;
+}
+
+message ReprocessDocumentRequest {
+  string document_id = 1;
+  string user_id = 2;           // User context (for logging)
+  string collection_id = 3;
+}
+
+message CleanupEmbeddingsRequest {
+  string collection_id = 1;
+  string user_id = 2;           // User context (for logging)
+}
+
+message CleanupEmbeddingsResponse {
+  bool success = 1;
+  string message = 2;
+  int32 deleted_count = 3;      // Number of deleted embeddings
+}
+
+// Streaming processing status
+message ProcessingStatusChunk {
+  string job_id = 1;
+  string status = 2;            // pending, processing, completed, failed
+  float progress = 3;           // 0.0-100.0
+  string message = 4;
+  optional string packet_json = 5; // Full JSON packet from PacketEmitter
+}
+
+// =============================================================================
+// Document Collection Service - Multi-collection document membership
+// =============================================================================
+
+service DocumentCollectionService {
+  // Add a document to an additional collection
+  rpc AddDocumentToCollection(AddDocToCollectionRequest) returns (google.protobuf.Empty);
+
+  // Remove a document from a collection
+  rpc RemoveDocumentFromCollection(RemoveDocFromCollectionRequest) returns (google.protobuf.Empty);
+
+  // Get all collections a document belongs to
+  rpc GetDocumentCollections(GetDocCollectionsRequest) returns (GetDocCollectionsResponse);
+}
+
+message AddDocToCollectionRequest {
+  string document_id = 1;
+  string collection_id = 2;
+  string user_id = 3;
+}
+
+message RemoveDocFromCollectionRequest {
+  string document_id = 1;
+  string collection_id = 2;
+  string user_id = 3;
+}
+
+message GetDocCollectionsRequest {
+  string document_id = 1;
+}
+
+message GetDocCollectionsResponse {
+  repeated CollectionMembership memberships = 1;
+}
+
+message CollectionMembership {
+  string collection_id = 1;
+  string added_at = 2;
+}

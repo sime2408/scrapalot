@@ -1,0 +1,302 @@
+name: PR Fix (Auto-fix from Review)
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  claude-fix:
+    # Only trigger on @claude-fix command from authorized users
+    if: |
+      (
+        github.event_name == 'issue_comment' ||
+        github.event_name == 'pull_request_review_comment'
+      ) &&
+      contains(github.event.comment.body, '@claude-fix') &&
+      contains(fromJSON('["sime2408"]'), github.event.comment.user.login)
+
+    # Use self-hosted runner on Hetzner server
+    runs-on: self-hosted
+
+    # Use production environment for secrets
+    environment: prod
+
+    permissions:
+      contents: write # Allow creating branches and editing files
+      pull-requests: write # Allow creating and updating pull requests
+      issues: write # Allow commenting on and updating issues
+      id-token: write # Required for OIDC authentication
+      actions: read # Read CI results
+
+    steps:
+      - name: Install dependencies
+        run: |
+          # Install unzip if not present (required by bun setup)
+          if ! command -v unzip &> /dev/null; then
+            echo "Installing unzip..."
+            sudo apt-get update -qq
+            sudo apt-get install -y unzip
+          fi
+
+          # Install jq if not present (required for JSON processing)
+          if ! command -v jq &> /dev/null; then
+            echo "Installing jq..."
+            sudo apt-get update -qq
+            sudo apt-get install -y jq
+          fi
+
+      - name: Fix Git ownership (self-hosted runner) - BEFORE checkout
+        run: |
+          # Add safe directory before checkout to prevent ownership issues
+          git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
+          git config --global --add safe.directory '*' || true
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for better context
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          set-safe-directory: true # Automatically add to safe.directory
+
+      - name: Get PR information
+        id: pr-info
+        run: |
+          # Get the PR number from the event
+          if [ "${{ github.event_name }}" == "issue_comment" ]; then
+            PR_NUMBER="${{ github.event.issue.number }}"
+          else
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          fi
+
+          echo "PR_NUMBER=${PR_NUMBER}" >> $GITHUB_OUTPUT
+
+          # Get PR details using gh CLI
+          PR_BRANCH=$(gh pr view ${PR_NUMBER} --json headRefName -q .headRefName)
+          PR_TITLE=$(gh pr view ${PR_NUMBER} --json title -q .title)
+          BASE_BRANCH=$(gh pr view ${PR_NUMBER} --json baseRefName -q .baseRefName)
+
+          echo "PR_BRANCH=${PR_BRANCH}" >> $GITHUB_OUTPUT
+          echo "PR_TITLE=${PR_TITLE}" >> $GITHUB_OUTPUT
+          echo "BASE_BRANCH=${BASE_BRANCH}" >> $GITHUB_OUTPUT
+
+          # Create bugfix branch name
+          BUGFIX_BRANCH="bugfix/${PR_BRANCH}-auto-fix-$(date +%s)"
+          echo "BUGFIX_BRANCH=${BUGFIX_BRANCH}" >> $GITHUB_OUTPUT
+
+          echo "📋 PR Information:"
+          echo "  - PR Number: ${PR_NUMBER}"
+          echo "  - PR Branch: ${PR_BRANCH}"
+          echo "  - Base Branch: ${BASE_BRANCH}"
+          echo "  - Bugfix Branch: ${BUGFIX_BRANCH}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch PR branch and create bugfix branch
+        run: |
+          # Fetch the PR branch
+          git fetch origin ${{ steps.pr-info.outputs.PR_BRANCH }}
+
+          # Checkout the PR branch
+          git checkout ${{ steps.pr-info.outputs.PR_BRANCH }}
+
+          # Create and checkout the bugfix branch
+          git checkout -b ${{ steps.pr-info.outputs.BUGFIX_BRANCH }}
+
+          echo "Created bugfix branch: ${{ steps.pr-info.outputs.BUGFIX_BRANCH }}"
+
+      - name: Get PR review comments
+        id: get-review
+        run: |
+          PR_NUMBER="${{ steps.pr-info.outputs.PR_NUMBER }}"
+
+          # Get all review comments
+          REVIEW_COMMENTS=$(gh api repos/${{ github.repository }}/pulls/${PR_NUMBER}/comments --paginate | jq -r '.[] | "**File:** \(.path):\(.line // .original_line)\n**Comment:** \(.body)\n---"')
+
+          # Get all issue comments (general PR comments)
+          ISSUE_COMMENTS=$(gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments --paginate | jq -r '.[] | "**Author:** \(.user.login)\n**Comment:** \(.body)\n---"')
+
+          # Combine both types of comments
+          ALL_COMMENTS="${REVIEW_COMMENTS}\n\n## General PR Comments:\n${ISSUE_COMMENTS}"
+
+          # Use heredoc to preserve multiline content
+          echo "REVIEW_COMMENTS<<EOF" >> $GITHUB_OUTPUT
+          echo "${ALL_COMMENTS}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "📝 Retrieved review comments for PR #${PR_NUMBER}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load fix instructions
+        id: load-instructions
+        run: |
+          PR_NUMBER="${{ steps.pr-info.outputs.PR_NUMBER }}"
+          PR_BRANCH="${{ steps.pr-info.outputs.PR_BRANCH }}"
+          BUGFIX_BRANCH="${{ steps.pr-info.outputs.BUGFIX_BRANCH }}"
+
+          # Read the fix template
+          INSTRUCTIONS=$(cat .github/pr_fix_prompt.md)
+
+          # Use heredoc to preserve multiline content with context prepended
+          echo "CUSTOM_INSTRUCTIONS<<EOF" >> $GITHUB_OUTPUT
+          echo "# GitHub Context" >> $GITHUB_OUTPUT
+          echo "- Repository: ${{ github.repository }}" >> $GITHUB_OUTPUT
+          echo "- PR Number: ${PR_NUMBER}" >> $GITHUB_OUTPUT
+          echo "- Original PR Branch: ${PR_BRANCH}" >> $GITHUB_OUTPUT
+          echo "- Bugfix Branch (current): ${BUGFIX_BRANCH}" >> $GITHUB_OUTPUT
+          echo "- Triggered by: ${{ github.event.comment.user.login }}" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "# Review Comments from PR #${PR_NUMBER}:" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "${{ steps.get-review.outputs.REVIEW_COMMENTS }}" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "---" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "$INSTRUCTIONS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Run Claude Code Fix
+        id: claude
+        uses: anthropics/claude-code-action@beta
+        continue-on-error: true
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Use Claude Code OAuth token from prod environment
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Custom trigger phrase for fix workflow
+          trigger_phrase: "@claude-fix"
+
+          # Fix-specific instructions loaded from the template
+          custom_instructions: ${{ steps.load-instructions.outputs.CUSTOM_INSTRUCTIONS }}
+
+          # Allow writing tools for fixing code
+          # Commented out - using default tools which include Edit, Write, Read, Grep, Glob, Bash, etc.
+          # allowed_tools: "Edit(*),MultiEdit(*),Write(*),Read(*),Grep(*),LS(*),Glob(*),TodoWrite(*),NotebookEdit(*),Bash(git *),Bash(npm *),Bash(python *),Bash(pip *),Bash(pytest *),Bash(alembic *),WebSearch(*)"
+
+      - name: Handle Claude Code usage limit
+        if: steps.claude.outcome == 'failure'
+        run: |
+          PR_NUMBER="${{ steps.pr-info.outputs.PR_NUMBER }}"
+
+          # Post a comment about the usage limit
+          gh pr comment ${PR_NUMBER} --body "⚠️ **Claude Code Usage Limit Reached**
+
+          The automated fix workflow couldn't run because the Claude Code usage limit has been reached.
+
+          **What this means:**
+          - The workflow will automatically retry when the limit resets
+          - You can also manually implement the review comments
+          - This is not an error with your code or the workflow configuration
+
+          **Next steps:**
+          - Wait for the usage limit to reset (typically resets at 2pm)
+          - Re-trigger this workflow by commenting \`@claude-fix\` again
+          - Or implement the review comments manually
+
+          [View workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+          echo "⚠️ Claude Code usage limit reached - posted informational comment"
+          exit 0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push bugfix branch and create PR
+        if: steps.claude.outcome == 'success'
+        run: |
+          BUGFIX_BRANCH="${{ steps.pr-info.outputs.BUGFIX_BRANCH }}"
+          PR_BRANCH="${{ steps.pr-info.outputs.PR_BRANCH }}"
+          PR_NUMBER="${{ steps.pr-info.outputs.PR_NUMBER }}"
+
+          # Check if there are any changes
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "⚠️ No changes were made by Claude. Skipping PR creation."
+            exit 0
+          fi
+
+          # Push the bugfix branch
+          git push origin ${BUGFIX_BRANCH}
+
+          # Create PR from bugfix branch to original PR branch
+          gh pr create \
+            --base ${PR_BRANCH} \
+            --head ${BUGFIX_BRANCH} \
+            --title "🤖 Auto-fix: ${PR_BRANCH} (from PR #${PR_NUMBER})" \
+            --body "$(cat <<'EOF'
+          ## 🤖 Automated Bug Fixes
+
+          This PR contains automated fixes generated by Claude Code based on the review comments from PR #${PR_NUMBER}.
+
+          ### Source
+          - **Original PR**: #${PR_NUMBER}
+          - **Target Branch**: ${PR_BRANCH}
+          - **Triggered by**: @${{ github.event.comment.user.login }}
+
+          ### Review Process
+          1. Claude analyzed all review comments from the original PR
+          2. Identified and fixed issues mentioned in the review
+          3. Created this separate bugfix branch for your review
+
+          ### Next Steps
+          - Review the changes in this PR
+          - If approved, merge this PR into the original PR branch
+          - The fixes will then be included in the original PR
+
+          ---
+
+          🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+          Co-Authored-By: Claude <noreply@anthropic.com>
+          EOF
+          )"
+
+          echo "Created bugfix PR from ${BUGFIX_BRANCH} → ${PR_BRANCH}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  unauthorized-message:
+    # Post message for unauthorized users
+    if: |
+      (
+        github.event_name == 'issue_comment' ||
+        github.event_name == 'pull_request_review_comment'
+      ) &&
+      contains(github.event.comment.body, '@claude-fix') &&
+      !contains(fromJSON('["sime2408"]'), github.event.comment.user.login)
+
+    runs-on: self-hosted
+
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Post unauthorized message
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `❌ @${context.actor} - You are not authorized to trigger Claude fixes.\n\nOnly the maintainers can trigger Claude Code fixes. Please ask a maintainer to run the fix command.`
+            };
+
+            if (context.eventName === 'issue_comment') {
+              await github.rest.issues.createComment({
+                ...comment,
+                issue_number: context.issue.number
+              });
+            } else if (context.eventName === 'pull_request_review_comment') {
+              await github.rest.pulls.createReplyForReviewComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                comment_id: context.payload.comment.id,
+                body: comment.body
+              });
+            }

@@ -1,0 +1,782 @@
+name: CICD-Backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - dev
+          - rc
+          - prod
+      deploy_target:
+        description: 'What to build and deploy'
+        required: true
+        default: 'backend-only'
+        type: choice
+        options:
+          - backend-only
+      gpu:
+        description: 'Build CUDA-torch image + layer the GPU compose override (only on NVIDIA GPU servers)'
+        required: false
+        default: false
+        type: boolean
+
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'alembic/**'
+      - 'configs/**'
+      - 'run_service.py'
+      - 'docker-scrapalot/**'
+      - 'requirements*.txt'
+      - '.github/workflows/deploy-backend.yml'
+
+jobs:
+  check-changes:
+    runs-on: self-hosted
+    outputs:
+      should-deploy: ${{ steps.changes.outputs.backend }}
+      needs-build: ${{ steps.build-check.outputs.needs-build }}
+      needs-compose-up: ${{ steps.build-check.outputs.needs-compose-up }}
+      workers-changed: ${{ steps.build-check.outputs.workers-changed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Full history so the change-classifier can diff across the WHOLE push
+          # (github.event.before..HEAD), not just the last commit. A multi-commit
+          # push with a compose/Dockerfile/migration change in a non-final commit
+          # was previously missed under fetch-depth: 2 + `git diff HEAD~1 HEAD`.
+          fetch-depth: 0
+
+      - name: Check for backend changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'alembic/**'
+              - 'configs/**'
+              - 'run_service.py'
+              - 'docker-scrapalot/**'
+              - 'requirements*.txt'
+              - '.github/workflows/deploy-backend.yml'
+
+      - name: Determine if Docker build is needed
+        id: build-check
+        run: |
+          # Files that require a full Docker image rebuild (new packages, system deps).
+          # `entrypoint.sh` is baked into the image at COPY time, so a change here
+          # only takes effect after a rebuild — not on a `docker restart`. Missing it
+          # caused the 2026-05-21 PermissionError recurrence: the entrypoint fix
+          # from 993b9bb passed CI but the workflow saw 0 build-required files and
+          # just restarted the container off the old image.
+          # Diff across the WHOLE push (every commit), not just the last one — a
+          # build/compose change in a non-final commit must still be detected.
+          DIFF_BASE="${{ github.event.before }}"
+          if [ -z "$DIFF_BASE" ] || [ "$DIFF_BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$DIFF_BASE^{commit}" 2>/dev/null; then
+            DIFF_BASE="HEAD~1"
+          fi
+          echo "Classifying changed files across $DIFF_BASE..HEAD"
+
+          BUILD_FILES=$(git diff --name-only "$DIFF_BASE" HEAD | grep -cE '^(docker-scrapalot/(Dockerfile|entrypoint\.sh)|requirements.*\.txt)$' || echo "0")
+
+          # Files that require docker compose up (compose config changed)
+          COMPOSE_FILES=$(git diff --name-only "$DIFF_BASE" HEAD | grep -cE '^docker-scrapalot/docker-compose' || echo "0")
+
+          # Files that only need container restart (volume-mounted code)
+          WORKERS_FILES=$(git diff --name-only "$DIFF_BASE" HEAD | grep -cE '^src/main/workers/' || echo "0")
+
+          echo "Build-requiring changes: $BUILD_FILES"
+          echo "Compose-requiring changes: $COMPOSE_FILES"
+          echo "Worker task changes: $WORKERS_FILES"
+
+          if [ "$BUILD_FILES" -gt 0 ]; then
+            echo "needs-build=true" >> $GITHUB_OUTPUT
+            echo "needs-compose-up=true" >> $GITHUB_OUTPUT
+          else
+            echo "needs-build=false" >> $GITHUB_OUTPUT
+            if [ "$COMPOSE_FILES" -gt 0 ]; then
+              echo "needs-compose-up=true" >> $GITHUB_OUTPUT
+            else
+              echo "needs-compose-up=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          if [ "$WORKERS_FILES" -gt 0 ]; then
+            echo "workers-changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "workers-changed=false" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    needs: check-changes
+    if: needs.check-changes.outputs.should-deploy == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: self-hosted
+    environment: ${{ github.event.inputs.environment || 'prod' }}
+
+    steps:
+      - name: Configure GPU compose override
+        # GPU servers only (workflow_dispatch with gpu=true). Layers the GPU
+        # device override onto every subsequent `docker compose` command via
+        # COMPOSE_FILE. Left UNSET otherwise, so CPU-only prod / push deploys
+        # keep Compose's default behaviour unchanged (zero risk).
+        if: github.event_name == 'workflow_dispatch' && inputs.gpu
+        run: |
+          BASE=/opt/scrapalot/scrapalot-chat/docker-scrapalot
+          echo "COMPOSE_FILE=$BASE/docker-compose.yaml:$BASE/docker-compose.gpu.yaml" >> "$GITHUB_ENV"
+          echo "GPU deploy: COMPOSE_FILE set to base + docker-compose.gpu.yaml"
+
+      - name: Pull latest code
+        working-directory: /opt/scrapalot/scrapalot-chat
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "========================================="
+          echo "Pulling latest code from origin/main"
+          echo "========================================="
+
+          # Configure git to use token for HTTPS auth (URL rewriting approach)
+          git config --local url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+          # Ensure remote uses HTTPS
+          git remote set-url origin https://github.com/sime2408/scrapalot-chat.git
+
+          # Stash any uncommitted local edits before reset so parallel
+          # interactive sessions on the host don't lose in-progress work.
+          # Stash entry stays in `git stash list` for manual recovery if
+          # `stash pop` conflicts with the new HEAD.
+          STASH_TAG="ci-autostash-$(date +%s)-${GITHUB_RUN_ID:-unknown}"
+          git stash push --include-untracked -m "${STASH_TAG}" || true
+
+          # Ensure we're on main branch and pull latest
+          git fetch origin
+          git checkout main
+          git reset --hard origin/main
+
+          # Best-effort restore of uncommitted edits. Keep stash on conflict
+          # so the operator can resolve manually with `git stash apply`.
+          if git stash list | grep -q "${STASH_TAG}"; then
+            git stash pop || \
+              echo "⚠ stash pop conflicted; uncommitted edits preserved as ${STASH_TAG} in 'git stash list'"
+          fi
+
+          echo "✓ Code updated to: $(git rev-parse --short HEAD)"
+          echo "✓ Commit: $(git log -1 --format='%s')"
+
+      - name: Ensure permissions
+        run: |
+          # Ensure proper permissions for collaboration
+          sudo chown -R $USER:scrapalot-dev /opt/scrapalot/scrapalot-chat
+          sudo chmod -R g+w /opt/scrapalot/scrapalot-chat
+          sudo chmod -R g+s /opt/scrapalot/scrapalot-chat  # setgid so new files inherit group
+
+          # Make scripts executable
+          find /opt/scrapalot/scrapalot-chat/scripts -name "*.sh" -exec sudo chmod +x {} \;
+
+      - name: Create production environment file
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          cat > .env << EOF
+          # ===========================================
+          # ENVIRONMENT CONFIGURATION
+          # ===========================================
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+
+          # ===========================================
+          # DATABASE - PostgreSQL
+          # ===========================================
+          POSTGRES_HOST=${{ vars.POSTGRES_HOST }}
+          POSTGRES_PORT=${{ vars.POSTGRES_PORT }}
+          POSTGRES_USER=${{ vars.POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB=${{ vars.POSTGRES_DB }}
+
+          # ===========================================
+          # CACHE - Redis
+          # ===========================================
+          REDIS_URL=redis://redis:6379
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+
+          # ===========================================
+          # GRAPH DATABASE - Neo4j
+          # ===========================================
+          NEO4J_USER=${{ vars.NEO4J_USER }}
+          NEO4J_PASSWORD=${{ secrets.NEO4J_PASSWORD }}
+          NEO4J_HEAP_SIZE=${{ vars.NEO4J_HEAP_SIZE }}
+          NEO4J_PAGECACHE_SIZE=${{ vars.NEO4J_PAGECACHE_SIZE }}
+          GRAPH_ENABLED=${{ vars.GRAPH_ENABLED }}
+          GRAPH_WORKER_CONCURRENCY=${{ vars.GRAPH_WORKER_CONCURRENCY }}
+
+          # ===========================================
+          # AUTHENTICATION & SECURITY
+          # ===========================================
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          # Shared key (base64, 32 bytes) for MCP integration auth-token encryption,
+          # read by both scrapalot-backend (encrypt) and scrapalot-chat (decrypt).
+          MCP_ENCRYPTION_KEY=${{ secrets.MCP_ENCRYPTION_KEY }}
+          GOOGLE_OAUTH_CLIENT_ID=${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REDIRECT_URI=${{ vars.GOOGLE_OAUTH_REDIRECT_URI }}
+
+          # ===========================================
+          # EXTERNAL AI PROVIDERS
+          # ===========================================
+          # LLM API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY) are now in the database
+          # (server_settings.system_agent_config), configured via admin UI.
+          HUGGINGFACE_TOKEN=${{ secrets.HUGGINGFACE_TOKEN }}
+          # Optional static Whisper STT decoding-bias prompt for NON-focused
+          # transcription. config.yaml ships an empty default on purpose (a value
+          # there pins one operator's language + topics onto every user); this
+          # deployment-specific value lives in the GitHub prod variable instead.
+          STT_OPENAI_PROMPT=${{ vars.STT_OPENAI_PROMPT }}
+
+          # ===========================================
+          # EXTERNAL SERVICES (Search & Scraping)
+          # ===========================================
+          FIRECRAWL_API_KEY=${{ secrets.FIRECRAWL_API_KEY }}
+          SERPAPI_KEY=${{ secrets.SERPAPI_KEY }}
+          TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}
+          ANNAS_ARCHIVE_API_KEY=${{ secrets.ANNAS_ARCHIVE_API_KEY }}
+          ANNAS_MEMBER_SECRET_KEY=${{ secrets.ANNAS_MEMBER_SECRET_KEY }}
+          GOOGLE_BOOKS_API_KEY=${{ secrets.GOOGLE_BOOKS_API_KEY }}
+
+          # ===========================================
+          # OCR ESCALATION (optional, Docling default → LLMWhisperer)
+          # INERT unless LLMWHISPERER_API_KEY secret is set in the prod env.
+          # Key is a SECRET; the rest are tuning VARIABLES (empty → config default).
+          # ===========================================
+          OCR_ESCALATION_ENABLED=${{ vars.OCR_ESCALATION_ENABLED }}
+          LLMWHISPERER_API_KEY=${{ secrets.LLMWHISPERER_API_KEY }}
+          LLMWHISPERER_BASE_URL=${{ vars.LLMWHISPERER_BASE_URL }}
+          OCR_ESCALATION_MIN_CHARS=${{ vars.OCR_ESCALATION_MIN_CHARS }}
+          OCR_ESCALATION_DAILY_PAGES=${{ vars.OCR_ESCALATION_DAILY_PAGES }}
+
+          # ===========================================
+          # STRIPE (billing) — consumed by stripe_service.py
+          # Source of truth: GitHub prod environment secrets + variables.
+          # ===========================================
+          STRIPE_TEST_MODE=${{ vars.STRIPE_TEST_MODE }}
+          STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_SUCCESS_URL=${{ vars.STRIPE_SUCCESS_URL }}
+          STRIPE_CANCEL_URL=${{ vars.STRIPE_CANCEL_URL }}
+          STRIPE_PORTAL_RETURN_URL=${{ vars.STRIPE_PORTAL_RETURN_URL }}
+
+          # ===========================================
+          # APPLICATION URLs
+          # ===========================================
+          FRONTEND_URL=${{ vars.FRONTEND_URL }}
+          BACKEND_BASE_URL=${{ vars.BACKEND_BASE_URL }}
+          VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+          VITE_LLM_INFERENCE_ENDPOINT=${{ vars.VITE_LLM_INFERENCE_ENDPOINT }}
+
+          # ===========================================
+          # GITHUB INTEGRATION
+          # ===========================================
+          GITHUB_TOKEN=${{ secrets.GH_TOKEN }}
+          GH_TOKEN=${{ secrets.GH_TOKEN }}
+          EOF
+
+          echo "✓ Environment file created"
+
+      # =========================================================================
+      # FAST PATH: Volume-mounted code only (src/, configs/, alembic/, run_service.py)
+      # Skip Docker build entirely — just restart the container (~60s)
+      # =========================================================================
+      - name: Fast deploy (restart only)
+        id: fast_deploy
+        if: needs.check-changes.outputs.needs-build == 'false' && needs.check-changes.outputs.needs-compose-up == 'false' && github.event_name != 'workflow_dispatch'
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          echo "========================================="
+          echo "FAST PATH: Code-only change detected"
+          echo "Skipping Docker build (src/ is volume-mounted)"
+          echo "========================================="
+
+          # Wait for active uploads to finish before restart
+          ACTIVE=$(docker exec pgvector psql -U scrapalot -d scrapalot -t -c \
+            "SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND job_type='document_processing' AND updated_at > NOW() - INTERVAL '30 minutes'" 2>/dev/null | tr -d ' \n' || echo "0")
+          if [ "$ACTIVE" -gt 0 ]; then
+            echo "⏳ $ACTIVE active upload(s) detected. Waiting up to 10 min..."
+            for i in $(seq 1 40); do
+              REMAINING=$(docker exec pgvector psql -U scrapalot -d scrapalot -t -c \
+                "SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND job_type='document_processing' AND updated_at > NOW() - INTERVAL '30 minutes'" 2>/dev/null | tr -d ' \n' || echo "0")
+              if [ "$REMAINING" = "0" ] || [ "$REMAINING" = "" ]; then
+                echo "✓ All uploads completed"
+                break
+              fi
+              echo "  $REMAINING upload(s) still active (attempt $i/40)..."
+              sleep 15
+            done
+          fi
+
+          # Run migrations if alembic/ changed — diff across the WHOLE push so a
+          # migration added in a non-final commit of a multi-commit push isn't missed.
+          DIFF_BASE="${{ github.event.before }}"
+          if [ -z "$DIFF_BASE" ] || [ "$DIFF_BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$DIFF_BASE^{commit}" 2>/dev/null; then
+            DIFF_BASE="HEAD~1"
+          fi
+          ALEMBIC_CHANGED=$(git diff --name-only "$DIFF_BASE" HEAD | grep -c '^alembic/' || echo "0")
+          if [ "$ALEMBIC_CHANGED" -gt 0 ]; then
+            echo "Running Alembic migrations..."
+            docker exec scrapalot-chat alembic upgrade head || echo "Migration failed — will retry after restart"
+          fi
+
+          docker restart scrapalot-chat
+          echo "✓ scrapalot-chat restarted"
+
+          # Workers also import from `src/` (entity_pipeline,
+          # document_summary_service, job_recovery_service, ...).
+          # Python's module cache holds the old code on the live worker
+          # children even though `src/` is volume-mounted, so a code-only
+          # change without a worker restart silently keeps running the
+          # pre-fix logic until `--max-tasks-per-child=10` rotates each
+          # child. A real prod doc demonstrated this earlier today:
+          # the idempotency fix shipped, chat picked it up, but the
+          # live workers kept appending duplicate chapter + book
+          # summaries because they had been spawned before the fix.
+          #
+          # `docker restart -t 120` sends SIGTERM and gives in-flight
+          # tasks a 120-second graceful window. Celery `task_acks_late=True`
+          # + `task_reject_on_worker_lost=True` (configured in
+          # celery_app.py) means anything that doesn't finish in time is
+          # re-queued, NOT lost.
+          docker restart -t 120 scrapalot-workers || \
+            echo "⚠ scrapalot-workers restart failed; investigate manually"
+          echo "✓ scrapalot-workers restarted"
+
+          # workers-graph is concurrency=1 and runs short-to-medium
+          # graph tasks (entity extraction batches, housekeeping). 60-s
+          # grace is enough; never mounted? `|| true` is the same
+          # idempotent pattern as the compose-deploy path.
+          if docker ps -a --format '{{.Names}}' | grep -q '^scrapalot-workers-graph$'; then
+            docker restart -t 60 scrapalot-workers-graph || \
+              echo "⚠ scrapalot-workers-graph restart failed; investigate manually"
+            echo "✓ scrapalot-workers-graph restarted"
+          else
+            echo "ℹ scrapalot-workers-graph not present yet — first compose-deploy will create it"
+          fi
+
+      # =========================================================================
+      # COMPOSE PATH: docker-compose.yaml changed — needs compose up (no rebuild)
+      # =========================================================================
+      - name: Compose deploy (config change)
+        id: compose_deploy
+        if: needs.check-changes.outputs.needs-build == 'false' && needs.check-changes.outputs.needs-compose-up == 'true' && github.event_name != 'workflow_dispatch'
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          echo "========================================="
+          echo "COMPOSE PATH: docker-compose.yaml changed"
+          echo "Applying new compose config (no rebuild)"
+          echo "========================================="
+
+          # Wait for active uploads to finish before restart
+          ACTIVE=$(docker exec pgvector psql -U scrapalot -d scrapalot -t -c \
+            "SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND job_type='document_processing' AND updated_at > NOW() - INTERVAL '30 minutes'" 2>/dev/null | tr -d ' \n' || echo "0")
+          if [ "$ACTIVE" -gt 0 ]; then
+            echo "⏳ $ACTIVE active upload(s) detected. Waiting up to 10 min..."
+            for i in $(seq 1 40); do
+              REMAINING=$(docker exec pgvector psql -U scrapalot -d scrapalot -t -c \
+                "SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND job_type='document_processing' AND updated_at > NOW() - INTERVAL '30 minutes'" 2>/dev/null | tr -d ' \n' || echo "0")
+              if [ "$REMAINING" = "0" ] || [ "$REMAINING" = "" ]; then
+                echo "✓ All uploads completed"
+                break
+              fi
+              echo "  $REMAINING upload(s) still active (attempt $i/40)..."
+              sleep 15
+            done
+          fi
+
+          # Explicit stop+rm of `scrapalot-chat` before the broad `up -d`.
+          # `docker compose up -d` uses its own short stop timeout on
+          # recreate and does not honor the service `stop_grace_period:
+          # 90s`, so if scrapalot-chat is mid-gRPC or holding a DB
+          # connection compose fails with "container is running: stop
+          # the container before removing". Explicit stop with --timeout
+          # 120 gives chat the full grace period, then rm -f handles the
+          # edge case where SIGKILL is needed.
+          docker compose stop --timeout 120 scrapalot-chat || true
+          docker compose rm -f scrapalot-chat || true
+
+          # Workers carry the same risk: graceful shutdown of an in-flight
+          # Celery task can take up to 90 s. Stop them explicitly before the
+          # broad `up -d` so a half-finished task isn't SIGKILLed mid-Bolt
+          # session (which leaves doc-locks stranded in Redis).
+          # `|| true` so a non-existent container (first deploy of a new
+          # compose service) doesn't fail the step.
+          docker compose stop --timeout 120 scrapalot-workers || true
+          docker compose rm -f scrapalot-workers || true
+          docker compose stop --timeout 60 scrapalot-workers-graph || true
+          docker compose rm -f scrapalot-workers-graph || true
+
+          # Recreate scrapalot-chat FIRST so it gets its new container IP, then
+          # bounce scrapalot-backend before the broad `up -d`. Why: backend
+          # holds a gRPC channel to dns:///scrapalot-chat:9091; dns:/// only
+          # re-resolves after a backoff, so for up to a minute after chat is
+          # recreated the backend's /actuator/health flaps to 503. scrapalot-gw
+          # depends_on scrapalot-backend (condition: service_healthy), so the
+          # broad `up -d` would fail resolving that dependency
+          # ("dependency scrapalot-backend is unhealthy") — which took the whole
+          # deploy (and prod) down. Restarting the backend forces it to
+          # reconnect to the new chat IP immediately.
+          docker compose up -d scrapalot-chat
+          docker restart scrapalot-backend || true
+          echo "⏳ Waiting for scrapalot-backend to reconnect to the recreated chat..."
+          for i in $(seq 1 18); do
+            st=$(docker inspect scrapalot-backend --format '{{.State.Health.Status}}' 2>/dev/null || echo unknown)
+            if [ "$st" = "healthy" ]; then echo "✓ scrapalot-backend healthy"; break; fi
+            echo "  backend health=$st (attempt $i/18)..."
+            sleep 10
+          done
+
+          # Broad `up -d` (no --no-deps, no service argument). Compose
+          # recreates only the services whose definition diverges from
+          # what's running, and creates any services that exist in the
+          # compose YAML but not yet on the host (e.g. brand-new
+          # `scrapalot-workers-graph` in this PR). Idempotent for healthy
+          # untouched services like pgvector / neo4j / redis. With the backend
+          # already healthy above, gw's service_healthy dependency now passes.
+          docker compose up -d
+          echo "✓ Compose config applied across all changed services"
+
+      # =========================================================================
+      # FULL BUILD PATH: Dockerfile or requirements changed — rebuild image
+      # =========================================================================
+      - name: Configure Docker Build Cache
+        if: needs.check-changes.outputs.needs-build == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          # Clean up old images to prevent disk space issues
+          docker image prune -f || true
+
+          # Remove old test images if any exist
+          docker images | grep -E "scrapalot-chat.*test" | awk '{print $1":"$2}' | xargs -r docker rmi -f 2>/dev/null || true
+
+          # Pull previous image for cache if exists (helps with layer caching)
+          docker pull scrapalot-chat:latest || true
+
+          # Enable BuildKit for all Docker operations
+          echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
+          echo "BUILDKIT_PROGRESS=plain" >> $GITHUB_ENV
+
+      - name: Build Backend Docker Image
+        id: build
+        if: needs.check-changes.outputs.needs-build == 'true' || github.event_name == 'workflow_dispatch'
+        working-directory: /opt/scrapalot/scrapalot-chat
+        run: |
+          echo "========================================="
+          echo "FULL BUILD: Dockerfile or requirements changed"
+          echo "Building scrapalot-chat:latest"
+          echo "========================================="
+
+          docker build \
+            --target app \
+            --cache-from scrapalot-chat:latest \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg TORCH_VARIANT=${{ (github.event_name == 'workflow_dispatch' && inputs.gpu) && 'gpu' || 'cpu' }} \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            -f docker-scrapalot/Dockerfile \
+            -t scrapalot-chat:latest \
+            -t scrapalot-chat:${{ github.sha }} \
+            .
+
+          echo "✓ Backend image built successfully"
+
+      - name: Display Built Images
+        if: needs.check-changes.outputs.needs-build == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo ""
+          echo "========================================="
+          echo "Built Docker Images:"
+          echo "========================================="
+          docker images --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}" | grep scrapalot-chat | head -15
+
+      - name: Auto-fix Build Failure
+        if: failure() && steps.build.outcome == 'failure'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Build failed! Creating auto-fix PR for review..."
+          BUILD_ERROR=$(docker build -f docker-scrapalot/Dockerfile . 2>&1 | tail -20)
+          BRANCH_NAME="quickfix/build-failure-$(date +%s)"
+
+          # Trigger auto-fix PR workflow
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/auto-fix-pr.yml/dispatches \
+            -d "{
+              \"ref\": \"main\",
+              \"inputs\": {
+                \"error_log\": $(echo "$BUILD_ERROR" | jq -R -s .),
+                \"error_context\": \"Docker build failure in deploy-backend.yml workflow\",
+                \"branch_name\": \"$BRANCH_NAME\"
+              }
+            }"
+
+      - name: Deploy after full build
+        id: deploy
+        if: needs.check-changes.outputs.needs-build == 'true' || github.event_name == 'workflow_dispatch'
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          echo "========================================="
+          echo "Deploying scrapalot-chat backend..."
+          echo "========================================="
+
+          # Wait for active uploads to finish before restart
+          ACTIVE=$(docker exec pgvector psql -U scrapalot -d scrapalot -t -c \
+            "SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND job_type='document_processing' AND updated_at > NOW() - INTERVAL '30 minutes'" 2>/dev/null | tr -d ' \n' || echo "0")
+          if [ "$ACTIVE" -gt 0 ]; then
+            echo "⏳ $ACTIVE active upload(s) detected. Waiting up to 10 min..."
+            for i in $(seq 1 40); do
+              REMAINING=$(docker exec pgvector psql -U scrapalot -d scrapalot -t -c \
+                "SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND job_type='document_processing' AND updated_at > NOW() - INTERVAL '30 minutes'" 2>/dev/null | tr -d ' \n' || echo "0")
+              if [ "$REMAINING" = "0" ] || [ "$REMAINING" = "" ]; then
+                echo "✓ All uploads completed"
+                break
+              fi
+              echo "  $REMAINING upload(s) still active (attempt $i/40)..."
+              sleep 15
+            done
+          fi
+
+          # Same robust recreate pattern as the compose-only path: explicit
+          # stop with full grace period + rm -f, then up. Prevents "container
+          # is running: stop the container before removing" when the old
+          # container is slow to drain.
+          docker compose stop --timeout 120 scrapalot-chat || true
+          docker compose rm -f scrapalot-chat || true
+          docker compose up -d --no-deps scrapalot-chat
+          echo "✓ Backend deployed"
+
+      - name: Verify Infrastructure Services
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          echo "Checking infrastructure services..."
+
+          REQUIRED_SERVICES="redis"
+          MISSING_SERVICES=""
+
+          for service in $REQUIRED_SERVICES; do
+            if ! docker ps | grep -q "$service"; then
+              MISSING_SERVICES="$MISSING_SERVICES $service"
+            fi
+          done
+
+          if [ -n "$MISSING_SERVICES" ]; then
+            echo "ERROR: Required infrastructure services are not running:$MISSING_SERVICES"
+            echo "Please run the 'Deploy Infrastructure Services' workflow first"
+            exit 1
+          fi
+
+          echo "✓ All required infrastructure services are running"
+
+      - name: Wait for Backend Startup
+        id: health_check
+        run: |
+          echo "Waiting for backend to be ready..."
+          for i in {1..60}; do
+            if docker exec scrapalot-chat sh -c 'curl -f http://localhost:8090/health || wget -q -O- http://localhost:8090/health' 2>/dev/null | grep -q "ok\|healthy"; then
+              echo "✓ Backend is healthy (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i/60: Backend not ready yet..."
+            sleep 3
+          done
+          echo "Backend health check failed"
+          exit 1
+
+      - name: Auto-fix Deployment/Health Failure
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.health_check.outcome == 'failure')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Deployment/Health check failed! Creating auto-fix PR for review..."
+          DEPLOY_ERROR=$(docker logs scrapalot-chat --tail 50 2>&1)
+          BRANCH_NAME="quickfix/deployment-failure-$(date +%s)"
+
+          # Trigger auto-fix PR workflow
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/auto-fix-pr.yml/dispatches \
+            -d "{
+              \"ref\": \"main\",
+              \"inputs\": {
+                \"error_log\": $(echo "$DEPLOY_ERROR" | jq -R -s .),
+                \"error_context\": \"Container deployment/health failure in deploy-backend.yml workflow\",
+                \"branch_name\": \"$BRANCH_NAME\"
+              }
+            }"
+
+      # =========================================================================
+      # WORKERS: Restart only when worker task code changes
+      # Drain active tasks before restarting to prevent data loss
+      # =========================================================================
+      - name: Restart workers (if task code changed)
+        if: needs.check-changes.outputs.workers-changed == 'true' || needs.check-changes.outputs.needs-build == 'true' || github.event_name == 'workflow_dispatch'
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          echo "========================================="
+          echo "Worker task code changed — restarting workers"
+          echo "========================================="
+
+          # Check if workers have active tasks
+          ACTIVE=$(docker exec scrapalot-chat python -c "
+          from src.main.workers.celery_app import celery_app
+          active = celery_app.control.inspect(timeout=3).active() or {}
+          print(sum(len(v) for v in active.values()))
+          " 2>/dev/null || echo "0")
+
+          # Robust recreate helper — see compose-deploy step for rationale.
+          # Explicit stop+rm before up so that a stuck container (task in mid-LLM
+          # call, Docling OCR, Neo4j write) can't block recreation.
+          recreate_workers() {
+            docker compose stop --timeout 130 scrapalot-workers || true
+            docker compose rm -f scrapalot-workers || true
+            docker compose up -d --no-deps scrapalot-workers
+          }
+
+          if [ "$ACTIVE" = "0" ]; then
+            echo "Workers idle — restarting immediately"
+            recreate_workers
+          else
+            echo "Workers busy ($ACTIVE active tasks) — draining before restart"
+
+            # Stop accepting new tasks (does not kill active ones)
+            docker exec scrapalot-workers celery -A src.main.workers.celery_app control cancel_consumer documents 2>/dev/null || true
+            docker exec scrapalot-workers celery -A src.main.workers.celery_app control cancel_consumer fast 2>/dev/null || true
+
+            # Wait up to 10 minutes for active tasks to finish
+            echo "Waiting for active tasks to complete (max 10 min)..."
+            for i in $(seq 1 40); do
+              REMAINING=$(docker exec scrapalot-chat python -c "
+          from src.main.workers.celery_app import celery_app
+          active = celery_app.control.inspect(timeout=3).active() or {}
+          print(sum(len(v) for v in active.values()))
+          " 2>/dev/null || echo "0")
+
+              if [ "$REMAINING" = "0" ]; then
+                echo "All tasks completed after ${i}x15s"
+                break
+              fi
+              echo "  $REMAINING tasks still running (attempt $i/40)..."
+              sleep 15
+            done
+
+            recreate_workers
+          fi
+
+          echo "✓ Workers restarted"
+
+      - name: Display Service Status
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          echo "========================================="
+          echo "Deployed Services Status:"
+          echo "========================================="
+          docker compose ps
+          echo ""
+          echo "========================================="
+          echo "Backend Logs (last 20 lines):"
+          echo "========================================="
+          docker compose logs --tail=20 scrapalot-chat
+
+      - name: Cleanup Old Images and Free Storage
+        if: needs.check-changes.outputs.needs-build == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo "========================================="
+          echo "Comprehensive Docker Cleanup"
+          echo "========================================="
+
+          # Show current disk usage
+          echo "Disk usage before cleanup:"
+          df -h /
+          docker system df
+
+          # 1. Remove dangling images (untagged)
+          echo ""
+          echo "Removing dangling images..."
+          docker image prune -f
+
+          # 2. Keep only latest 2 scrapalot-chat images (backend + worker images)
+          echo ""
+          echo "Removing old scrapalot-chat images (keeping latest 2)..."
+          docker images scrapalot-chat --format "{{.ID}} {{.CreatedAt}}" | \
+            tail -n +3 | \
+            awk '{print $1}' | \
+            xargs -r docker rmi -f 2>/dev/null || echo "No old scrapalot-chat images to remove"
+
+          # 3. Remove unused images older than 48 hours
+          echo ""
+          echo "Removing unused images older than 48 hours..."
+          docker image prune -af --filter "until=48h"
+
+          # 4. Remove stopped containers
+          echo ""
+          echo "Removing stopped containers..."
+          docker container prune -f --filter "until=48h"
+
+          # 5. Clean build cache aggressively
+          echo ""
+          echo "Removing build cache..."
+          docker builder prune -af
+
+          # 6. Clean GitHub Actions runner logs older than 14 days
+          echo ""
+          echo "Cleaning runner diagnostic logs older than 14 days..."
+          find /opt/scrapalot/actions-runner*/_diag -name "*.log" -mtime +14 -delete 2>/dev/null || echo "No old runner logs found"
+
+          # Show disk usage after cleanup
+          echo ""
+          echo "Disk usage after cleanup:"
+          df -h /
+          docker system df
+
+          # Show remaining scrapalot images
+          echo ""
+          echo "Scrapalot images after cleanup:"
+          docker images | grep -E "scrapalot|REPOSITORY" || echo "No scrapalot images found"
+
+          echo ""
+          echo "✓ Comprehensive cleanup complete — storage optimized!"
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          DEPLOY_PATH="unknown"
+          if [ "${{ needs.check-changes.outputs.needs-build }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            DEPLOY_PATH="FULL BUILD (Dockerfile/requirements changed)"
+          elif [ "${{ needs.check-changes.outputs.needs-compose-up }}" = "true" ]; then
+            DEPLOY_PATH="COMPOSE UP (docker-compose.yaml changed)"
+          else
+            DEPLOY_PATH="FAST RESTART (code-only change, no build)"
+          fi
+
+          echo ""
+          echo "========================================="
+          echo "Deployment Summary"
+          echo "========================================="
+          echo ""
+          echo "Deploy path: $DEPLOY_PATH"
+          echo "Workers restarted: ${{ needs.check-changes.outputs.workers-changed == 'true' || needs.check-changes.outputs.needs-build == 'true' || github.event_name == 'workflow_dispatch' }}"
+          echo ""
+          echo "Public Access:"
+          echo "  - Frontend: https://scrapalot.app"
+          echo "  - Backend API: https://scrapalot.app/api/v1"
+          echo ""
+          echo "Running Containers:"
+          docker ps --filter "name=scrapalot" --format "  - {{.Names}}: {{.Status}}" | head -10
+          echo ""
+          echo "Docker Images:"
+          docker images --format "  - {{.Repository}}:{{.Tag}}: {{.Size}}" | grep scrapalot-chat | head -10
+          echo "========================================="

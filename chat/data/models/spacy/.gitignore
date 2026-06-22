@@ -1,0 +1,16 @@
+# Ignore all spaCy model directories (they're large files)
+en_core_*
+de_core_*
+fr_core_*
+es_core_*
+it_core_*
+pt_core_*
+nl_core_*
+el_core_*
+nb_core_*
+lt_core_*
+xx_*
+
+# But keep the README
+!README.md
+!.gitignore

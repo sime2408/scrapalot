@@ -1,0 +1,75 @@
+# Spell-check exclusions for crate-ci/typos.
+#
+# Eval-set JSONL files contain real questions in many languages (English,
+# French, Italian, Spanish, Polish, Portuguese, etc.). The English-centric
+# default dictionary flags valid foreign words ("abord" = FR "first",
+# "Stati" = IT "states", etc.). Skip the file rather than mass-add per-word
+# overrides — those questions are sourced from real chunks and we can't
+# control corpus language.
+#
+# PRD SUMMARY.md files are written in Croatian (project default response
+# language). Same trade-off: skip the whole file rather than mass-add every
+# Croatian word the English dictionary mistakes for a typo ("rade" =
+# "they work", "tjedna" = "weeks", "fix-a" / "live" inside compound nouns…).
+[files]
+extend-exclude = [
+    "tests/rag_eval/graph_utility_eval_set.jsonl",
+    "tests/rag_eval/*.jsonl",
+    "docs/prd-arxiv-*/SUMMARY.md",
+]
+
+# Brand names / product proper nouns the dictionary mistakes for typos.
+[default.extend-identifiers]
+Slite = "Slite"
+slite = "slite"
+competitive_analysis_slite = "competitive_analysis_slite"
+# Mermaid diagram node IDs in docs/README_RAG_ARCHITECTURE.md
+# (e.g. `BA` = Balanced, `CE` = Centric). Two-letter IDs in graph
+# diagrams collide with the dictionary's auto-correct ("BA" → "BY"/"BE").
+BA = "BA"
+CE = "CE"
+
+# Real-world Spanish chapter_title strings preserved verbatim in tests.
+[default.extend-words]
+Distribucion = "Distribucion"   # Spanish: Distribución (real Mexican anthropology book chapter)
+distribucion = "distribucion"
+Ubicacion = "Ubicacion"         # Spanish: Ubicación
+ubicacion = "ubicacion"
+# Croatian words inside reasoning_delta narration strings the typos
+# dictionary mistakes for English typos ("tekst" → "text", "ovi" →
+# "ovis"). These appear in src/main/service/chat/* user-visible narration.
+tekst = "tekst"
+Tekst = "Tekst"
+ovi = "ovi"
+# Croatian demonstrative pronoun "ono" (= "that, that thing") inside voice_chat
+# example phrases in configs/prompts.yaml. Dictionary mistakes it for "one".
+ono = "ono"
+Ono = "Ono"
+# Product name "Slite" (knowledge-base SaaS) appears inside underscore-split
+# filenames like `competitive_analysis_slite.md`; needs extend-words to skip
+# the sub-word within an identifier (extend-identifiers only matches whole tokens).
+Slite = "Slite"
+slite = "slite"
+# MongoDB-style "not in" query operator "$nin" in retriever metadata filters.
+nin = "nin"
+# BM25 implementation uses `nd` (number of documents) as a local variable;
+# the dictionary "corrects" it to the Python keyword `and`, breaking syntax.
+nd = "nd"
+# Croatian words in the bilingual competitive-analysis PRDs (single-repo deep-dives
+# carry a Croatian "Strategic Direction" thesis). "rade" = "they work"
+# (dictionary → "read"/"raid"); "ove" = "these" / declension suffix in "RPC-ove"
+# (dictionary → "over"/"oven").
+rade = "rade"
+Rade = "Rade"
+ove = "ove"
+Ove = "Ove"
+# "modul" = Croatian "module"; "agregator" = Croatian "aggregator".
+modul = "modul"
+Modul = "Modul"
+agregator = "agregator"
+Agregator = "Agregator"
+# LLMWhisperer (Unstract) v2 API misspells its query param "page_seperator".
+# We MUST send the misspelled key verbatim or the API ignores it and falls back
+# to its default page marker, breaking our deterministic form-feed split.
+seperator = "seperator"
+page_seperator = "page_seperator"

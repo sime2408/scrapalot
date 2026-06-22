@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+// Scrapalot Bridge API - Settings Service
+// Version: 1.0.0
+// Last Updated: 2026-01-31
+//
+// Handles user preferences, server configuration, and application settings.
+// Both Python (scrapalot-chat) and Kotlin (scrapalot-backend) must use
+// matching versions of these proto files.
+
+package scrapalot.settings;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.settings";
+option java_outer_classname = "SettingsServiceProto";
+
+// Settings Service
+// Handles user and server settings
+service SettingsService {
+  // User Settings
+  rpc GetUserSetting(GetUserSettingRequest) returns (UserSettingResponse);
+  rpc GetAllUserSettings(common.UUID) returns (UserSettingListResponse);
+  rpc SetUserSetting(SetUserSettingRequest) returns (UserSettingResponse);
+  rpc SetUserSettings(SetUserSettingsRequest) returns (common.StatusResponse);
+  rpc DeleteUserSetting(DeleteUserSettingRequest) returns (common.StatusResponse);
+
+  // Server Settings
+  rpc GetServerSetting(GetServerSettingRequest) returns (ServerSettingResponse);
+  rpc GetAllServerSettings(common.Empty) returns (ServerSettingListResponse);
+  rpc SetServerSetting(SetServerSettingRequest) returns (ServerSettingResponse);
+  rpc DeleteServerSetting(DeleteServerSettingRequest) returns (common.StatusResponse);
+
+  // Specialized getters for Python integration
+  rpc GetSelectedWorkspace(common.UUID) returns (SelectedWorkspaceResponse);
+  rpc GetDocumentProcessingSettings(common.UUID) returns (DocumentProcessingSettingsResponse);
+  rpc GetRAGSettings(common.UUID) returns (RAGSettingsResponse);
+}
+
+// User Setting Messages
+message GetUserSettingRequest {
+  common.UUID user_id = 1;
+  string key = 2;
+}
+
+message SetUserSettingRequest {
+  common.UUID user_id = 1;
+  string key = 2;
+  string value = 3; // JSONB as string
+}
+
+message SetUserSettingsRequest {
+  common.UUID user_id = 1;
+  map<string, string> settings = 2; // key -> JSONB value as string
+}
+
+message DeleteUserSettingRequest {
+  common.UUID user_id = 1;
+  string key = 2;
+}
+
+message UserSettingResponse {
+  common.UUID user_id = 1;
+  string key = 2;
+  string value = 3; // JSONB as string
+  common.Timestamp created_at = 4;
+  common.Timestamp updated_at = 5;
+}
+
+message UserSettingListResponse {
+  repeated UserSettingResponse settings = 1;
+}
+
+// Server Setting Messages
+message GetServerSettingRequest {
+  string key = 1;
+}
+
+message SetServerSettingRequest {
+  string key = 1;
+  string value = 2; // JSONB as string
+  optional string description = 3;
+  bool is_public = 4;
+}
+
+message DeleteServerSettingRequest {
+  string key = 1;
+}
+
+message ServerSettingResponse {
+  string key = 1;
+  string value = 2; // JSONB as string
+  optional string description = 3;
+  bool is_public = 4;
+  common.Timestamp created_at = 5;
+  common.Timestamp updated_at = 6;
+}
+
+message ServerSettingListResponse {
+  repeated ServerSettingResponse settings = 1;
+}
+
+// Specialized responses for Python
+message SelectedWorkspaceResponse {
+  optional common.UUID workspace_id = 1;
+}
+
+message DocumentProcessingSettingsResponse {
+  optional string chunking_strategy = 1;
+  optional string embedding_model = 2;
+  optional int32 chunk_size = 3;
+  optional int32 chunk_overlap = 4;
+  optional string additional_settings = 5; // JSONB as string
+}
+
+message RAGSettingsResponse {
+  optional string rag_strategy = 1;
+  optional string rag_orchestrator = 2;
+  optional bool use_agentic_routing = 3;
+  optional int32 top_k = 4;
+  optional double similarity_threshold = 5;
+  optional string additional_settings = 6; // JSONB as string
+}

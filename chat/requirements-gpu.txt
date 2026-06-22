@@ -1,0 +1,40 @@
+# GPU-specific requirements for CUDA support
+# This file overrides CPU-only versions in requirements.txt with GPU-enabled versions
+# Install with: pip install -r requirements-gpu.txt --force-reinstall
+# Note: May show dependency warnings for surya-ocr (unused package)
+
+# PyTorch 2.7.0 with CUDA 12.8 - supports Blackwell sm_120 (RTX PRO 4500, RTX 5080/5090)
+--index-url https://download.pytorch.org/whl/cu128
+torch==2.7.0
+torchvision==0.22.0
+torchaudio==2.7.0
+
+# llama-cpp-python with CUDA 12.8 support for GGUF model inference
+# Pre-compiled wheel with cuBLAS acceleration (recommended for NVIDIA GPUs)
+# Works with Blackwell GPUs for llama.cpp inference
+--extra-index-url https://jllllll.github.io/llama-cpp-python-cuBLAS-wheels/cu128
+llama-cpp-python==0.3.2
+
+# Alternative installations (commented out):
+# For CUDA 12.6 (Older GPUs: Maxwell, Pascal, Volta):
+# --extra-index-url https://jllllll.github.io/llama-cpp-python-cuBLAS-wheels/cu126
+# llama-cpp-python==0.3.2
+
+# For CUDA 13.0 (Future - When available for Blackwell optimization):
+# --extra-index-url https://jllllll.github.io/llama-cpp-python-cuBLAS-wheels/cu130
+# llama-cpp-python==0.3.2
+
+# For Vulkan (Universal GPU support - NVIDIA, AMD, Intel, Apple):
+# CMAKE_ARGS="-DLLAMA_VULKAN=ON" pip install llama-cpp-python==0.3.2 --no-cache-dir --force-reinstall
+
+# ═══════════════════════════════════════════════════════════════════════
+# BLACKWELL GPU SUPPORT (sm_120)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# PyTorch 2.7.0+cu128 includes sm_120 in its architecture list.
+# Full Blackwell GPU support is available for:
+#   - Docling document processing (GPU-accelerated OCR)
+#   - Embedding models (HuggingFace sentence-transformers)
+#   - Document processing via PyMuPDF4LLM (CPU, very fast for clean PDFs)
+#   - llama-cpp-python GGUF inference
+# ═══════════════════════════════════════════════════════════════════════

@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package scrapalot.stt;
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.stt";
+option java_outer_classname = "SttServiceProto";
+
+// Speech-to-Text service with file upload and live streaming transcription
+service SttService {
+  // Transcribe an uploaded audio file (MP3, WAV, M4A, OGG, WebM)
+  rpc TranscribeAudio(TranscribeAudioRequest) returns (TranscribeAudioResponse);
+
+  // Start a live transcription session (returns session ID)
+  rpc StartLiveSession(StartLiveSessionRequest) returns (LiveSessionState);
+
+  // Send an audio chunk for live transcription
+  rpc SendAudioChunk(SendAudioChunkRequest) returns (LiveSessionState);
+
+  // Finish a live session and get the final transcript
+  rpc FinishLiveSession(FinishLiveSessionRequest) returns (FinishLiveSessionResponse);
+}
+
+// --- File-based transcription ---
+
+message TranscribeAudioRequest {
+  bytes audio = 1;            // Raw audio bytes
+  string filename = 2;        // Original filename (for format detection)
+  string language = 3;        // Optional language hint (e.g., "en", "hr")
+  bool timestamps = 4;        // Include word-level timestamps
+  string user_id = 5;         // Authenticated user ID
+}
+
+message TranscribeAudioResponse {
+  string text = 1;                        // Full transcript text
+  string language = 2;                    // Detected or specified language
+  double duration_s = 3;                  // Audio duration in seconds
+  repeated TranscriptSegment segments = 4; // Word-level segments (if timestamps=true)
+  string provider = 5;                    // STT provider used
+}
+
+message TranscriptSegment {
+  string text = 1;
+  double start_s = 2;    // Start time in seconds
+  double end_s = 3;      // End time in seconds
+}
+
+// --- Live streaming transcription ---
+
+message StartLiveSessionRequest {
+  string user_id = 1;      // Authenticated user ID
+  string language = 2;     // Optional language hint
+}
+
+message SendAudioChunkRequest {
+  string session_id = 1;        // Session ID from StartLiveSession
+  string user_id = 2;           // Authenticated user ID
+  int32 chunk_index = 3;        // Sequential chunk index (0, 1, 2...)
+  bytes audio = 4;              // WAV audio chunk bytes
+  bool is_silence = 5;          // Whether this chunk is mostly silence
+}
+
+message LiveSessionState {
+  string session_id = 1;
+  string committed_text = 2;       // Finalized, stable transcript
+  string mutable_text = 3;         // Current hypothesis being refined
+  string transcript_text = 4;      // Full text (committed + mutable)
+  string language = 5;
+  int32 last_chunk_index = 6;
+}
+
+message FinishLiveSessionRequest {
+  string session_id = 1;
+  string user_id = 2;
+}
+
+message FinishLiveSessionResponse {
+  string text = 1;         // Final finalized transcript
+  string language = 2;
+  double duration_s = 3;   // Total session duration
+}

@@ -1,0 +1,304 @@
+syntax = "proto3";
+
+// Scrapalot Chat Service
+// Version: 3.0.0
+// Last Updated: 2026-02-11
+//
+// Specialized chat generation RPCs for each chat mode.
+// Python (scrapalot-chat) implements this as a gRPC server (port 9091).
+// Kotlin (scrapalot-backend) calls this service as a gRPC client.
+//
+// Kotlin owns orchestration (session management, model resolution, message persistence).
+// Python owns AI/ML execution (RAG strategies, LLM calls, streaming).
+
+package scrapalot.chat;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.chat";
+option java_outer_classname = "ChatServiceProto";
+
+// Chat Service - Specialized RPCs for each chat mode
+service ChatService {
+  // Direct LLM chat (no RAG, no collections)
+  rpc GenerateDirectLLM(DirectLLMRequest) returns (stream ChatResponsePacket);
+
+  // Traditional RAG with 18 strategies
+  rpc GenerateRAG(RAGRequest) returns (stream ChatResponsePacket);
+
+  // 5-phase deep research pipeline
+  rpc GenerateDeepResearch(DeepResearchRequest) returns (stream ChatResponsePacket);
+
+  // Web search enhanced chat
+  rpc GenerateWebSearch(WebSearchRequest) returns (stream ChatResponsePacket);
+
+  // Multi-source agentic RAG orchestration
+  rpc GenerateAgenticRAG(AgenticRAGRequest) returns (stream ChatResponsePacket);
+
+  // Document QA for unprocessed documents
+  rpc GenerateDocumentQA(DocumentQARequest) returns (stream ChatResponsePacket);
+
+  // Title generation (non-streaming)
+  rpc GenerateTitle(TitleRequest) returns (TitleResponse);
+
+  // Deprecated: Use mode-specific RPCs instead
+  rpc GenerateChat(ChatRequest) returns (stream ChatResponsePacket);
+
+  // 7.8 v3 — AI Tutor curriculum mode. Walks the user through Leiden
+  // communities of a collection one lesson at a time using a state
+  // machine (lesson_intro → check_understanding → drill_in → quiz →
+  // lesson_recap). Auto-builds the curriculum on first call.
+  rpc GenerateChatTutor(TutorChatRequest) returns (stream ChatResponsePacket);
+
+  // 7.8 v3 — read-only progress for the in-flight tutor session.
+  rpc GetTutorProgress(GetTutorProgressRequest) returns (TutorProgressResponse);
+
+  // Health check
+  rpc HealthCheck(scrapalot.common.Empty) returns (HealthCheckResponse);
+}
+
+// 7.8 v3 — Tutor chat request. Like RAGRequest but routes to the
+// curriculum state machine instead of the regular RAG pipeline.
+// `collection_id` is REQUIRED — tutor needs Leiden communities to
+// build the curriculum. `prompt` is the user's free-form message
+// inside the lesson; the orchestrator decides which state prompt to
+// apply.
+message TutorChatRequest {
+  string prompt = 1;
+  string user_id = 2;
+  string model_name = 3;
+  string provider_type = 4;
+  string collection_id = 5;
+  string language = 6;
+  string subscription_tier = 7;
+  string session_namespace = 8;
+  string assistant_message_id = 9;
+  repeated ConversationMessage conversation_history = 10;
+  bool is_repeat = 11;
+}
+
+// 7.8 v3 — progress query for the user's active session on a given
+// curriculum. Used by the sidebar progress tree and the
+// "Resume / Restart lesson" affordance.
+message GetTutorProgressRequest {
+  string user_id = 1;
+  string collection_id = 2;
+}
+
+message TutorLesson {
+  int32 lesson_ord = 1;
+  string title = 2;
+  string summary = 3;
+  int32 level = 4;
+  bool completed = 5;
+}
+
+message TutorProgressResponse {
+  bool curriculum_ready = 1;
+  string curriculum_status = 2;
+  int32 current_lesson_ord = 3;
+  string current_state = 4;
+  int32 lesson_count = 5;
+  repeated TutorLesson lessons = 6;
+  string error = 7;
+}
+
+// Direct LLM request (no RAG, no documents)
+message DirectLLMRequest {
+  string prompt = 1;
+  string user_id = 2;
+  string model_name = 3;
+  string provider_type = 4;
+  string language = 5;
+  string subscription_tier = 6;
+  string session_namespace = 7;
+  repeated ConversationMessage conversation_history = 8;
+  bool is_repeat = 9;
+  repeated ChatAttachment attachments = 10;
+  // 7.8 v2 — AI Tutor Mode (Socratic prepend; see RAGRequest.tutor_mode).
+  bool tutor_mode = 11;
+  // 7.7 — Thought Partner mode. The model NEVER answers; it returns
+  // 3-5 numbered probing questions that expose unstated assumptions
+  // in the user's query. Skips retrieval entirely (intentionally
+  // context-light) — DirectLLM is the right host. Mutually
+  // exclusive with tutor_mode in the UI.
+  bool thought_partner_mode = 12;
+}
+
+// Traditional RAG request
+message RAGRequest {
+  string prompt = 1;
+  string user_id = 2;
+  string model_name = 3;
+  string provider_type = 4;
+  repeated string collection_ids = 5;
+  repeated string document_ids = 6;
+  string language = 7;
+  string subscription_tier = 8;
+  float similarity_threshold = 9;
+  int32 top_k = 10;
+  string session_namespace = 11;
+  repeated ConversationMessage conversation_history = 12;
+  bool is_repeat = 13;
+  repeated ChatAttachment attachments = 14;
+  repeated string saved_search_ids = 15;
+  // 7.8 v1 — AI Tutor Mode (MVP scope, full curriculum + state machine
+  // blocked on 1.1 Leiden + 4.2 User Memory). When set, the server
+  // prepends a Socratic-tutor system prompt so the LLM explains the
+  // retrieved context didactically: introduce → ask comprehension
+  // check → drill into gaps → recap.  Same RAG retrieval as a normal
+  // chat — just a different generation persona.
+  bool tutor_mode = 16;
+}
+
+// Deep research request (5-phase pipeline)
+message DeepResearchRequest {
+  string prompt = 1;
+  string user_id = 2;
+  string model_name = 3;
+  string provider_type = 4;
+  repeated string collection_ids = 5;
+  repeated string document_ids = 6;
+  string language = 7;
+  string subscription_tier = 8;
+  int32 research_breadth = 9;
+  int32 research_depth = 10;
+  string session_namespace = 11;
+  string assistant_message_id = 12;
+  string session_id = 13;
+  repeated ConversationMessage conversation_history = 14;
+  bool is_repeat = 15;
+  repeated ChatAttachment attachments = 16;
+  repeated string saved_search_ids = 17;
+  map<string, string> metadata = 18;
+}
+
+// Web search request
+message WebSearchRequest {
+  string prompt = 1;
+  string user_id = 2;
+  string model_name = 3;
+  string provider_type = 4;
+  string language = 5;
+  string subscription_tier = 6;
+  string session_namespace = 7;
+  string assistant_message_id = 8;
+  repeated ConversationMessage conversation_history = 9;
+  bool is_repeat = 10;
+  repeated ChatAttachment attachments = 11;
+  // 7.8 v2 — AI Tutor Mode (Socratic prepend; see RAGRequest.tutor_mode).
+  bool tutor_mode = 12;
+}
+
+// Agentic RAG request (multi-source orchestration)
+message AgenticRAGRequest {
+  string prompt = 1;
+  string user_id = 2;
+  string model_name = 3;
+  string provider_type = 4;
+  optional string workspace_id = 5;
+  repeated string collection_ids = 6;
+  repeated string document_ids = 7;
+  string language = 8;
+  string subscription_tier = 9;
+  map<string, float> source_preferences = 10;
+  float min_confidence_threshold = 11;
+  int32 max_sources = 12;
+  string session_namespace = 13;
+  string assistant_message_id = 14;
+  repeated ConversationMessage conversation_history = 15;
+  bool is_repeat = 16;
+  repeated ChatAttachment attachments = 17;
+  repeated string saved_search_ids = 18;
+  // 7.8 v2 — AI Tutor Mode (Socratic prepend; see RAGRequest.tutor_mode).
+  bool tutor_mode = 19;
+}
+
+// Document QA request (unprocessed document)
+message DocumentQARequest {
+  string prompt = 1;
+  string user_id = 2;
+  string model_name = 3;
+  string provider_type = 4;
+  string document_id = 5;
+  string language = 6;
+  string subscription_tier = 7;
+  string session_namespace = 8;
+  string assistant_message_id = 9;
+  repeated ChatAttachment attachments = 10;
+}
+
+// Title generation request (non-streaming)
+message TitleRequest {
+  string user_message = 1;
+  string model_name = 2;
+  string provider_type = 3;
+  string user_id = 4;
+  string subscription_tier = 5;
+  string language = 6;           // UI language code (e.g., "hr", "en")
+}
+
+// Title generation response
+message TitleResponse {
+  string title = 1;
+  bool success = 2;
+  string error = 3;
+}
+
+// Deprecated: Legacy unified chat request
+// Use mode-specific request messages instead
+message ChatRequest {
+  string prompt = 1;
+  optional string session_id = 2;
+  string user_id = 3;
+  optional string workspace_id = 4;
+  repeated string collection_ids = 5;
+  repeated string document_ids = 6;
+  optional string model_id = 7;
+  optional string model_name = 8;
+  optional string provider_type = 9;
+  string language = 10;
+  bool web_search_enabled = 11;
+  bool deep_research_enabled = 12;
+  int32 research_breadth = 13;
+  int32 research_depth = 14;
+  optional string user_message_id = 15;
+  optional float similarity_threshold = 16;
+  optional int32 top_k = 17;
+  bool agentic_rag_enabled = 18;
+  map<string, float> source_preferences = 19;
+  float min_confidence_threshold = 20;
+  int32 max_sources = 21;
+}
+
+// Chat attachment (documents as extracted text, images as base64, YouTube as URL)
+message ChatAttachment {
+  string type = 1;           // "document", "image", "youtube"
+  string filename = 2;       // Original filename or YouTube URL
+  string content = 3;        // Extracted text (document), base64 data (image), or YouTube URL
+  string mime_type = 4;      // MIME type (e.g., "application/pdf", "image/png")
+}
+
+// Conversation message for passing history from Kotlin to Python
+message ConversationMessage {
+  string role = 1;
+  string content = 2;
+  int64 created_at_epoch = 3;
+}
+
+// Chat response packet (matches Python PacketEmitter streaming format)
+message ChatResponsePacket {
+  string type = 1;
+  int32 index = 2;
+  string data = 3;
+  scrapalot.common.Timestamp timestamp = 4;
+}
+
+// Health check response
+message HealthCheckResponse {
+  bool healthy = 1;
+  string version = 2;
+  string status = 3;
+  map<string, string> services = 4;
+}

@@ -1,0 +1,202 @@
+"""
+GPU utilities for detecting and managing GPU resources across multiple platforms.
+Supports NVIDIA CUDA, AMD ROCm, Apple Metal, Intel GPUs, and other platforms.
+
+This module is a facade. The implementation was split into focused submodules
+to keep each file small and cohesive while preserving the historical import
+path ``src.main.utils.gpu.devices`` for every public (and private) name:
+
+- ``_state``      - shared module-level state, constants, lazy torch / pynvml
+                    loaders, config helpers, command runner.
+- ``_cache``      - on-disk cache persistence (load / save / expiry / Vulkan files).
+- ``_detection``  - per-vendor detection, ``get_all_gpus`` orchestration, device
+                    type / capabilities, background detection, legacy compat.
+- ``_monitoring`` - async GPU memory / utilization probes and fallbacks.
+- ``_multi_gpu``  - cached LLM-manager GPU info, multi-GPU strategy, cache reset,
+                    CUDA compatibility check.
+"""
+
+# Cache persistence layer.
+from src.main.utils.gpu._cache import (
+    _ensure_cache_directory,
+    _initialize_gpu_cache,
+    _invalidate_expired_cache,
+    _is_cache_expired,
+    _load_vulkan_info_files,
+    get_gpu_cache_info,
+    load_gpu_cache,
+    save_gpu_cache,
+)
+
+# Detection / device-type / capabilities layer.
+from src.main.utils.gpu._detection import (
+    _background_gpu_detection,
+    _detect_amd_gpus,
+    _detect_apple_gpus,
+    _detect_intel_gpus,
+    _detect_nvidia_gpus,
+    _detect_opencl_gpus,
+    _detect_vulkan_gpus,
+    _determine_device_type_internal,
+    _start_background_detection,
+    calculate_max_parameters,
+    get_all_gpus,
+    get_apple_silicon_info,
+    get_cpu_memory_info,
+    get_cuda_gpu_info,
+    get_device_type,
+    get_gpu_memory_info,
+    get_gpu_type,
+    get_primary_gpu,
+    get_recommended_quantization,
+    get_system_capabilities,
+    initialize_gpu_system,
+    is_gpu_available,
+)
+
+# Async monitoring layer.
+from src.main.utils.gpu._monitoring import (
+    _get_fallback_value,
+    _get_nvidia_fallback_memory,
+    _get_nvidia_fallback_utilization,
+    _update_fallback_value,
+    get_gpu_memory_usage,
+    get_gpu_utilization,
+    run_gpu_command,
+)
+
+# Cached-info / multi-GPU / CUDA-compat layer.
+from src.main.utils.gpu._multi_gpu import (
+    _get_gpu_info_from_llm_manager,
+    _get_recommended_multi_gpu_strategy,
+    check_pytorch_cuda_compatibility,
+    clear_gpu_cache,
+    force_gpu_redetection,
+    get_cached_gpu_availability,
+    get_cached_gpu_info,
+    get_cached_gpu_memory,
+    get_cached_gpu_name,
+    get_gpu_available_flag,
+    get_multi_gpu_info,
+    get_optimal_gpu_allocation,
+    log_multi_gpu_status,
+    setup_multi_gpu_environment,
+)
+
+# Shared state, constants, and helpers (single owner: _state).
+from src.main.utils.gpu._state import (
+    DEVICE_TYPE_CPU,
+    DEVICE_TYPE_CUDA,
+    DEVICE_TYPE_MPS,
+    DEVICE_TYPE_OPENCL,
+    DEVICE_TYPE_ROCM,
+    DEVICE_TYPE_VULKAN,
+    GPU_AVAILABLE,
+    GPU_CACHE_DIR,
+    GPU_CACHE_EXPIRY_HOURS,
+    GPU_CACHE_FILE,
+    GPU_TYPE_AMD,
+    GPU_TYPE_APPLE,
+    GPU_TYPE_INTEL,
+    GPU_TYPE_NVIDIA,
+    GPU_TYPE_UNKNOWN,
+    MULTI_GPU_STRATEGY_DATA_PARALLEL,
+    MULTI_GPU_STRATEGY_MODEL_PARALLEL,
+    MULTI_GPU_STRATEGY_NONE,
+    MULTI_GPU_STRATEGY_PIPELINE_PARALLEL,
+    NVIDIA_SMI_AVAILABLE,
+    ROCM_SMI_AVAILABLE,
+    VULKAN_INFO_PATTERN,
+    _check_pynvml_availability,
+    _check_torch_availability,
+    _get_command_timeout,
+    _get_gpu_config,
+    _is_gpu_detection_disabled,
+    _is_provider_enabled,
+    _run_command,
+    get_gpu_availability,
+)
+
+__all__ = [
+    "DEVICE_TYPE_CPU",
+    "DEVICE_TYPE_CUDA",
+    "DEVICE_TYPE_MPS",
+    "DEVICE_TYPE_OPENCL",
+    "DEVICE_TYPE_ROCM",
+    "DEVICE_TYPE_VULKAN",
+    "GPU_AVAILABLE",
+    "GPU_CACHE_DIR",
+    "GPU_CACHE_EXPIRY_HOURS",
+    "GPU_CACHE_FILE",
+    "GPU_TYPE_AMD",
+    "GPU_TYPE_APPLE",
+    "GPU_TYPE_INTEL",
+    "GPU_TYPE_NVIDIA",
+    "GPU_TYPE_UNKNOWN",
+    "MULTI_GPU_STRATEGY_DATA_PARALLEL",
+    "MULTI_GPU_STRATEGY_MODEL_PARALLEL",
+    "MULTI_GPU_STRATEGY_NONE",
+    "MULTI_GPU_STRATEGY_PIPELINE_PARALLEL",
+    "NVIDIA_SMI_AVAILABLE",
+    "ROCM_SMI_AVAILABLE",
+    "VULKAN_INFO_PATTERN",
+    "_background_gpu_detection",
+    "_check_pynvml_availability",
+    "_check_torch_availability",
+    "_detect_amd_gpus",
+    "_detect_apple_gpus",
+    "_detect_intel_gpus",
+    "_detect_nvidia_gpus",
+    "_detect_opencl_gpus",
+    "_detect_vulkan_gpus",
+    "_determine_device_type_internal",
+    "_ensure_cache_directory",
+    "_get_command_timeout",
+    "_get_fallback_value",
+    "_get_gpu_config",
+    "_get_gpu_info_from_llm_manager",
+    "_get_nvidia_fallback_memory",
+    "_get_nvidia_fallback_utilization",
+    "_get_recommended_multi_gpu_strategy",
+    "_initialize_gpu_cache",
+    "_invalidate_expired_cache",
+    "_is_cache_expired",
+    "_is_gpu_detection_disabled",
+    "_is_provider_enabled",
+    "_load_vulkan_info_files",
+    "_run_command",
+    "_start_background_detection",
+    "_update_fallback_value",
+    "calculate_max_parameters",
+    "check_pytorch_cuda_compatibility",
+    "clear_gpu_cache",
+    "force_gpu_redetection",
+    "get_all_gpus",
+    "get_apple_silicon_info",
+    "get_cached_gpu_availability",
+    "get_cached_gpu_info",
+    "get_cached_gpu_memory",
+    "get_cached_gpu_name",
+    "get_cpu_memory_info",
+    "get_cuda_gpu_info",
+    "get_device_type",
+    "get_gpu_availability",
+    "get_gpu_available_flag",
+    "get_gpu_cache_info",
+    "get_gpu_memory_info",
+    "get_gpu_memory_usage",
+    "get_gpu_type",
+    "get_gpu_utilization",
+    "get_multi_gpu_info",
+    "get_optimal_gpu_allocation",
+    "get_primary_gpu",
+    "get_recommended_quantization",
+    "get_system_capabilities",
+    "initialize_gpu_system",
+    "is_gpu_available",
+    "load_gpu_cache",
+    "log_multi_gpu_status",
+    "run_gpu_command",
+    "save_gpu_cache",
+    "setup_multi_gpu_environment",
+]

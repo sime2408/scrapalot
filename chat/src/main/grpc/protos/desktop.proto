@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package scrapalot.desktop;
+
+option java_package = "com.scrapalot.backend.grpc.desktop";
+option java_multiple_files = true;
+
+import "common.proto";
+
+// Desktop mode service - authentication and management for Electron app
+service DesktopService {
+  rpc InitializeAuth(DesktopInitRequest) returns (DesktopInitResponse);
+  rpc VerifyAuth(VerifyAuthRequest) returns (DesktopAuthResponse);
+  rpc Health(scrapalot.common.Empty) returns (DesktopHealthResponse);
+  rpc CloudInitialize(CloudDesktopInitRequest) returns (DesktopInitResponse);
+}
+
+message DesktopInitRequest {
+  string api_key = 1;
+}
+
+message DesktopInitResponse {
+  string user_json = 1;      // JSON user object
+  string access_token = 2;
+  string refresh_token = 3;
+  string token_type = 4;
+}
+
+message VerifyAuthRequest {
+  string api_key = 1;
+}
+
+message DesktopAuthResponse {
+  bool authenticated = 1;
+  string user_json = 2;  // JSON user object
+}
+
+message DesktopHealthResponse {
+  string status = 1;
+  bool desktop_mode = 2;
+  string data_directory = 3;
+  string database_path = 4;
+}
+
+message CloudDesktopInitRequest {
+  string api_key = 1;
+  string machine_id = 2;
+  string machine_name = 3;
+}

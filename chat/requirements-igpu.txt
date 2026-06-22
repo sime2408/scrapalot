@@ -1,0 +1,62 @@
+# iGPU / Integrated GPU Requirements for Scrapalot-Chat
+#
+# This file configures Scrapalot for systems with integrated GPUs (AMD/Intel iGPU)
+# that cannot accelerate Docling/PyTorch operations.
+#
+# WHAT WORKS ON iGPU SYSTEMS:
+# PyMuPDF4LLM - Fast CPU processing for clean PDFs (~2-5 sec/page)
+# Docling CPU mode - Accurate OCR for scanned PDFs (~20-30 sec/page)
+# Embeddings - CPU-based sentence transformers
+# llama-cpp-python - CPU inference for local models
+#
+# WHAT DOESN'T WORK:
+# ❌ DirectML - Not supported by Docling/PyTorch
+# ❌ Vulkan - Not supported by Docling
+# ❌ OpenCL - Not supported by Docling/PyTorch
+#
+# INSTALLATION:
+#   conda activate scrapalot-chat
+#   pip install -r requirements.txt
+#   pip install -r requirements-igpu.txt --force-reinstall
+#
+# ═══════════════════════════════════════════════════════════════════════
+
+# PyTorch CPU version (no CUDA/GPU dependencies)
+# Faster startup and smaller disk footprint
+--index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0
+torchvision==0.22.0
+torchaudio==2.6.0
+
+# llama-cpp-python CPU version
+# For GGUF model inference without GPU
+# Note: Slower than GPU but works reliably on all systems
+llama-cpp-python==0.3.2
+
+# ═══════════════════════════════════════════════════════════════════════
+# PERFORMANCE EXPECTATIONS
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Document Processing (per page):
+#   - Clean PDF (PyMuPDF4LLM):  2-5 seconds  Very Fast
+#   - Scanned PDF (Docling OCR): 20-30 seconds  ⚠️ Slower but accurate
+#
+# Embeddings:
+#   - Sentence transformers: CPU mode (acceptable performance)
+#   - Batch processing recommended for large documents
+#
+# Local LLM Inference:
+#   - llama-cpp-python CPU: 5-20 tokens/sec (model dependent)
+#   - Consider using smaller models (7B instead of 13B/70B)
+#
+# ═══════════════════════════════════════════════════════════════════════
+# OPTIMIZATION TIPS FOR iGPU SYSTEMS
+# ═══════════════════════════════════════════════════════════════════════
+#
+# 1. Enable PyMuPDF4LLM for clean PDFs (automatic fallback)
+# 2. Avoid OCR when possible - use text-based PDFs
+# 3. Use smaller embedding models (all-MiniLM-L6-v2 instead of all-mpnet-base-v2)
+# 4. Batch process documents during off-peak hours
+# 5. Increase worker timeout for OCR tasks (60+ seconds)
+#
+# ═══════════════════════════════════════════════════════════════════════

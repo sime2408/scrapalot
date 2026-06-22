@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package scrapalot.tts;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.tts";
+option java_outer_classname = "TtsServiceProto";
+
+// Text-to-Speech service using Microsoft Edge TTS
+service TtsService {
+  // Synthesize text to speech audio (MP3 + word boundaries)
+  rpc Synthesize(SynthesizeRequest) returns (SynthesizeResponse);
+
+  // List available TTS voices
+  rpc ListVoices(scrapalot.common.Empty) returns (ListVoicesResponse);
+}
+
+message SynthesizeRequest {
+  string text = 1;           // Text to synthesize (1-50000 chars)
+  string voice = 2;          // Voice name (e.g., "en-US-AriaNeural")
+  string rate = 3;           // Speech rate (e.g., "+0%", "+50%", "-25%")
+  string pitch = 4;          // Pitch adjustment (e.g., "+0Hz", "+10Hz")
+}
+
+message SynthesizeResponse {
+  bytes audio = 1;                           // MP3 audio bytes
+  repeated WordBoundary word_boundaries = 2; // Word timing info
+  double duration_ms = 3;                    // Total audio duration in ms
+}
+
+message WordBoundary {
+  string text = 1;       // Word text
+  int64 offset = 2;      // Start offset (100-nanosecond units)
+  int64 duration = 3;    // Duration (100-nanosecond units)
+}
+
+message VoiceInfo {
+  string name = 1;          // Voice ID (e.g., "en-US-AriaNeural")
+  string display_name = 2;  // Display name (e.g., "Aria (en-US)")
+  string locale = 3;        // Locale (e.g., "en-US")
+  string gender = 4;        // Gender (e.g., "Female")
+  string language = 5;      // Language code (e.g., "EN")
+}
+
+message ListVoicesResponse {
+  repeated VoiceInfo voices = 1;
+}

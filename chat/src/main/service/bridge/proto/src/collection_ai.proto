@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package scrapalot.collection;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.collection";
+option java_outer_classname = "CollectionAIServiceProto";
+
+// Collection AI service for AI-powered operations on collections
+service CollectionAIService {
+  // Generate description for a collection from its documents
+  rpc GenerateDescription(GenerateDescriptionRequest) returns (GenerateDescriptionResponse);
+
+  // Generate description from collection name only
+  rpc GenerateDescriptionFromName(GenerateDescriptionFromNameRequest) returns (GenerateDescriptionResponse);
+
+  // Generate a system-prompt addendum (custom_instructions
+  // baseline) tailored to the collection. If the collection has no
+  // description yet, one is generated inline and used as input. The result
+  // is what the user would see pre-filled in the "Custom Instructions"
+  // textarea; they are free to edit before saving.
+  rpc GenerateCustomInstructions(GenerateCustomInstructionsRequest) returns (GenerateCustomInstructionsResponse);
+}
+
+message GenerateDescriptionRequest {
+  string collection_id = 1;
+  string user_id = 2;
+  // The description currently in the editor (may be user-edited and unsaved).
+  // When non-empty, the AI refines THIS text by merging in book summaries
+  // instead of generating from scratch — preserving the user's wording/intent.
+  string existing_description = 3;
+}
+
+message GenerateDescriptionFromNameRequest {
+  string collection_name = 1;
+  string user_id = 2;
+}
+
+message GenerateDescriptionResponse {
+  bool success = 1;
+  string description = 2;
+  string error = 3;
+}
+
+message GenerateCustomInstructionsRequest {
+  string collection_id = 1;
+  string user_id = 2;
+  // Optional language hint ('en' | 'hr' | 'auto'). When empty the model
+  // matches the language of the description.
+  string language = 3;
+}
+
+message GenerateCustomInstructionsResponse {
+  bool success = 1;
+  string custom_instructions = 2;
+  // The description that was used as the input. Populated whether the
+  // service found one in the cache or generated one inline so the
+  // caller can persist it back to the collections table without a
+  // second round-trip.
+  string description_used = 3;
+  // True when the description was auto-generated as part of this call
+  // (i.e. the collection had none on entry). The caller should persist
+  // it back so subsequent calls don't regenerate.
+  bool description_generated = 4;
+  string error = 5;
+}

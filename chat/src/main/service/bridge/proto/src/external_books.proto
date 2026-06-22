@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package scrapalot.external_books;
+
+option java_package = "com.scrapalot.backend.grpc.external_books";
+option java_multiple_files = true;
+
+import "common.proto";
+
+// External books service - search, download, preview books from external sources
+service ExternalBooksService {
+  rpc GetSources(scrapalot.common.Empty) returns (SourcesResponse);
+  rpc SearchBooks(SearchBooksRequest) returns (SearchBooksResponse);
+  rpc DownloadAndProcess(DownloadProcessRequest) returns (DownloadResponse);
+  rpc DownloadOnly(DownloadOnlyRequest) returns (DownloadResponse);
+  rpc RedownloadForDocument(RedownloadForDocumentRequest) returns (DownloadResponse);
+  rpc ProcessBooks(ProcessBooksRequest) returns (ProcessBooksResponse);
+  rpc PreviewBook(PreviewBookRequest) returns (PreviewResponse);
+  rpc ServePreviewFile(PreviewFileRequest) returns (PreviewFileResponse);
+  rpc DeletePreviewFile(PreviewFileRequest) returns (scrapalot.common.StatusResponse);
+}
+
+message SearchBooksRequest {
+  string query = 1;
+  repeated string sources = 2;
+  int32 limit = 3;
+  int32 page = 4;
+  string language = 5;
+  string file_type = 6;
+  string sort_by = 7;
+  string user_id = 8;
+}
+
+message SearchBooksResponse {
+  string results_json = 1;  // JSON-serialized search results
+}
+
+message DownloadProcessRequest {
+  string book_id = 1;
+  string source = 2;
+  string download_url = 3;
+  string collection_id = 4;
+  string title = 5;
+  string extension = 6;
+  string author = 7;
+  string year = 8;
+  string user_id = 9;
+}
+
+message DownloadOnlyRequest {
+  string book_id = 1;
+  string source = 2;
+  string download_url = 3;
+  string collection_id = 4;
+  string title = 5;
+  string extension = 6;
+  string cover_url = 7;
+  string author = 8;
+  string year = 9;
+  string user_id = 10;
+}
+
+message RedownloadForDocumentRequest {
+  string document_id = 1;
+  string download_url = 2;
+  string source = 3;
+  string user_id = 4;
+}
+
+message DownloadResponse {
+  bool success = 1;
+  string document_id = 2;
+  string job_id = 3;
+  string message = 4;
+  string file_path = 5;
+}
+
+message ProcessBooksRequest {
+  repeated string document_ids = 1;
+  string collection_id = 2;
+  string user_id = 3;
+}
+
+message ProcessBooksResponse {
+  bool success = 1;
+  string jobs_json = 2;    // JSON array of job info
+  string errors_json = 3;  // JSON array of errors
+  string message = 4;
+}
+
+message PreviewBookRequest {
+  string book_id = 1;
+  string source = 2;
+  string download_url = 3;
+  string title = 4;
+  string extension = 5;
+  string user_id = 6;
+}
+
+message PreviewResponse {
+  bool success = 1;
+  string preview_url = 2;
+  string temp_file_id = 3;
+  string title = 4;
+  double file_size_mb = 5;
+  int32 expires_in = 6;
+  string message = 7;
+}
+
+message PreviewFileRequest {
+  string file_id = 1;
+  string user_id = 2;
+}
+
+message PreviewFileResponse {
+  bytes file_data = 1;
+  string media_type = 2;
+  string filename = 3;
+}
+
+message SourcesResponse {
+  string sources_json = 1;  // JSON-serialized sources list
+}

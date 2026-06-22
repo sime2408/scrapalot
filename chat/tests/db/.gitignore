@@ -1,0 +1,7 @@
+# Ignore all SQLite database files in tests/db/
+*.db
+*.sqlite
+*.sqlite3
+
+# But keep this directory
+!.gitignore

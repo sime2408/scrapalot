@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package scrapalot.collection;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.collection";
+option java_outer_classname = "CollectionAIServiceProto";
+
+// Collection AI service for AI-powered operations on collections
+service CollectionAIService {
+  // Generate description for a collection from its documents
+  rpc GenerateDescription(GenerateDescriptionRequest) returns (GenerateDescriptionResponse);
+
+  // Generate description from collection name only
+  rpc GenerateDescriptionFromName(GenerateDescriptionFromNameRequest) returns (GenerateDescriptionResponse);
+}
+
+message GenerateDescriptionRequest {
+  string collection_id = 1;
+  string user_id = 2;
+}
+
+message GenerateDescriptionFromNameRequest {
+  string collection_name = 1;
+  string user_id = 2;
+}
+
+message GenerateDescriptionResponse {
+  bool success = 1;
+  string description = 2;
+  string error = 3;
+}

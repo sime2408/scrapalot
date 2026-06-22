@@ -1,0 +1,382 @@
+name: CICD-Infrastructure
+
+on:
+  # Manual trigger only - run once during initial setup
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "prod"
+        type: choice
+        options:
+          - dev
+          - rc
+          - prod
+      services:
+        description: "Services to deploy"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - essential
+          - redis
+          - neo4j
+          - portainer
+          - nginx-proxy-manager
+          - workers
+
+jobs:
+  deploy-infrastructure:
+    runs-on: self-hosted
+    environment: ${{ github.event.inputs.environment || 'prod' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: scrapalot-chat
+
+      - name: Set up deployment directory
+        run: |
+          mkdir -p /opt/scrapalot
+
+          # Copy repository to deployment directory
+          rm -rf /opt/scrapalot/scrapalot-chat
+          cp -r scrapalot-chat /opt/scrapalot/
+
+          # Set proper permissions
+          sudo chown -R $USER:$USER /opt/scrapalot/scrapalot-chat
+
+      - name: Create production environment file
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          cat > .env << EOF
+          # ============================================================================
+          # Environment Configuration
+          # ============================================================================
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+
+          # ============================================================================
+          # Database Configuration
+          # ============================================================================
+          POSTGRES_USER=${{ vars.POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB=${{ vars.POSTGRES_DB }}
+          POSTGRES_HOST=${{ vars.POSTGRES_HOST }}
+          POSTGRES_PORT=${{ vars.POSTGRES_PORT }}
+
+          # ============================================================================
+          # Redis Configuration
+          # ============================================================================
+          REDIS_URL=redis://redis:6379
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+
+          # ============================================================================
+          # Neo4j Configuration
+          # ============================================================================
+          NEO4J_USER=${{ vars.NEO4J_USER }}
+          NEO4J_PASSWORD=${{ secrets.NEO4J_PASSWORD }}
+
+          # ============================================================================
+          # External API Keys
+          # ============================================================================
+          HUGGINGFACE_TOKEN=${{ secrets.HUGGINGFACE_TOKEN }}
+          FIRECRAWL_API_KEY=${{ secrets.FIRECRAWL_API_KEY }}
+          TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}
+          SERPAPI_KEY=${{ secrets.SERPAPI_KEY }}
+          GOOGLE_BOOKS_API_KEY=${{ secrets.GOOGLE_BOOKS_API_KEY }}
+
+          # ============================================================================
+          # OAuth Configuration (User Authentication)
+          # ============================================================================
+          GOOGLE_OAUTH_CLIENT_ID=${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REDIRECT_URI=${{ vars.GOOGLE_OAUTH_REDIRECT_URI }}
+
+          # ============================================================================
+          # Application URLs
+          # ============================================================================
+          FRONTEND_URL=${{ vars.FRONTEND_URL }}
+          BACKEND_BASE_URL=${{ vars.BACKEND_BASE_URL }}
+
+          # ============================================================================
+          # Background Workers
+          # ============================================================================
+          ENABLE_BACKGROUND_WORKERS=${{ vars.ENABLE_BACKGROUND_WORKERS }}
+          USE_LIGHTWEIGHT_WORKERS=${{ vars.USE_LIGHTWEIGHT_WORKERS }}
+
+          # ============================================================================
+          # UI Environment Variables
+          # ============================================================================
+          VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+          VITE_LLM_INFERENCE_ENDPOINT=${{ vars.VITE_LLM_INFERENCE_ENDPOINT }}
+
+          # ============================================================================
+          # Neo4j Memory Configuration
+          # ============================================================================
+          NEO4J_HEAP_SIZE=${{ vars.NEO4J_HEAP_SIZE }}
+          NEO4J_PAGECACHE_SIZE=${{ vars.NEO4J_PAGECACHE_SIZE }}
+
+          # ============================================================================
+          # Neo4j Port Configuration
+          # ============================================================================
+          NEO4J_HTTP_PORT=7474
+          NEO4J_BOLT_PORT=7687
+          NEO4J_HTTPS_PORT=7473
+
+          # ============================================================================
+          # Graph Configuration
+          # ============================================================================
+          GRAPH_ENABLED=${{ vars.GRAPH_ENABLED }}
+          EOF
+
+          echo "✓ Environment file created"
+
+          # Verify .env file was created and contains expected variables
+          echo ""
+          echo "Verifying .env file contents:"
+          grep -E "POSTGRES_HOST|POSTGRES_PORT|REDIS_PASSWORD" .env || echo "⚠️  Warning: Some variables may be missing"
+
+      - name: Deploy Infrastructure Services
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          SERVICES="${{ github.event.inputs.services }}"
+
+          echo "========================================="
+          echo "Infrastructure Service Versions:"
+          echo "  - PostgreSQL: pgvector/pgvector:pg18 (local Docker container, 2 DBs)"
+          echo "  - Redis: redis:8-alpine"
+          echo "  - Neo4j: neo4j:2025-community"
+          echo "  - Portainer: portainer/portainer-ce:latest"
+          echo "  - Nginx Proxy Manager: jc21/nginx-proxy-manager:latest"
+          echo "  - Celery Workers: scrapalot-workers + scrapalot-workers-graph (same image as scrapalot-chat)"
+          echo "========================================="
+          echo ""
+
+          if [ "$SERVICES" = "all" ]; then
+            echo "Deploying all infrastructure services..."
+            docker compose --env-file .env up -d \
+              portainer \
+              nginx-proxy-manager \
+              redis \
+              neo4j \
+              scrapalot-workers
+          elif [ "$SERVICES" = "essential" ]; then
+            echo "Deploying essential services only (redis + neo4j)..."
+            docker compose --env-file .env up -d \
+              redis \
+              neo4j
+          elif [ "$SERVICES" = "workers" ]; then
+            echo "Deploying Celery workers..."
+            docker compose --env-file .env up -d \
+              scrapalot-workers
+          else
+            echo "Deploying selected service: $SERVICES"
+            docker compose --env-file .env up -d $SERVICES
+          fi
+
+          echo "✓ Infrastructure services deployed"
+
+      - name: Wait for Services to be Ready
+        run: |
+          echo "Waiting for services to initialize..."
+          sleep 30
+
+          echo "Checking service health..."
+          docker ps --filter "name=redis|neo4j|portainer|nginx-proxy-manager|scrapalot-workers" --format "table {{.Names}}\t{{.Status}}"
+
+      - name: Configure Nginx WebSocket Support
+        run: |
+          echo "Configuring Nginx Proxy Manager for WebSocket support..."
+
+          # Create custom nginx directory if it doesn't exist
+          docker exec nginx-proxy-manager mkdir -p /data/nginx/custom
+
+          # Create WebSocket configuration for STOMP and Notes endpoints
+          docker exec nginx-proxy-manager sh -c 'cat > /data/nginx/custom/server_proxy.conf << EOF
+          # WebSocket support for STOMP and Notes endpoints
+          # These locations ensure HTTP/1.1 is used for WebSocket upgrade
+
+          # Match /stomp and /stomp-direct paths
+          location ~ ^/stomp(-direct)?(/.*)?$ {
+              proxy_pass http://scrapalot-chat:8090;
+
+              # WebSocket MUST use HTTP/1.1
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade \$http_upgrade;
+              proxy_set_header Connection "upgrade";
+
+              # Standard proxy headers
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$scheme;
+
+              # Disable buffering for real-time
+              proxy_buffering off;
+              proxy_cache off;
+
+              # Long timeouts for persistent connections
+              proxy_connect_timeout 600s;
+              proxy_send_timeout 600s;
+              proxy_read_timeout 600s;
+          }
+
+          # Notes WebSocket endpoint
+          location ~ ^/api/ws/notes(/.*)?$ {
+              proxy_pass http://scrapalot-chat:8090;
+
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade \$http_upgrade;
+              proxy_set_header Connection "upgrade";
+
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$scheme;
+
+              proxy_buffering off;
+              proxy_cache off;
+
+              proxy_connect_timeout 600s;
+              proxy_send_timeout 600s;
+              proxy_read_timeout 600s;
+          }
+          EOF'
+
+          # Test and reload nginx configuration
+          docker exec nginx-proxy-manager nginx -t && docker exec nginx-proxy-manager nginx -s reload
+
+          echo "✓ Nginx WebSocket configuration applied"
+          echo ""
+          echo "⚠️  NOTE: After setting up proxy hosts in Nginx Proxy Manager UI,"
+          echo "   disable HTTP/2 for api.scrapalot.app to enable WebSocket support."
+          echo "   HTTP/2 ALPN negotiation prevents WebSocket upgrade mechanism."
+
+      - name: Verify Database Connectivity
+        run: |
+          echo "Verifying PostgreSQL (local pgvector container)..."
+          docker exec pgvector pg_isready -U ${{ vars.POSTGRES_USER }} -d ${{ vars.POSTGRES_DB }} || echo "⚠️  PostgreSQL not ready yet"
+
+          echo ""
+          echo "Verifying Redis connectivity..."
+          docker exec redis redis-cli -a ${{ secrets.REDIS_PASSWORD }} ping || echo "⚠️  Redis not ready yet"
+
+          echo ""
+          echo "Verifying Neo4j connectivity..."
+          docker exec neo4j cypher-shell -u ${{ vars.NEO4J_USER }} -p ${{ secrets.NEO4J_PASSWORD }} "RETURN 1" || echo "⚠️  Neo4j not ready yet"
+
+      - name: Display Access Information
+        run: |
+          SERVER_IP=$(curl -s ifconfig.me)
+
+          echo ""
+          echo "========================================="
+          echo "Infrastructure Services Deployed!"
+          echo "========================================="
+          echo ""
+          echo "Management Interfaces:"
+          echo "  - Portainer: http://${SERVER_IP}:9000"
+          echo "  - Nginx Proxy Manager: http://${SERVER_IP}:81"
+          echo ""
+          echo "Database Services:"
+          echo "  - PostgreSQL: pgvector container (host 127.0.0.1:15432 -> 5432)"
+          echo "  - Redis: localhost:6379 (Docker internal)"
+          echo "  - Neo4j: http://localhost:7474 (browser), bolt://localhost:7687 (driver)"
+          echo ""
+          echo "Next Steps:"
+          echo "  1. Access Portainer and create admin account"
+          echo "  2. Access Nginx Proxy Manager (admin@example.com / changeme)"
+          echo "  3. Configure SSL certificates and proxy hosts"
+          echo "  4. Run 'Deploy Backend to cloud' workflow to deploy the application"
+          echo ""
+          echo "========================================="
+
+      - name: Create Infrastructure Status File
+        run: |
+          cat > /opt/scrapalot/infrastructure-status.txt << EOF
+          Infrastructure Deployment Status
+          =================================
+          Deployment Date: $(date)
+          Environment: ${{ github.event.inputs.environment }}
+          Services Deployed: ${{ github.event.inputs.services }}
+
+          Service Versions:
+          - PostgreSQL: pgvector/pgvector:pg18 (local Docker container)
+          - Redis: redis:8-alpine
+          - Neo4j: neo4j:2025-community
+          - Portainer: portainer/portainer-ce:latest
+          - Nginx Proxy Manager: jc21/nginx-proxy-manager:latest
+          - Celery Workers: scrapalot-workers (same image as scrapalot-chat)
+
+          Service Status:
+          $(docker ps --filter "name=redis|neo4j|portainer|nginx-proxy-manager|scrapalot-workers" --format "  - {{.Names}}: {{.Status}}")
+
+          Management URLs:
+          - Portainer: http://$(curl -s ifconfig.me):9000
+          - Nginx Proxy Manager: http://$(curl -s ifconfig.me):81
+          EOF
+
+          echo "✓ Infrastructure status saved to /opt/scrapalot/infrastructure-status.txt"
+
+      - name: Cleanup Old Images and Free Storage
+        run: |
+          echo "========================================="
+          echo "Comprehensive Docker Cleanup"
+          echo "========================================="
+
+          # Show current disk usage
+          echo "Disk usage before cleanup:"
+          df -h /
+          docker system df
+
+          # 1. Remove dangling images (untagged)
+          echo ""
+          echo "🧹 Removing dangling images..."
+          docker image prune -f
+
+          # 2. Remove unused images older than 7 days (infrastructure images change less frequently)
+          echo ""
+          echo "🧹 Removing unused images older than 7 days..."
+          docker image prune -af --filter "until=168h"
+
+          # 3. Remove stopped containers
+          echo ""
+          echo "🧹 Removing stopped containers..."
+          docker container prune -f
+
+          # 4. Remove unused volumes (BE CAREFUL - only removes truly unused volumes)
+          echo ""
+          echo "🧹 Removing unused volumes..."
+          docker volume prune -f
+
+          # 5. Remove unused networks
+          echo ""
+          echo "🧹 Removing unused networks..."
+          docker network prune -f
+
+          # 6. Clean build cache aggressively
+          echo ""
+          echo "🧹 Removing build cache..."
+          docker builder prune -af
+
+          # 7. Clean GitHub Actions runner logs older than 14 days
+          echo ""
+          echo "🧹 Cleaning runner diagnostic logs older than 14 days..."
+          find /opt/scrapalot/actions-runner*/_diag -name "*.log" -mtime +14 -delete 2>/dev/null || echo "No old runner logs found"
+
+          # 8. Clean system logs (rotate and compress)
+          echo ""
+          echo "🧹 Rotating system logs..."
+          sudo logrotate -f /etc/logrotate.conf 2>/dev/null || echo "Log rotation completed"
+
+          # Show disk usage after cleanup
+          echo ""
+          echo "Disk usage after cleanup:"
+          df -h /
+          docker system df
+
+          echo ""
+          echo "✓ Comprehensive cleanup complete - storage optimized!"

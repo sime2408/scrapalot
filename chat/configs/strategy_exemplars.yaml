@@ -1,0 +1,320 @@
+# Strategy Exemplar Bank for Tier 2 Routing
+#
+# Each strategy has 8-12 exemplar queries that represent its ideal use case.
+# These are embedded at first use and compared via cosine similarity to route
+# incoming queries without LLM calls.
+#
+# Total: ~200 exemplars across all strategies
+
+strategies:
+  # ── Individual Strategies ──
+
+  RAGSimilaritySearch:
+    exemplars:
+      - "What does the document say about climate change?"
+      - "Find information about renewable energy sources"
+      - "Tell me about machine learning applications"
+      - "What is mentioned about water purification?"
+      - "Search for content related to urban planning"
+      - "What information is available on soil composition?"
+      - "Find passages about economic growth"
+      - "What does the text say about biodiversity?"
+
+  RAGSparseSearch:
+    exemplars:
+      - "Find all mentions of GDPR compliance"
+      - "Search for the term 'photosynthesis' in the documents"
+      - "Where does it mention API rate limiting?"
+      - "Find references to ISO 9001 certification"
+      - "Search for HIPAA requirements"
+      - "Find all occurrences of 'TCP/IP protocol'"
+      - "Where is CRISPR-Cas9 discussed?"
+      - "Search for mentions of ERR-4021 error code"
+      - "Find passages containing 'quantum entanglement'"
+      - "Look for references to the Blue Sheet system"
+
+  RAGRegexGrep:
+    exemplars:
+      - "Where does the book mention commit 7f3a9c1?"
+      - "Find the passage that talks about v2.4.1-beta release"
+      - "Look up DOI 10.1145/3461702.3462624 in the corpus"
+      - "What does the text say about ISO-9001:2015?"
+      - "Find references to 15 CFR 744.21"
+      - "Locate the section that quotes 'the only way out is through'"
+      - "Where is CVE-2024-1234 discussed?"
+      - "Find paragraphs containing PROJ-5821 ticket"
+      - "Show me passages that contain the literal string 'forking paths'"
+      - "What does the document say about model gpt-4o-mini?"
+
+  RAGSelfQuery:
+    exemplars:
+      - "What were the latest developments in 2024?"
+      - "Find documents published after January 2023"
+      - "Show me the most recent analysis reports"
+      - "What changed in the current quarter?"
+      - "Find papers from the last 6 months"
+      - "What are the newest findings on this topic?"
+      - "Show content updated since March"
+      - "What was published this year about AI safety?"
+
+  RAGHybridSelfQuery:
+    exemplars:
+      - "What does error code 221 mean?"
+      - "Find documentation for API endpoint v2.1.3"
+      - "What is the procedure for fault code F-17?"
+      - "Look up version 3.0 release notes"
+      - "Find the specification for model X-2000"
+      - "What does status code 503 indicate?"
+      - "Search for protocol version 2.4 details"
+      - "Find the section about error ERR-CONN-TIMEOUT"
+      - "What is the fix for bug #4521?"
+      - "Document ID 78923 analysis results"
+
+  RAGHyDE:
+    exemplars:
+      - "What is the concept of sustainable development?"
+      - "Explain the theory of relativity in simple terms"
+      - "How does photosynthesis work at a cellular level?"
+      - "What are the philosophical implications of AI?"
+      - "Explain quantum computing like I'm a beginner"
+      - "What is the meaning of social contract theory?"
+      - "How do neural networks learn patterns?"
+      - "What is the concept behind blockchain consensus?"
+      - "Explain the greenhouse effect mechanism"
+
+  RAGMultiQuery:
+    exemplars:
+      - "Compare renewable energy and fossil fuels"
+      - "What are the pros and cons of remote work?"
+      - "Compare Python and Java for data science"
+      - "What are the advantages and disadvantages of nuclear power?"
+      - "How does organic farming compare to conventional farming?"
+      - "Compare the economic systems of capitalism and socialism"
+      - "What are the similarities and differences between RNA and DNA?"
+      - "Evaluate the trade-offs between privacy and security"
+      - "Compare agile and waterfall methodologies"
+
+  RAGFusion:
+    exemplars:
+      - "I need a comprehensive analysis of water treatment methods across all aspects"
+      - "Give me everything about the environmental impact of mining"
+      - "Comprehensive overview of vaccine development timeline and challenges"
+      - "Full analysis of supply chain disruptions and their effects"
+      - "Everything about the history and evolution of programming languages"
+      - "Complete information on renewable energy storage solutions"
+      - "Thorough analysis of urbanization trends globally"
+      - "All available information on gene therapy approaches"
+
+  RAGHybridSummarySearch:
+    exemplars:
+      - "Summarize the main points of this document"
+      - "What is this book about?"
+      - "Give me an overview of the key findings"
+      - "What are the main themes discussed?"
+      - "Summarize the chapter on environmental policy"
+      - "What are the key takeaways from this report?"
+      - "Give me a brief summary of the research methodology"
+      - "What is the main argument of this paper?"
+      - "TL;DR of this document"
+      - "Sažmi ovu knjigu"
+
+  RAGParentDocument:
+    exemplars:
+      - "I found a passage about gene editing, show me the full context"
+      - "What is the broader context around this regulation?"
+      - "Show me the full section where this quote appears"
+      - "What comes before and after this paragraph about trade agreements?"
+      - "Expand the context around the mentioned experiment"
+      - "Give me more context around the discovery of penicillin"
+      - "What is the larger discussion around this data point?"
+      - "Show the surrounding content of this finding"
+
+  RAGStepBack:
+    exemplars:
+      - "Why does inflation occur in economies?"
+      - "What is the root cause of antibiotic resistance?"
+      - "What fundamental principle explains gravitational waves?"
+      - "Why do programming languages have different paradigms?"
+      - "What is the underlying mechanism of memory formation?"
+      - "Why does the immune system sometimes attack the body?"
+      - "What is the theoretical basis for market equilibrium?"
+      - "What principle drives natural selection?"
+      - "Why do materials have different conductivity?"
+
+  RAGDecomposition:
+    exemplars:
+      - "What are the environmental impacts of deforestation, and how do they affect local communities and global climate?"
+      - "Explain the causes of World War I and also describe the major battles and their outcomes"
+      - "What is machine learning, how does it differ from traditional programming, and what are its main applications?"
+      - "First explain how vaccines work, then discuss the timeline of COVID-19 vaccine development"
+      - "What are the economic causes and social consequences of urbanization in developing countries?"
+      - "How does solar energy work, what are its limitations, and how does it compare to wind energy?"
+      - "Describe the water cycle and explain how climate change affects each stage"
+      - "What is blockchain technology and how is it used in finance, healthcare, and supply chain management?"
+
+  RAGGraphSearch:
+    exemplars:
+      - "How are climate change and food security related?"
+      - "What is the connection between poverty and education?"
+      - "How does deforestation depend on economic policies?"
+      - "What entities are linked to the concept of sustainable agriculture?"
+      - "Show the relationship between insulin resistance and obesity"
+      - "How are trade agreements connected to labor rights?"
+      - "What concepts are related to quantum computing?"
+      - "Map the connections between renewable energy and employment"
+      - "How does urbanization relate to public health?"
+
+  RAGGenerativeFeedbackLoop:
+    exemplars:
+      - "You mentioned something about crop rotation earlier, can you elaborate?"
+      - "Based on your previous answer, what about the economic aspects?"
+      - "Follow up on what you said about renewable energy storage"
+      - "Can you expand on the point about market volatility?"
+      - "Tell me more about the gene therapy approach you described"
+      - "Going back to your earlier point about neural networks"
+      - "You said the experiment failed — what were the alternatives?"
+      - "Earlier you mentioned three types of soil — describe each in detail"
+
+  RAGQueryChain:
+    exemplars:
+      - "What are the effects of global warming on polar bears, and what conservation efforts exist?"
+      - "Trace the development of antibiotics from discovery to modern resistance"
+      - "How did the industrial revolution lead to current environmental challenges?"
+      - "Follow the chain from raw materials to final product in semiconductor manufacturing"
+      - "How does photosynthesis connect to the food chain and ultimately to human nutrition?"
+      - "Trace the evolution of computer networks from ARPANET to modern internet"
+      - "How does soil quality affect crop yield and subsequently food prices?"
+      - "Follow the progression from basic research to clinical trials in drug development"
+
+  RAGRewriteRetrieveRead:
+    exemplars:
+      - "stuff about AI"
+      - "energy things"
+      - "water issue"
+      - "that disease"
+      - "farming problem"
+      - "the new law"
+      - "space exploration"
+      - "health tips"
+      - "budget info"
+      - "climate"
+
+  RAGSectionExpansion:
+    exemplars:
+      - "Give me the full section on data privacy"
+      - "Show the complete chapter about methodology"
+      - "I want the entire passage about the experiment results"
+      - "Show me the verbatim text of section 3.2"
+      - "Give me the whole paragraph about treatment protocols"
+      - "Show the complete discussion section"
+      - "I need the full text of the conclusion"
+      - "Give me the entire section on risk factors word for word"
+
+  RAGAgenticExpansion:
+    exemplars:
+      - "Find everything about sustainable farming and expand on the most relevant sections"
+      - "Search broadly for AI ethics content and go deeper where needed"
+      - "Explore the documents for information about clinical trials and expand promising results"
+      - "Cast a wide net for water management and drill into specific solutions"
+      - "Search for renewable energy content and automatically expand the most relevant areas"
+      - "Find and expand on all aspects of urban transportation planning"
+      - "Explore cybersecurity topics and go deeper into the most relevant findings"
+      - "Search comprehensively for material on biodiversity conservation"
+
+  RAGAgenticContextNavigator:
+    exemplars:
+      - "Navigate through the document structure to find information about economic policy"
+      - "Explore the document hierarchy for content about environmental regulations"
+      - "Walk through the chapters to find relevant discussion of immigration"
+      - "Navigate to the section discussing experimental methods and related subsections"
+      - "Find and navigate through all sections mentioning public health measures"
+      - "Explore the document tree for discussions about education reform"
+      - "Navigate the table of contents to find relevant chapters on technology"
+      - "Walk through the book structure to find content about market analysis"
+
+  RAGTwoPhaseContext:
+    exemplars:
+      - "Find initial results about machine learning and then refine with more context"
+      - "Do a preliminary search for climate data and then enhance the results"
+      - "First find relevant passages about genetics, then provide additional context"
+      - "Search for economic indicators and supplement with contextual information"
+      - "Find basic information about quantum mechanics and enhance with deeper context"
+      - "Initial search for agricultural data, then refine with surrounding context"
+      - "Find passages about neural networks and add contextual depth"
+      - "Search for vaccine efficacy data and enhance results with supporting context"
+
+  RAGEntityExpanded:
+    exemplars:
+      - "What do all the documents say about climate change adaptation?"
+      - "Gather information about renewable energy from across all books"
+      - "What perspectives on artificial intelligence appear across the collection?"
+      - "Compile what every source says about water scarcity"
+      - "Cross-reference mentions of sustainable development across documents"
+      - "What do the different sources say about gene therapy?"
+      - "Compare how each document discusses biodiversity loss"
+      - "Aggregate all mentions of food security from the collection"
+
+  # ── Orchestrators ──
+
+  EnhancedTriModalOrchestrator:
+    exemplars:
+      - "Tell me about the agricultural practices in the region"
+      - "What information is available about this topic?"
+      - "Find relevant content about environmental sustainability"
+      - "What does the collection say about healthcare access?"
+      - "Search for information about transportation infrastructure"
+      - "What can you tell me about educational systems?"
+      - "Find documents about technological innovation"
+      - "What is discussed about economic development?"
+      - "General question about the content in the knowledge base"
+      - "What do you know about this subject?"
+
+  RAGAdaptiveOrchestrator:
+    exemplars:
+      - "I'm not sure exactly what I'm looking for, but something about climate policy"
+      - "Help me explore what's available about renewable energy solutions"
+      - "I need information but I'm not sure which approach would work best"
+      - "Search intelligently for the best content about urban development"
+      - "Find the most relevant information using whatever method works best"
+      - "Adaptively search for content about healthcare systems"
+      - "Use your best judgment to find information about education reform"
+      - "Smart search for content related to trade agreements"
+
+  # Precision / Balanced / ContextEnhanced exemplars removed — consolidated out of
+  # the router (overlapping subsets of Adaptive). Classes kept for eval; see
+  # strategy_presets.py and RAG_ORCHESTRATORS.
+  RAGKnowledgeIntensiveOrchestrator:
+    exemplars:
+      - "Deep dive into the molecular biology of CRISPR"
+      - "I need intensive knowledge retrieval about quantum computing hardware"
+      - "Thorough research on the biochemistry of protein folding"
+      - "Knowledge-intensive search about advanced materials science"
+      - "Deep exploration of computational neuroscience"
+      - "Intensive retrieval about genetic engineering techniques"
+      - "Comprehensive knowledge search about nanotechnology applications"
+      - "Deep technical dive into distributed systems consensus"
+
+  RAGDocumentHierarchyOrchestrator:
+    exemplars:
+      - "Explore the document structure to understand the organization of content"
+      - "Navigate the hierarchy of this book to find relevant chapters"
+      - "Use the document structure to find related sections"
+      - "Search respecting the document hierarchy and chapter organization"
+      - "Find content by navigating the book's table of contents"
+      - "Use the document outline to locate relevant sections"
+      - "Explore content organized by chapters and sections"
+      - "Navigate the structured hierarchy of the documentation"
+
+  RAGQueryRefinementOrchestrator:
+    exemplars:
+      - "I'm looking for something about energy but I'm not sure how to phrase it"
+      - "Find content about health — refine my query as needed"
+      - "Search for economics content and improve the search as you go"
+      - "Help me formulate a better query about environmental science"
+      - "Iteratively refine the search for agricultural technology"
+      - "Start broad and narrow down results about policy"
+      - "Search and progressively refine for biomedical content"
+      - "Improve my vague query about technology trends"
+
+  # RAGFeedbackLoopOrchestrator exemplars removed — consolidated out of the router
+  # (thin wrapper over RAGGenerativeFeedbackLoop). Class kept for eval.

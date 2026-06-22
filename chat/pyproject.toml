@@ -1,0 +1,306 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scrapalot-chat"
+version = "0.1.0"
+description = "Scrapalot AI backend (RAG, deep research, gRPC)"
+requires-python = ">=3.12"
+
+# ============================================================================
+# Ruff — single tool replacing black + isort + flake8 + autopep8 + pyupgrade.
+# ============================================================================
+[tool.ruff]
+line-length = 150
+target-version = "py312"
+extend-exclude = [
+    "alembic/versions",
+    "src/main/service/bridge/proto",
+    "src/main/grpc/common_pb2.py",
+    "src/main/grpc/common_pb2_grpc.py",
+    "src/main/grpc/*_pb2.py",
+    "src/main/grpc/*_pb2_grpc.py",
+    "src/main/grpc/*.pyi",
+    "data",
+    "logs",
+    ".docker",
+    "docker-composes",
+    # Bundled skill helpers (not our source code).
+    ".claude",
+    # Local venv used only for running pre-commit on the host.
+    ".venv-precommit",
+    ".venv",
+]
+
+[tool.ruff.lint]
+# Widened net (SIM, RUF, PLC/PLE/PLW) — N and PLR stay off: naming renames are
+# behavior-risky and PLR design metrics aren't mechanically actionable.
+select = [
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes (undefined names, unused imports)
+    "W",   # pycodestyle warnings
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (Python 3.12 syntax)
+    "B",   # flake8-bugbear (common bugs)
+    "G",   # flake8-logging-format (enforce %s over f-strings in loggers)
+    "PGH", # pygrep-hooks (blanket noqa, eval, etc.)
+    "S",   # flake8-bandit (security)
+    "SIM", # flake8-simplify
+    "RUF", # ruff-native rules
+    "PLC", # pylint conventions
+    "PLE", # pylint errors (real bugs: bad logging format args, etc.)
+    "PLW", # pylint warnings
+]
+ignore = [
+    # --- Style / formatter coexistence ---
+    "E203",   # whitespace before ':' — black/ruff-format compatibility
+    "E402",   # module-level import not at top — alembic/env.py and similar
+    "E501",   # line-too-long — handled by formatter
+    # --- Simplify: bulk style churn deferred; SIM105 conflicts with our
+    # logging-in-except policy (contextlib.suppress would drop the log) ---
+    "SIM102", # collapsible-if (39) — readability call, revisit
+    "SIM103", # needless-bool — final guard in guard-clause chains reads better as-is
+    "SIM105", # suppressible-exception — we log in except blocks instead
+    "SIM108", # ternary-instead-of-if-else (53) — readability call, revisit
+    "SIM117", # combined with-statements (28) — revisit
+    # --- Ruff-native: bulk or needs-design items deferred ---
+    "RUF001", # ambiguous unicode in strings — Croatian/typographic text
+    "RUF002", # ambiguous unicode in docstrings — same
+    "RUF003", # ambiguous unicode in comments — same
+    "RUF006", # asyncio dangling task (33) — each needs a kept reference; audit separately
+    "RUF012", # mutable class default (31) — ClassVar annotations sweep, separately
+    "RUF013", # implicit Optional (213) — typing sweep, separately
+    # --- Pylint: deliberate project patterns ---
+    "PLC0415", # import-outside-top-level (2284) — lazy imports are a startup-time decision
+    "PLW0603", # global statement (113) — module-level globals with locks is the sanctioned pattern
+    "PLW2901", # redefined loop name (31) — revisit
+    # --- Bugbear: rules that need code changes, not blanket ignores ---
+    "B006",   # mutable default args (7 hits) — change signatures later
+    "B008",   # FastAPI `Depends()` in default args is idiomatic
+    "B023",   # function uses loop var (7 hits) — tracked for later
+    # --- Logging style: CLAUDE.md mandates %s + logger.exception, but there are
+    # hundreds of call sites. Enable these once we do a logging cleanup pass. ---
+    # --- Security: audit separately; these are not actionable auto-fixes ---
+    "S101",   # assert — used extensively in pytest
+    "S104",   # bind-all interfaces (0.0.0.0) — FastAPI + uvicorn
+    "S105",   # hardcoded password — too many false positives
+    "S106",
+    "S107",
+    "S108",   # hardcoded /tmp (5 hits) — review separately
+    "S110",   # try/except/pass — intentional in some retry loops
+    "S112",   # try/except/continue (4 hits) — review separately
+    "S113",   # requests without timeout (2 hits) — add timeouts in a sweep
+    "S310",   # urllib without scheme (3 hits)
+    "S311",   # non-crypto random — scientific sampling
+    "S314",   # XML parsing XXE (4 hits)
+    "S324",   # weak hash (MD5/SHA1) — 8 hits, switch to hashlib.sha256 later
+    "S501",   # httpx with verify=False (1 hit) — review before enabling TLS check
+    "S603",   # subprocess call — auditable separately
+    "S607",   # subprocess partial path
+    "S608",   # possible SQL injection — raw SQL in Alembic migrations is safe
+    # --- pyupgrade: syntax migrations that touch too many files for one commit ---
+    "UP031",  # `%s` formatting — 133 hits across scripts/, migrate later
+    "UP042",  # `StrEnum` migration (25 hits) — Pydantic v2 serialization edge case
+    "UP046",  # Generic subclass syntax (1 hit)
+    "UP047",  # Generic function type parameters (2 hits)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests lean on assert, subprocess, and random fixtures — not security-sensitive.
+"tests/**/*.py" = ["S", "B"]
+# Scripts are manual-ops CLI wrappers — different rules apply.
+"scripts/**/*.py" = ["S", "B"]
+# Generated gRPC stubs — never edit, never lint.
+"src/main/grpc/*_pb2*.py" = ["ALL"]
+# Alembic migration template and env.
+"alembic/env.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+split-on-trailing-comma = true
+known-first-party = ["src"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+# ============================================================================
+# Pyright — static type checker. Report-only at first; CI job is
+# continue-on-error so it does not block PRs yet.
+#
+# Why "basic" mode: SQLAlchemy Column/relationship dynamic attrs, Pydantic v2
+# computed fields, and generated gRPC stubs flood strict-mode with false
+# positives. Graduate rules from "warning" -> "error" file-by-file, then
+# flip typeCheckingMode to "strict" once the backlog is cleared.
+#
+# Local run (inside container, real deps):
+#     docker exec scrapalot-chat pyright /app/src
+# Manual pre-commit stage (opt-in, same command):
+#     pre-commit run --hook-stage manual pyright
+# Authoritative CI (non-blocking):
+#     .github/workflows/type-check.yml
+# ============================================================================
+[tool.pyright]
+include = ["src", "run_service.py"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    ".venv-precommit",
+    "alembic/versions",
+    "src/main/grpc/common_pb2.py",
+    "src/main/grpc/common_pb2_grpc.py",
+    "src/main/grpc/*_pb2.py",
+    "src/main/grpc/*_pb2_grpc.py",
+    "src/main/grpc/*.pyi",
+    "src/main/service/bridge/proto",
+    "data",
+    "logs",
+    "scripts",
+    "tests",
+]
+pythonVersion = "3.12"
+pythonPlatform = "Linux"
+typeCheckingMode = "basic"
+useLibraryCodeForTypes = true
+reportMissingImports = "error"
+reportMissingTypeStubs = "none"
+# Suppress SQLAlchemy + Pydantic dynamic-attribute noise while we migrate.
+# Revisit each of these individually during a dedicated typing sweep.
+reportGeneralTypeIssues = "warning"
+reportOptionalMemberAccess = "none"
+reportOptionalSubscript = "none"
+reportOptionalIterable = "none"
+reportOptionalCall = "none"
+reportOptionalContextManager = "none"
+reportAttributeAccessIssue = "none"
+reportArgumentType = "warning"
+reportCallIssue = "warning"
+reportAssignmentType = "warning"
+reportReturnType = "warning"
+reportUnknownParameterType = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnknownLambdaType = "none"
+reportMissingParameterType = "none"
+reportMissingTypeArgument = "none"
+reportUntypedFunctionDecorator = "none"
+reportUntypedClassDecorator = "none"
+reportUntypedBaseClass = "none"
+reportPrivateImportUsage = "none"
+reportIncompatibleMethodOverride = "warning"
+reportIncompatibleVariableOverride = "warning"
+reportIndexIssue = "warning"
+reportOperatorIssue = "warning"
+
+# ============================================================================
+# Pytest — migrated from pytest.ini.
+# ============================================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers"
+log_cli = true
+log_cli_level = "INFO"
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests that require GPU (deselect with '-m \"not gpu\"')",
+    "rag: marks tests related to RAG techniques (deselect with '-m \"not rag\"')",
+    "accuracy: marks tests that evaluate accuracy metrics (deselect with '-m \"not accuracy\"')",
+    "latency: marks tests that evaluate latency performance (deselect with '-m \"not latency\"')",
+    "database_required: marks tests that require actual database connections",
+    "neo4j: marks tests that require Neo4j",
+    "postgres: marks tests that require PostgreSQL",
+    "redis: marks tests that require Redis",
+]
+
+# ============================================================================
+# Typos — spell-check for code, docs, and comments.
+# ============================================================================
+[tool.typos.default]
+extend-ignore-identifiers-re = [
+    # Project + dependency identifiers that typos misflags.
+    "scrapalot.*",
+    "pgvector",
+    "psycopg2?",
+    "asyncpg",
+    "langchain.*",
+    "pydantic.*",
+    "ollama",
+    "alembic",
+    "neo4j",
+    "docling",
+    "rapidocr",
+    "pymupdf.*",
+    "fastmcp",
+    "huggingface.*",
+    "weasyprint",
+    "edge-tts",
+    "openai",
+    "tiktoken",
+]
+
+[tool.typos.default.extend-words]
+# Technical/domain words typos sometimes misflags.
+crate = "crate"
+nd = "nd"
+ot = "ot"
+# Short uppercase tokens used as Mermaid diagram node IDs (BA, Ba, FO, LENG).
+BA = "BA"
+Ba = "Ba"
+FO = "FO"
+LENG = "LENG"
+# Dev shorthand appearing in comments.
+strat = "strat"       # "strategy" abbreviation
+mis = "mis"           # "mis-classify", "mis-configuration" etc. (compound prefix)
+nin = "nin"           # proper names and tokenizer corners
+Pich = "Pich"         # proper names / variants
+# Third-party product names flagged as typos.
+Slite = "Slite"       # knowledge management product (competitive analysis)
+slite = "slite"
+
+# ============================================================================
+# Commitizen — enforces Conventional Commits via the commit-msg hook.
+# ============================================================================
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "v$version"
+version_scheme = "semver"
+version_provider = "pep621"
+update_changelog_on_bump = true
+# Subject line hygiene: 100-char hard cap (roomy enough for long scope names
+# while still fitting in `git log --oneline` on most terminals).
+# Type list mirrors what the repo already uses (feat, fix, docs, chore,
+# refactor, perf, test, build, ci, style, revert).
+major_version_zero = true
+# Merge / revert / automated commits are allowed through without validation.
+allowed_prefixes = [
+    "Merge",
+    "Revert",
+    "Bump version",
+]
+
+[tool.typos.files]
+extend-exclude = [
+    "alembic/versions/**",
+    "src/main/grpc/*_pb2*.py",
+    "src/main/service/bridge/proto/**",
+    "data/**",
+    "logs/**",
+    "*.lock",
+    "*.min.js",
+    "requirements*.txt",
+    # Skills bundled from external sources — not our code.
+    ".claude/**",
+    # PRD dumps with third-party product names and marketing copy.
+    "docs/prd-competitive/**",
+    # Mermaid diagrams in architecture docs use lots of short node IDs.
+    "docs/README_RAG_ARCHITECTURE.md",
+]

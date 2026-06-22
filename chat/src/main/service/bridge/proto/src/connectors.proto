@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package scrapalot.connectors;
+
+option java_package = "com.scrapalot.backend.grpc.connectors";
+option java_multiple_files = true;
+
+import "common.proto";
+
+// Connector service - OAuth flows, sync triggers, available connectors
+service ConnectorService {
+  rpc ListAvailable(scrapalot.common.Empty) returns (AvailableConnectorsResponse);
+  rpc OAuthAuthorize(OAuthAuthorizeRequest) returns (OAuthAuthorizeResponse);
+  rpc OAuthCallback(OAuthCallbackRequest) returns (OAuthCallbackResponse);
+  rpc SyncDestination(SyncDestinationRequest) returns (SyncDestinationResponse);
+  rpc ListFileSyncs(ListFileSyncsRequest) returns (ListFileSyncsResponse);
+}
+
+message AvailableConnectorsResponse {
+  string connectors_json = 1;  // JSON-serialized list of available connector types
+}
+
+message OAuthAuthorizeRequest {
+  string connector_type = 1;
+  string workspace_id = 2;
+  string redirect_uri = 3;
+  string user_id = 4;
+}
+
+message OAuthAuthorizeResponse {
+  string auth_url = 1;
+  string state = 2;
+  string connector_type = 3;
+}
+
+message OAuthCallbackRequest {
+  string code = 1;
+  string state = 2;
+  string user_id = 3;
+}
+
+message OAuthCallbackResponse {
+  bool success = 1;
+  string credential_id = 2;
+  string connector_type = 3;
+  string message = 4;
+}
+
+message SyncDestinationRequest {
+  string connector_id = 1;
+  string destination_id = 2;
+  string user_id = 3;
+}
+
+message SyncDestinationResponse {
+  bool success = 1;
+  string job_id = 2;
+  string message = 3;
+}
+
+message ListFileSyncsRequest {
+  string connector_id = 1;
+  string status = 2;   // Optional filter by sync status
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message FileSyncEntry {
+  string id = 1;
+  string connector_id = 2;
+  string document_id = 3;
+  string external_file_id = 4;
+  string external_file_path = 5;
+  string file_name = 6;
+  int64 file_size = 7;
+  string file_type = 8;
+  string sync_status = 9;
+  string sync_error = 10;
+  string last_sync_attempt = 11;
+  string last_successful_sync = 12;
+  int32 retry_count = 13;
+  string created_at = 14;
+  string updated_at = 15;
+}
+
+message ListFileSyncsResponse {
+  repeated FileSyncEntry file_syncs = 1;
+}

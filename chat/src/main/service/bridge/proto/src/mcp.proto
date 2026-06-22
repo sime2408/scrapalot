@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package scrapalot.mcp;
+
+option java_package = "com.scrapalot.backend.grpc.mcp";
+option java_multiple_files = true;
+
+// MCP service — validate a remote MCP server and discover the tools it exposes.
+// Used by the "Test connection" button before a user saves an integration.
+service McpService {
+  rpc TestConnection(McpTestConnectionRequest) returns (McpTestConnectionResponse);
+}
+
+message McpTestConnectionRequest {
+  string transport = 1;             // "http" (streamable HTTP) or "sse"
+  string url = 2;
+  string auth_token = 3;            // optional plaintext bearer token (test-time only)
+  map<string, string> headers = 4;  // optional extra headers
+}
+
+message McpToolInfo {
+  string name = 1;
+  string description = 2;
+}
+
+message McpTestConnectionResponse {
+  bool ok = 1;
+  repeated McpToolInfo tools = 2;
+  string error = 3;
+}

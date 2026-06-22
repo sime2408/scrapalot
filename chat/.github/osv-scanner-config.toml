@@ -1,0 +1,22 @@
+# osv-scanner config for scrapalot-chat.
+# Governs the blocking gate in .github/workflows/security-audit.yml.
+#
+# Behaviour:
+#   - All vulnerabilities are uploaded to GitHub Code Scanning (visible in
+#     the Security tab) regardless of severity.
+#   - The workflow only FAILS on HIGH + CRITICAL so MEDIUM/LOW advisories
+#     surface as warnings without blocking unrelated PRs.
+#   - Add an `[[IgnoredVulns]]` block below to suppress a specific CVE after
+#     triage, with a justification + expiry date.
+
+# Fail the scan when any high or critical CVE is found in a declared dep.
+[[ExperimentalConfig]]
+  # osv-scanner accepts severity gating via CLI flags; leaving this section
+  # as a placeholder for project-specific tuning (licence rules, call-graph
+  # analysis, etc.) when we enable them.
+
+# Example ignore (keep commented until we actually need it):
+# [[IgnoredVulns]]
+# id = "CVE-2024-XXXXX"
+# ignoreUntil = "2026-12-31"
+# reason = "Transitive dep of torch, upstream tracking in issue #1234"

@@ -1,0 +1,113 @@
+name: Security Audit
+
+# ============================================================================
+# Dependency vulnerability scan (Phase 2 of the pre-commit migration).
+#
+# CURRENT MODE: REPORT-ONLY. The job intentionally does NOT fail on vulnerable
+# dependencies. Rationale: the initial scan surfaced ~40 transitive CVEs
+# (aiohttp, pillow, torch, cryptography, fastmcp, ...) that predate this
+# workflow. Blocking PRs on day one would freeze all merges. Instead we:
+#   1. Print the full advisory table on every run so it is visible in CI.
+#   2. Schedule a weekly scan on main to catch newly-disclosed CVEs.
+#   3. Upload SARIF to Code Scanning (best-effort — silently skipped on
+#      private repos without GitHub Advanced Security).
+#
+# PROMOTION PATH:
+#   - Knock down the pre-existing CVE list by bumping deps in dedicated PRs.
+#   - When the floor is near zero, flip `continue-on-error: true` -> remove
+#     and add `--strict` back to pip-audit. The job will then block merges.
+# ============================================================================
+
+on:
+  pull_request:
+    paths:
+      - 'requirements.txt'
+      - 'requirements-gpu.txt'
+      - 'requirements-igpu.txt'
+      - '.github/workflows/security-audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'requirements.txt'
+      - 'requirements-gpu.txt'
+      - 'requirements-igpu.txt'
+  schedule:
+    # Every Monday 04:00 UTC — catches new CVEs in already-merged deps.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF (ignored without GHAS)
+
+jobs:
+  osv-scan:
+    name: OSV-Scanner (requirements)
+    runs-on: ubuntu-latest
+    # Report-only: never blocks. See header comment for promotion path.
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.2.3
+        with:
+          scan-args: |-
+            --lockfile=requirements.txt:./requirements.txt
+            --lockfile=requirements.txt:./requirements-gpu.txt
+            --lockfile=requirements.txt:./requirements-igpu.txt
+            --format=sarif
+            --output=osv-results.sarif
+        continue-on-error: true
+
+      - name: Upload SARIF to GitHub Code Scanning
+        # Best-effort upload — private repos without GHAS get
+        # "Resource not accessible by integration". continue-on-error
+        # keeps the job green in that case.
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: osv-results.sarif
+          category: osv-scanner
+
+      - name: Print human-readable advisory table
+        if: always()
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/src" ghcr.io/google/osv-scanner:latest \
+            --lockfile=requirements.txt:/src/requirements.txt \
+            --lockfile=requirements.txt:/src/requirements-gpu.txt \
+            --lockfile=requirements.txt:/src/requirements-igpu.txt \
+            --config=/src/.github/osv-scanner-config.toml \
+            || true
+
+  pip-audit:
+    name: pip-audit (belt-and-braces)
+    runs-on: ubuntu-latest
+    # Report-only: never blocks. See header comment for promotion path.
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.8'
+          cache: 'pip'
+
+      - name: Install pip-audit
+        run: pip install --upgrade pip-audit
+
+      - name: Scan requirements.txt (report-only)
+        # No --strict: advisories are printed, exit code forced to 0 below.
+        # When the CVE floor is cleaned up, remove `|| true` to re-enable
+        # blocking behaviour.
+        run: |
+          pip-audit \
+            --skip-editable \
+            --vulnerability-service osv \
+            --requirement requirements.txt \
+            || true
