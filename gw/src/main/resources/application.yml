@@ -106,93 +106,8 @@ spring:
         # Kotlin handles CRUD directly, proxies AI operations to Python via gRPC/HTTP
         # ============================================
 
-        # Python-direct routes (REST endpoints that bypass Kotlin proxy)
-        - id: python-research-export
-          uri: ${CHAT_URL:http://scrapalot-chat:8090}
-          predicates:
-            - Path=/api/v1/research/export
-          metadata:
-            description: "Research report export (DOCX/HTML) - direct to Python"
-          order: 3
-
-        - id: python-council-deliberation
-          uri: ${CHAT_URL:http://scrapalot-chat:8090}
-          predicates:
-            - Path=/api/v1/council/**
-          metadata:
-            description: "Council deliberation data - direct to Python (bypasses gRPC proto)"
-          order: 3
-
-        - id: python-hypothesis-direct
-          uri: ${CHAT_URL:http://scrapalot-chat:8090}
-          predicates:
-            - Path=/api/v1/hypothesis
-            - Method=POST
-          metadata:
-            description: "Competing hypotheses - direct to Python (bypasses gRPC proto for new fields)"
-          order: 3
-
-        - id: python-what-if-direct
-          uri: ${CHAT_URL:http://scrapalot-chat:8090}
-          predicates:
-            - Path=/api/v1/what-if
-            - Method=POST
-          metadata:
-            description: "What-If Oracle scenario analysis - direct to Python"
-          order: 3
-
-        - id: python-research-templates
-          uri: ${CHAT_URL:http://scrapalot-chat:8090}
-          predicates:
-            - Path=/api/v1/research/templates
-            - Method=GET
-          metadata:
-            description: "Research templates - direct to Python (source of truth for PRISMA + all templates)"
-          order: 2
-
-        - id: python-paper-venues
-          uri: ${CHAT_URL:http://scrapalot-chat:8090}
-          predicates:
-            - Path=/api/v1/papers/venues
-            - Method=GET
-          metadata:
-            description: "Paper venue templates (Feature 8) - direct to Python"
-          order: 2
-
-        - id: python-citation-stance
-          uri: ${CHAT_URL:http://scrapalot-chat:8090}
-          predicates:
-            - Path=/api/v1/citations/classify-stance
-            - Method=POST
-          metadata:
-            description: "Smart Citations stance classifier (Scite integration) - direct to Python"
-          order: 2
-
-        - id: python-doi-import
-          uri: ${CHAT_URL:http://scrapalot-chat:8090}
-          predicates:
-            - Path=/api/v1/doi-import
-            - Method=POST
-          metadata:
-            description: "DOI → virtual collection (Scite PRD #10) - direct to Python"
-          order: 2
-
-        - id: python-podcast
-          uri: ${CHAT_URL:http://scrapalot-chat:8090}
-          predicates:
-            - Path=/api/v1/podcast/**
-          metadata:
-            description: "NotebookLM-style podcast generation + playback - direct to Python"
-          order: 2
-
-        - id: python-voice
-          uri: ${CHAT_URL:http://scrapalot-chat:8090}
-          predicates:
-            - Path=/api/v1/voice/**
-            - Method=POST
-          metadata:
-            description: "Live voice mode (BYOK Whisper + Edge-TTS) - direct to Python"
-          order: 2
+        # (CE) Python-direct routes for hosted-only features removed: research export/templates,
+        # council, hypothesis, what-if, paper venues, citation stance, DOI import, podcast, voice.
 
         - id: python-explain
           uri: ${CHAT_URL:http://scrapalot-chat:8090}
@@ -203,28 +118,13 @@ spring:
             description: "Highlight-to-Explain (SciSpace #6) - fast direct-LLM gloss on reader selection"
           order: 2
 
-        # Admin inspector routes get their OWN circuit breaker so a slow admin
-        # graph/stats query (heavy Neo4j over 260K+ nodes) can never poison the
-        # breaker that user-facing routes (auth, workspaces, documents…) share.
-        # MUST be a separate predicate block AND removed from backend-routes —
-        # a wildcard inside one predicate list wins regardless of order (rule #10).
-        - id: admin-routes
-          uri: ${BACKEND_URL:http://scrapalot-backend:8091}
-          predicates:
-            - Path=/api/v1/admin/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: adminCircuitBreaker
-                fallbackUri: forward:/fallback/backend
-          metadata:
-            description: "Admin inspector REST - isolated circuit breaker (slow Neo4j ops must not 503 user routes)"
-          order: 4
+        # (CE) Admin inspector routes removed — admin inspector is a hosted-only feature.
 
         - id: backend-routes
           uri: ${BACKEND_URL:http://scrapalot-backend:8091}
           predicates:
-            - Path=/api/v1/users/**, /api/v1/workspaces/**, /api/v1/collections/**, /api/v1/subscriptions/**, /api/v1/auth/**, /api/v1/notes/**, /api/v1/settings/**, /api/v1/jobs/**, /api/v1/storage/**, /api/v1/desktop/**, /api/v1/external-books/**, /api/v1/tts/**, /api/v1/stt/**, /api/v1/chat/**, /api/v1/sessions/**, /api/v1/messages/**, /api/v1/research/plans/**, /api/v1/research/start, /api/v1/research/continue, /api/v1/llm-inference/**, /api/v1/documents/**, /api/v1/shared/**, /api/v1/contact, /upload/**
+            # (CE) Removed hosted-only paths: subscriptions, desktop, external-books, stt, research/*.
+            - Path=/api/v1/users/**, /api/v1/workspaces/**, /api/v1/collections/**, /api/v1/auth/**, /api/v1/notes/**, /api/v1/settings/**, /api/v1/jobs/**, /api/v1/storage/**, /api/v1/tts/**, /api/v1/chat/**, /api/v1/sessions/**, /api/v1/messages/**, /api/v1/llm-inference/**, /api/v1/documents/**, /api/v1/shared/**, /upload/**
           filters:
             - name: CircuitBreaker
               args:
