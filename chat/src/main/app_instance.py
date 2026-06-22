@@ -242,15 +242,7 @@ async def lifespan(_app: FastAPI):
         except Exception as recovery_error:
             logger.warning("Graph sync status recovery skipped: %s", str(recovery_error))
 
-        # Validate Stripe configuration at startup
-        try:
-            from src.main.service.stripe.config_validator import validate_stripe_config
-
-            is_valid, _ = validate_stripe_config()
-            if not is_valid:
-                logger.warning("⚠️ Stripe validation failed - fix configuration in .env or config.yaml")
-        except Exception as stripe_validation_error:
-            logger.warning("Could not validate Stripe configuration: %s", str(stripe_validation_error))
+        # (CE) Stripe/billing is a hosted-only feature — no validation needed.
 
         # Initialize system AI provider from config
         try:
@@ -305,14 +297,7 @@ async def lifespan(_app: FastAPI):
         logger.info("Background initialization task created")
         startup_monitor.checkpoint("Background Task Created")
 
-        # Start preview cleanup background task
-        try:
-            from src.main.service.external_books_service import start_preview_cleanup_task
-
-            await start_preview_cleanup_task()
-            logger.info("✔️ Preview cleanup task started")
-        except Exception as preview_error:
-            logger.warning("Failed to start preview cleanup task: %s", str(preview_error))
+        # (CE) External-books preview cleanup is a hosted-only feature.
 
     except Exception as ex:
         logger.critical("FATAL ERROR during minimal application startup: %s", ex)
@@ -355,14 +340,7 @@ async def lifespan(_app: FastAPI):
             else:
                 logger.info("Secondary background task already completed.")
 
-        # Stop preview cleanup task
-        try:
-            from src.main.service.external_books_service import stop_preview_cleanup_task
-
-            await stop_preview_cleanup_task()
-            logger.info("✔️ Preview cleanup task stopped")
-        except Exception as preview_error:
-            logger.warning("Failed to stop preview cleanup task: %s", str(preview_error))
+        # (CE) External-books preview cleanup is a hosted-only feature.
     except Exception as ex:
         logger.error("Error cancelling background initialization tasks: %s", str(ex))
 
@@ -870,32 +848,11 @@ async def get_research_templates():
 
 @app.post("/api/v1/research/export")
 async def export_research_report(request: dict):
-    """Export a research report in DOCX, HTML, or MD format.
-
-    Expects JSON body: { "markdown": "...", "title": "...", "format": "docx|html|md" }
-    Returns binary file download.
-    """
-    from src.main.service.deep_research.report_export_service import export_report
-
-    md_content = request.get("markdown", "")
-    title = request.get("title", "Research Report")
-    fmt = request.get("format", "docx")
-
-    if not md_content:
-        return JSONResponse(status_code=400, content={"error": "markdown content is required"})
-
-    if fmt not in ("docx", "html", "md"):
-        return JSONResponse(status_code=400, content={"error": f"Unsupported format: {fmt}. Use docx, html, or md."})
-
-    try:
-        file_bytes, content_type, filename = export_report(md_content, fmt, title)
-        return Response(
-            content=file_bytes,
-            media_type=content_type,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    except Exception as exc:
-        return JSONResponse(status_code=500, content={"error": str(exc)})
+    """(CE) Research report export is part of Deep Research — a hosted-only feature."""
+    return JSONResponse(
+        status_code=501,
+        content={"error": "Research report export is available in the hosted edition only."},
+    )
 
 
 # Add WebSocket endpoint for note collaboration

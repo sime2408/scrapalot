@@ -31,24 +31,16 @@ from src.main.grpc import (
     stt_pb2_grpc,
     tts_pb2_grpc,
 )
-from src.main.grpc.services.admin_service import AdminServiceServicer
+# (CE) Only core servicers are wired. Paid servicers (admin, desktop, external_books,
+# inspection, notes_assistant, paper, stt, connectors, mcp, research) are hosted-only.
 from src.main.grpc.services.chat_service import ChatServiceServicer
 from src.main.grpc.services.collection_ai_service import CollectionAIServiceServicer
-from src.main.grpc.services.connectors_service import ConnectorServiceServicer
-from src.main.grpc.services.desktop_service import DesktopServiceServicer
 from src.main.grpc.services.document_collection_service import DocumentCollectionServiceServicer
 from src.main.grpc.services.document_extras_service import DocumentExtrasServiceServicer
 from src.main.grpc.services.document_processing_service import DocumentProcessingServiceServicer
-from src.main.grpc.services.external_books_service import ExternalBooksServiceServicer
-from src.main.grpc.services.inspection_service import InspectionServiceServicer
 from src.main.grpc.services.jobs_service import JobsServiceServicer
 from src.main.grpc.services.llm_inference_service import LlmInferenceServiceServicer
-from src.main.grpc.services.mcp_service import McpServiceServicer
-from src.main.grpc.services.notes_assistant_service import NotesAssistantServiceServicer
-from src.main.grpc.services.paper_service import PaperServiceServicer
-from src.main.grpc.services.research_service import ResearchDataServiceServicer
 from src.main.grpc.services.settings_ai_service import SettingsAIServiceServicer
-from src.main.grpc.services.stt_service import SttServiceServicer
 from src.main.grpc.services.tts_service import TtsServiceServicer
 from src.main.utils.config.loader import resolved_config
 from src.main.utils.core.logger import get_logger
@@ -94,21 +86,13 @@ class GrpcServer:
         documents_pb2_grpc.add_DocumentProcessingServiceServicer_to_server(DocumentProcessingServiceServicer(), self.server)
         documents_pb2_grpc.add_DocumentCollectionServiceServicer_to_server(DocumentCollectionServiceServicer(), self.server)
         jobs_pb2_grpc.add_JobsServiceServicer_to_server(JobsServiceServicer(), self.server)
-        admin_pb2_grpc.add_AdminServiceServicer_to_server(AdminServiceServicer(), self.server)
         tts_pb2_grpc.add_TtsServiceServicer_to_server(TtsServiceServicer(), self.server)
-        stt_pb2_grpc.add_SttServiceServicer_to_server(SttServiceServicer(), self.server)
-        research_pb2_grpc.add_ResearchDataServiceServicer_to_server(ResearchDataServiceServicer(), self.server)
         collection_ai_pb2_grpc.add_CollectionAIServiceServicer_to_server(CollectionAIServiceServicer(), self.server)
         settings_ai_pb2_grpc.add_SettingsAIServiceServicer_to_server(SettingsAIServiceServicer(), self.server)
         llm_inference_pb2_grpc.add_LlmInferenceServiceServicer_to_server(LlmInferenceServiceServicer(), self.server)
         document_extras_pb2_grpc.add_DocumentExtrasServiceServicer_to_server(DocumentExtrasServiceServicer(), self.server)
-        external_books_pb2_grpc.add_ExternalBooksServiceServicer_to_server(ExternalBooksServiceServicer(), self.server)
-        desktop_pb2_grpc.add_DesktopServiceServicer_to_server(DesktopServiceServicer(), self.server)
-        connectors_pb2_grpc.add_ConnectorServiceServicer_to_server(ConnectorServiceServicer(), self.server)
-        inspection_pb2_grpc.add_InspectionServiceServicer_to_server(InspectionServiceServicer(), self.server)
-        notes_assistant_pb2_grpc.add_NotesAssistantServiceServicer_to_server(NotesAssistantServiceServicer(), self.server)
-        paper_pb2_grpc.add_PaperServiceServicer_to_server(PaperServiceServicer(), self.server)
-        mcp_pb2_grpc.add_McpServiceServicer_to_server(McpServiceServicer(), self.server)
+        # (CE) admin / stt / research / external_books / desktop / connectors /
+        # inspection / notes_assistant / paper / mcp servicers are hosted-only.
 
         # Bind port
         listen_addr = f"{address}:{port}"
