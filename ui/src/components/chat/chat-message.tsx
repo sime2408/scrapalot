@@ -79,11 +79,12 @@ import { CitationStanceChip } from './citation-stance-chip';
 import { BridgeConceptsPanel } from './bridge-concepts-panel';
 import { SearchStrategyPanel, type SearchStrategyData } from './search-strategy-panel';
 import { useNotesDrawer } from '@/hooks/use-notes-drawer';
-import { InlineResearchSetup } from '@/components/research/inline-research-setup';
-import { InlineResearchProgress } from '../research/inline-research-progress';
+// (CE) Deep Research is hosted-only — inert no-op renders.
+const InlineResearchSetup = (_props: any) => null;
+const InlineResearchProgress = (_props: any) => null;
 import { synthesizeSpeech, base64ToAudioBlob, splitTextForTTS } from '@/lib/api-tts';
 import { LANGUAGE_VOICE_MAP } from '@/lib/tts-constants';
-import { ResearchCouncilPanel } from '@/components/research/research-council-panel';
+const ResearchCouncilPanel = (_props: any) => null;
 import { apiClient } from '@/lib/api';
 import type { CouncilState } from '@/contexts/deep-research-context';
 import type { ChartDataPacket } from '@/types/streaming-packets';

@@ -28,8 +28,9 @@ import { usePDFViewer } from '@/contexts/pdf-viewer-context';
 import { useEpubViewer } from '@/contexts/epub-viewer-context';
 import { useDocxViewer } from '@/contexts/docx-viewer-context';
 import { cn } from '@/lib/utils';
-import { DeepResearchPanel } from '@/components/research/deep-research-panel';
-import { PlanPreviewCard } from '@/components/research/plan-preview-card';
+// (CE) Deep Research is hosted-only — inert no-op renders.
+const DeepResearchPanel = (_props: any) => null;
+const PlanPreviewCard = (_props: any) => null;
 // InlineResearchSetup is rendered inside ChatMessage (via researchSetupData prop)
 import { useMarkdownViewer } from '@/contexts/markdown-viewer-context';
 import { PopoverPromptSelector } from '@/components/chat/toolbar/actions/popover-prompt-selector.tsx';

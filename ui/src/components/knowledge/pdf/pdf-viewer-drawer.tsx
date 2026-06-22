@@ -46,7 +46,7 @@ import { getReadingPosition, saveReadingPosition, getDocumentById } from '@/lib/
 import { PdfAnnotationLayer } from '@/components/annotations/pdf-annotation-layer';
 import { AnnotationCommentSearch } from '@/components/annotations/annotation-comment-search';
 import { PdfDocumentNotes } from './pdf-document-notes';
-import { PdfMultimodalPanel } from './pdf-multimodal-panel';
+const PdfMultimodalPanel = (_props: any) => null;  // (CE) multimodal panel is hosted-only
 import { useAnnotations } from '@/hooks/use-annotations';
 import { useResolvedCollectionId } from '@/hooks/use-resolved-collection-id';
 import { useNotesDrawer } from '@/hooks/use-notes-drawer';

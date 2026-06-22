@@ -38,16 +38,17 @@ import {
 import {cancelDocumentProcessing, deleteCollection, deleteDocument, getDocumentsByCollection, processDocument,} from '@/lib/api-documents';
 import {uiState} from '@/lib/storage-utils';
 import {mapWithConcurrency} from '@/lib/api-utils';
-import {DOIImportDialog} from './doi-import-dialog';
-import {PodcastDialog} from './podcast-dialog';
+// (CE) DOI import / podcasts / external books / connectors are hosted-only — inert no-ops.
+const DOIImportDialog = (_props: any) => null;
+const PodcastDialog = (_props: any) => null;
 import {createCollection, generateCollectionCustomInstructions, generateCollectionDescription, generateCollectionDescriptionFromName, updateCollection} from '@/lib/api-collections';
 import {toast} from '@/lib/toast-compat';
 import {useTranslation} from 'react-i18next';
 import {useTheme} from '@/providers/theme-provider';
 import {useCollections} from '@/contexts/collections-context';
 import {KnowledgeFileUploader} from './knowledge-file-uploader';
-import {KnowledgeConnectors} from './knowledge-connectors.tsx';
-import {ExternalBooksSearch} from './external-books-search';
+const KnowledgeConnectors = (_props: any) => null;
+const ExternalBooksSearch = (_props: any) => null;
 import {LibraryView, ProcessedDocument} from './library-view';
 import {ExistingDocument, KnowledgeFileUploaderRef, KnowledgeStacksDialogProps,} from '@/types/file-attachments';
 import {PopoverEmbeddingSettings} from './popover-embedding-settings';

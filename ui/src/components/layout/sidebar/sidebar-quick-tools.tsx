@@ -4,7 +4,8 @@ import { useAdminCheck } from '@/hooks/use-admin-check';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { ThemeToggle } from '../../theme-toggle.tsx';
 import { KnowledgeStacksDialog } from '@/components/knowledge/knowledge-stacks-dialog.tsx';
-import { DocumentInspectorDialog } from '@/components/admin/document-dashboard';
+// (CE) Admin document inspector is hosted-only — inert no-op render.
+const DocumentInspectorDialog = (_props: any) => null;
 import { toast } from '@/lib/toast-compat';
 import { uiState } from '@/lib/storage-utils';
 import {

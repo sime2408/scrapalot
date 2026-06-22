@@ -70,12 +70,14 @@ import NotFound from './pages/NotFound';
 import LoginPage from './pages/login';
 import SignUpPage from './pages/sign-up';
 import HomePage from './pages/home';
-import PricingPage from './pages/pricing';
-import BuyLicensePage from './pages/buy-license';
-import AboutPage from './pages/about';
+// (CE) Pricing/billing is hosted-only — route renders nothing.
+const PricingPage = () => null;
+// (CE) buy-license / about / contact marketing pages are hosted-only — routes render nothing.
+const BuyLicensePage = () => null;
+const AboutPage = () => null;
 import Shop from './pages/Shop';
 import DesktopPage from './pages/desktop';
-import ContactPage from './pages/contact';
+const ContactPage = () => null;
 import PrivacyPage from './pages/privacy';
 import DeleteAccountPage from './pages/delete-account';
 import InvitePage from './pages/invite';

@@ -16,7 +16,8 @@ import {
 import { useTheme } from '@/providers/theme-provider';
 import { useAuth } from '@/hooks/use-auth';
 import { useCart } from '@/contexts/cart-context';
-import { CartPanel } from '@/components/cart/cart-panel';
+// (CE) Shop/cart is hosted-only — inert no-op render.
+const CartPanel = (_props: any) => null;
 import LoginPopover from '@/components/login-popover';
 import { useDesktopMode } from '@/hooks/use-desktop-mode';
 import { cn } from '@/lib/utils';

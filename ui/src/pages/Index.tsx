@@ -29,7 +29,8 @@ import { LicenseAgreementModal } from '@/components/auth/license-agreement-modal
 import { useModelSettingsPreload } from '@/hooks/use-model-settings-preload';
 import { useSwipeGesture, type SwipeEvent } from '@/hooks/use-swipe-gesture';
 import { KnowledgeStacksDialog } from '@/components/knowledge/knowledge-stacks-dialog';
-import { DocumentInspectorDialog } from '@/components/admin/document-dashboard';
+// (CE) Admin document inspector is hosted-only — inert no-op render.
+const DocumentInspectorDialog = (_props: any) => null;
 
 interface IndexProps {
   showWorkspaces?: boolean;

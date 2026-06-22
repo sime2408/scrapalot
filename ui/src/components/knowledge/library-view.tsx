@@ -9,7 +9,7 @@ import { userPrefs } from '@/lib/storage-utils';
 import { DocumentThumbnail } from './document-thumbnail';
 import { MetadataBadge } from './metadata-badge';
 import { TagDots } from './tag-badge';
-import { RelationBadge } from './relation-badge';
+const RelationBadge = (_props: any) => null;  // (CE) graph relations are hosted-only
 import { DuplicateBadge } from './duplicate-badge';
 import { CollectionBadge } from './collection-badge';
 import { TagInlineSubmenu } from './tag-inline-submenu';
@@ -18,16 +18,15 @@ import { listSavedSearches, executeSavedSearch, type SavedSearch } from '@/lib/a
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandSeparator } from '@/components/ui/command';
 import { DuplicateReviewDialog } from './duplicate-review-dialog';
-import { DocumentRelationsDialog } from './document-relations-dialog';
+const DocumentRelationsDialog = (_props: any) => null;  // (CE) graph relations are hosted-only
 import { enrichDocumentMetadata, parseDocumentMetadata, type ResolvedMetadata } from '@/lib/api-metadata';
 import { CITATION_STYLES, formatCitation } from '@/lib/citation-formatter';
 import { ExportDialog } from './export-dialog';
 import { StarRating } from '@/components/document-rating/star-rating';
 import { getMyRatings } from '@/lib/api-document-ratings';
 
-const LibraryRedownloadDialog = React.lazy(() =>
-  import('./library-redownload-dialog').then(m => ({ default: m.LibraryRedownloadDialog }))
-);
+// (CE) External-book re-download is hosted-only — inert no-op.
+const LibraryRedownloadDialog = (_props: any) => null;
 const BookSummaryHoverCard = React.lazy(() =>
   import('./book-summary-hover-card').then(m => ({ default: m.BookSummaryHoverCard }))
 );

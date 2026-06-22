@@ -13,7 +13,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { GlobalEpubViewer } from '@/components/knowledge/epub/global-epub-viewer';
 import { GlobalPDFViewer } from '@/components/knowledge/pdf/global-pdf-viewer';
 import { GlobalDocxViewer } from '@/components/knowledge/docx/global-docx-viewer';
-import { GlobalMarkdownViewer } from '@/components/research/global-markdown-viewer';
+const GlobalMarkdownViewer = (_props: any) => null;
 import { useEpubViewer } from '@/contexts/epub-viewer-context';
 import { usePDFViewer } from '@/contexts/pdf-viewer-context';
 import { useDocxViewer } from '@/contexts/docx-viewer-context';
