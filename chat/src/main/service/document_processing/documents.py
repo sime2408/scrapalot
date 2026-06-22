@@ -24,7 +24,6 @@ from src.main.models.encoders import enhanced_json_encoder
 from src.main.models.sqlmodel_models import Document, ReadingPosition
 
 # DocumentService imported lazily in functions to avoid startup delays
-from src.main.service.graph.graph_integration_service import GraphIntegrationService
 from src.main.utils.auth.jwt import User
 from src.main.utils.core.logger import get_logger
 from src.main.utils.database.db_utils import execute_db_operation
@@ -55,8 +54,8 @@ def get_document_service(db: SQLModelSession = None):
 
 
 def get_graph_integration_service():
-    """Lazy initialization of the graph integration service to avoid startup delays."""
-    return GraphIntegrationService.get_instance()
+    """(CE) Knowledge graph is a hosted-only feature — no graph integration here."""
+    raise RuntimeError("Knowledge graph integration is available in the hosted edition only.")
 
 
 def validate_docx_structure(file_path: str) -> tuple[bool, str | None]:

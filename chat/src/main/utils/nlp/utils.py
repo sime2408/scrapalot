@@ -24,7 +24,7 @@ import spacy
 from spacy.cli import download
 
 from src.main.models.enums import EntityType
-from src.main.service.graph.entity_extractor import ExtractedEntity
+from src.main.models.similarity import ExtractedEntity
 from src.main.utils.core.logger import get_logger
 
 logger = get_logger(__name__)
