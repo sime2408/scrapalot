@@ -1,0 +1,116 @@
+# Scrapalot Community Edition — single-host self-host stack.
+#
+# Brings up the open-core app: Postgres+pgvector, Redis, the Python AI backend (chat),
+# the Kotlin backend, the React UI and the API gateway. NO Neo4j and NO graph workers —
+# the knowledge graph is a hosted-only feature. Copy .env.example to .env and fill it in,
+# then: `docker compose up -d --build`.
+#
+# Ports: UI :3000 · Gateway :8080 · Backend :8091 (gRPC 9090) · Chat :8090 (gRPC 9091)
+#        Postgres :15432 · Redis :6379
+
+services:
+  pgvector:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-scrapalot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Two databases: scrapalot (chat) + scrapalot_backend (kotlin). Create the second via init script.
+      POSTGRES_DB: ${POSTGRES_DB:-scrapalot}
+    ports:
+      - "15432:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+      - ./docker/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scrapalot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-}"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  chat:
+    build:
+      context: ./chat
+      dockerfile: docker-scrapalot/Dockerfile
+    env_file: .env
+    environment:
+      POSTGRES_HOST: pgvector
+      REDIS_HOST: redis
+      NEO4J_ENABLED: "false"   # CE has no knowledge graph
+    ports:
+      - "8090:8090"   # FastAPI (health + notes WS)
+      - "9091:9091"   # gRPC
+    volumes:
+      - scrapalot_data:/app/data
+    depends_on:
+      pgvector: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  workers:
+    build:
+      context: ./chat
+      dockerfile: docker-scrapalot/Dockerfile.workers
+    env_file: .env
+    environment:
+      POSTGRES_HOST: pgvector
+      REDIS_HOST: redis
+      NEO4J_ENABLED: "false"
+    volumes:
+      - scrapalot_data:/app/data
+    depends_on:
+      pgvector: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  backend:
+    build:
+      context: ./backend
+    env_file: .env
+    environment:
+      POSTGRES_BACKEND_HOST: pgvector
+      REDIS_HOST: redis
+      GRPC_CHAT_HOST: chat
+    ports:
+      - "8091:8091"   # REST
+      - "9090:9090"   # gRPC
+    volumes:
+      - scrapalot_data:/app/data
+    depends_on:
+      pgvector: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      chat: { condition: service_started }
+
+  gw:
+    build:
+      context: ./gw
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend: { condition: service_started }
+
+  ui:
+    build:
+      context: ./ui
+    ports:
+      - "3000:3000"
+    depends_on:
+      gw: { condition: service_started }
+
+volumes:
+  pgvector_data:
+  redis_data:
+  scrapalot_data:
