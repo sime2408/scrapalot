@@ -1,0 +1,160 @@
+diff --git a/node_modules/docx-preview/dist/docx-preview.js b/node_modules/docx-preview/dist/docx-preview.js
+index b7a26e9..95206fc 100644
+--- a/node_modules/docx-preview/dist/docx-preview.js
++++ b/node_modules/docx-preview/dist/docx-preview.js
+@@ -34,6 +34,8 @@
+         RelationshipTypes["AltChunk"] = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk";
+     })(RelationshipTypes || (RelationshipTypes = {}));
+     function parseRelationships(root, xml) {
++        // PATCH: Handle null root
++        if (!root) return [];
+         return xml.elements(root).map(e => ({
+             id: xml.attr(e, "Id"),
+             type: xml.attr(e, "Type"),
+@@ -301,7 +303,22 @@
+         }
+         get(path) {
+             const p = normalizePath(path);
+-            return this._zip.files[p] ?? this._zip.files[p.replace(/\//g, '\\')];
++            let file = this._zip.files[p] ?? this._zip.files[p.replace(/\//g, '\\')];
++
++            // PATCH: Fix byte array keys
++            if (!file) {
++                for (const key of Object.keys(this._zip.files)) {
++                    if (typeof key === 'string' && key.includes(',') && /^\d+,/.test(key)) {
++                        const bytes = key.split(',').map(n => parseInt(n.trim(), 10));
++                        if (String.fromCharCode(...bytes) === p) {
++                            file = this._zip.files[key];
++                            break;
++                        }
++                    }
++                }
++            }
++
++            return file;
+         }
+         update(path, content) {
+             this._zip.file(path, content);
+@@ -314,7 +331,41 @@
+             return this._zip.generateAsync({ type });
+         }
+         load(path, type = "string") {
+-            return this.get(path)?.async(type) ?? Promise.resolve(null);
++            // PATCH: Fix JSZip returning corrupted data when type="string" for binary files
++            // Use uint8array for proper binary handling, then decode to string
++            const actualType = type === "string" ? "uint8array" : type;
++            const filePromise = this.get(path)?.async(actualType) ?? Promise.resolve(null);
++
++            return filePromise.then(content => {
++                if (!content) return null;
++
++                // If we requested uint8array but caller wants string, decode properly
++                if (type === "string" && content instanceof Uint8Array) {
++                    console.log(`[docx-preview] load("${path}") - Converting Uint8Array (${content.length} bytes) to UTF-8 string`);
++
++                    // Use TextDecoder for proper UTF-8 decoding
++                    const decoder = new TextDecoder('utf-8');
++                    const decoded = decoder.decode(content);
++
++                    console.log(`[docx-preview] Decoded string length: ${decoded.length}, first 100 chars:`, decoded.substring(0, 100));
++
++                    // Verify XML structure for document.xml
++                    if (path.includes('document.xml')) {
++                        const invalidTagMatch = decoded.match(/<w>|<w\s/);
++                        if (invalidTagMatch) {
++                            console.error(`[docx-preview] ⚠️ Still found invalid <w> tag at position ${invalidTagMatch.index}`);
++                            console.error(`[docx-preview] Context:`, decoded.substring(invalidTagMatch.index - 50, invalidTagMatch.index + 50));
++                        } else {
++                            console.log(`[docx-preview] No invalid <w> tags found in decoded XML`);
++                        }
++                    }
++
++                    return decoded;
++                }
++
++                // For other types (arraybuffer, blob, etc.), return as-is
++                return content;
++            });
+         }
+         async loadRelationships(path = null) {
+             let relsPath = `_rels/.rels`;
+diff --git a/node_modules/docx-preview/dist/docx-preview.mjs b/node_modules/docx-preview/dist/docx-preview.mjs
+index 0ab9123..83c41b3 100644
+--- a/node_modules/docx-preview/dist/docx-preview.mjs
++++ b/node_modules/docx-preview/dist/docx-preview.mjs
+@@ -30,6 +30,8 @@ var RelationshipTypes;
+     RelationshipTypes["AltChunk"] = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk";
+ })(RelationshipTypes || (RelationshipTypes = {}));
+ function parseRelationships(root, xml) {
++    // PATCH: Handle null root
++    if (!root) return [];
+     return xml.elements(root).map(e => ({
+         id: xml.attr(e, "Id"),
+         type: xml.attr(e, "Type"),
+@@ -297,7 +299,22 @@ class OpenXmlPackage {
+     }
+     get(path) {
+         const p = normalizePath(path);
+-        return this._zip.files[p] ?? this._zip.files[p.replace(/\//g, '\\')];
++        let file = this._zip.files[p] ?? this._zip.files[p.replace(/\//g, '\\')];
++
++        // PATCH: Fix byte array keys
++        if (!file) {
++            for (const key of Object.keys(this._zip.files)) {
++                if (typeof key === 'string' && key.includes(',') && /^\d+,/.test(key)) {
++                    const bytes = key.split(',').map(n => parseInt(n.trim(), 10));
++                    if (String.fromCharCode(...bytes) === p) {
++                        file = this._zip.files[key];
++                        break;
++                    }
++                }
++            }
++        }
++
++        return file;
+     }
+     update(path, content) {
+         this._zip.file(path, content);
+@@ -310,7 +327,41 @@ class OpenXmlPackage {
+         return this._zip.generateAsync({ type });
+     }
+     load(path, type = "string") {
+-        return this.get(path)?.async(type) ?? Promise.resolve(null);
++        // PATCH: Fix JSZip returning corrupted data when type="string" for binary files
++        // Use uint8array for proper binary handling, then decode to string
++        const actualType = type === "string" ? "uint8array" : type;
++        const filePromise = this.get(path)?.async(actualType) ?? Promise.resolve(null);
++
++        return filePromise.then(content => {
++            if (!content) return null;
++
++            // If we requested uint8array but caller wants string, decode properly
++            if (type === "string" && content instanceof Uint8Array) {
++                console.log(`[docx-preview] load("${path}") - Converting Uint8Array (${content.length} bytes) to UTF-8 string`);
++
++                // Use TextDecoder for proper UTF-8 decoding
++                const decoder = new TextDecoder('utf-8');
++                const decoded = decoder.decode(content);
++
++                console.log(`[docx-preview] Decoded string length: ${decoded.length}, first 100 chars:`, decoded.substring(0, 100));
++
++                // Verify XML structure for document.xml
++                if (path.includes('document.xml')) {
++                    const invalidTagMatch = decoded.match(/<w>|<w\s/);
++                    if (invalidTagMatch) {
++                        console.error(`[docx-preview] ⚠️ Still found invalid <w> tag at position ${invalidTagMatch.index}`);
++                        console.error(`[docx-preview] Context:`, decoded.substring(invalidTagMatch.index - 50, invalidTagMatch.index + 50));
++                    } else {
++                        console.log(`[docx-preview] No invalid <w> tags found in decoded XML`);
++                    }
++                }
++
++                return decoded;
++            }
++
++            // For other types (arraybuffer, blob, etc.), return as-is
++            return content;
++        });
+     }
+     async loadRelationships(path = null) {
+         let relsPath = `_rels/.rels`;

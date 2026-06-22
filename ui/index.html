@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/logo512-circle.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Scrapalot — AI Research Assistant</title>
+  <meta name="description" content="Scrapalot is an AI research assistant: talk to your documents, run deep research, explore knowledge graphs, and collaborate with your team." />
+  <meta name="author" content="Scrapalot" />
+  <link rel="canonical" id="canonical-link" href="https://scrapalot.app/" />
+
+  <meta property="og:title" content="Scrapalot — AI Research Assistant" />
+  <meta property="og:description" content="Talk to your documents, run deep research, and explore knowledge graphs — all in one AI research platform." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" id="og-url" content="https://scrapalot.app/" />
+  <meta property="og:image" content="https://scrapalot.app/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Scrapalot — AI Research Assistant" />
+  <meta name="twitter:image" content="https://scrapalot.app/og-image.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <!-- Immediate theme styles to prevent white flash -->
+  <style>
+    /* Apply dark theme immediately to prevent white flash */
+    html, body {
+      background-color: hsl(240, 10%, 3.9%) !important;
+      color: hsl(0, 0%, 98%) !important;
+      margin: 0;
+      padding: 0;
+      transition: none !important;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+    
+    /* Override for light theme when class is applied */
+    html.light, html.light body {
+      background-color: hsl(0, 0%, 100%) !important;
+      color: hsl(224, 71.4%, 4.1%) !important;
+    }
+    
+    /* Ensure root div takes full height */
+    #root {
+      min-height: 100vh;
+      background-color: inherit;
+    }
+  </style>
+
+  <!-- Theme detection script to prevent white flash on a dark theme -->
+  <script>
+    (function () {
+      // Function to detect theme from consolidated storage
+      function detectTheme() {
+        try {
+          // First check consolidated storage with scrapalot_ prefix
+          const scrapUserPrefs = localStorage.getItem('scrapalot_user_prefs');
+          if (scrapUserPrefs) {
+            const prefs = JSON.parse(scrapUserPrefs);
+            if (prefs.theme && ['light', 'dark', 'system'].includes(prefs.theme)) {
+              return prefs.theme;
+            }
+          }
+
+          // Check legacy user_settings for migration
+          const userSettings = localStorage.getItem('user_settings');
+          if (userSettings) {
+            const settings = JSON.parse(userSettings);
+            if (settings.theme && ['light', 'dark', 'system'].includes(settings.theme)) {
+              return settings.theme;
+            }
+            if (settings.appearance && ['light', 'dark', 'system'].includes(settings.appearance)) {
+              return settings.appearance;
+            }
+          }
+
+          // Check legacy theme storage
+          const legacyTheme = localStorage.getItem('theme');
+          if (legacyTheme && ['light', 'dark', 'system'].includes(legacyTheme)) {
+            return legacyTheme;
+          }
+
+          // Default to dark theme
+          return 'dark';
+        } catch (e) {
+          return 'dark';
+        }
+      }
+
+      // Function to detect accent color from consolidated storage
+      function detectAccentColor() {
+        try {
+          // First check consolidated storage with scrapalot_ prefix
+          const scrapUserPrefs = localStorage.getItem('scrapalot_user_prefs');
+          if (scrapUserPrefs) {
+            const prefs = JSON.parse(scrapUserPrefs);
+            
+            // Check if the user is authenticated (has tokens)
+            const isAuthenticated = (() => {
+              try {
+                const tokensStr = sessionStorage.getItem('auth_tokens') || localStorage.getItem('auth_tokens');
+                if (!tokensStr) return false;
+                const tokens = JSON.parse(tokensStr);
+                return !!tokens?.access_token;
+              } catch {
+                return false;
+              }
+            })();
+            
+            if (isAuthenticated) {
+              // For authenticated users, use accentColor
+              if (prefs.accentColor) {
+                return prefs.accentColor;
+              }
+            } else {
+              // Fallback to the last authenticated color if not violet
+              if (prefs.accentColor && prefs.accentColor !== 'violet') {
+                return prefs.accentColor;
+              }
+            }
+          }
+
+          // Check legacy user_settings
+          const userSettings = localStorage.getItem('user_settings');
+          if (userSettings) {
+            const settings = JSON.parse(userSettings);
+            const userAccentColor = settings.accentColor;
+            if (userAccentColor) {
+              return userAccentColor;
+            }
+          }
+
+          // Check legacy accent color storage
+          const accentColorLocal = localStorage.getItem('accentColor');
+          if (accentColorLocal) {
+            return accentColorLocal;
+          }
+
+          // Default to violet
+          return 'violet';
+        } catch (e) {
+          return 'violet';
+        }
+      }
+
+      // Function to apply theme immediately
+      function applyTheme() {
+        const theme = detectTheme();
+        const accentColor = detectAccentColor();
+        const html = document.documentElement;
+
+        // Handle system theme
+        let actualTheme = theme;
+        if (theme === 'system') {
+          actualTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+
+        // Apply theme classes to HTML element
+        html.classList.remove('light', 'dark');
+        html.classList.add(actualTheme);
+        html.dataset.theme = actualTheme;
+
+        // Apply accent color to HTML element
+        html.dataset.accent = accentColor;
+
+        // Apply styles directly to HTML and body to prevent white flash
+        if (actualTheme === 'dark') {
+          html.style.backgroundColor = 'hsl(240, 10%, 3.9%)';
+          html.style.color = 'hsl(0, 0%, 98%)';
+        } else {
+          html.style.backgroundColor = 'hsl(0, 0%, 100%)';
+          html.style.color = 'hsl(224, 71.4%, 4.1%)';
+        }
+
+        // Apply background color to the body if it exists (to prevent flash)
+        const body = document.body;
+        if (body) {
+          if (actualTheme === 'dark') {
+            body.style.backgroundColor = 'hsl(240, 10%, 3.9%)';
+            body.style.color = 'hsl(0, 0%, 98%)';
+          } else {
+            body.style.backgroundColor = 'hsl(0, 0%, 100%)';
+            body.style.color = 'hsl(224, 71.4%, 4.1%)';
+          }
+        }
+
+        // Force immediate style application
+        html.style.display = 'block';
+        if (body) {
+          body.style.display = 'block';
+        }
+      }
+
+      // Apply theme immediately to HTML
+      applyTheme();
+
+      // Apply theme to body when DOM is ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', applyTheme);
+      } else {
+        // DOM is already loaded
+        applyTheme();
+      }
+
+      // Listen for system theme changes
+      if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+          const currentTheme = detectTheme();
+          if (currentTheme === 'system') {
+            applyTheme();
+          }
+        });
+      }
+    })();
+  </script>
+
+  <!-- Polyfill for a global object needed by sockjs-client -->
+  <script>
+    // Fix for "Uncaught ReferenceError: global is not defined" in sockjs-client
+    window.global = window;
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>

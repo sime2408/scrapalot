@@ -1,0 +1,47 @@
+# Migration 131: Per-participant dismiss for admin notification threads
+# Purpose: the notification bell "dismiss" (X) only marked messages read, so the thread
+# row never left the list — it could not be cleared. Add per-participant dismissal
+# timestamps so a recipient can permanently clear an admin thread from their bell.
+# Per-participant (two columns) rather than one shared column, because admin_dm threads
+# are visible to BOTH participants; a single column would let one side's dismiss hide the
+# thread from the other. The list query treats a thread as dismissed only while
+# dismissed_at >= updated_at, so a newer message (which bumps updated_at) re-surfaces it.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 131-direct-conversations-dismissed-at
+      author: scrapalot
+      labels: chat,admin-messages
+      comment: "Add per-participant dismissed_at timestamps to direct_conversations"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: direct_conversations
+                columnName: participant_one_dismissed_at
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: direct_conversations
+            columns:
+              - column:
+                  name: participant_one_dismissed_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: true
+              - column:
+                  name: participant_two_dismissed_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: direct_conversations
+            columnName: participant_one_dismissed_at
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: direct_conversations
+            columnName: participant_two_dismissed_at

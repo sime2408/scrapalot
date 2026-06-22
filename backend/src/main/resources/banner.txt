@@ -1,0 +1,41 @@
+
+${AnsiColor.BRIGHT_MAGENTA}
+   ██████╗  ██████╗██████╗  █████╗ ██████╗  █████╗ ██╗      ██████╗ ████████╗
+  ██╔════╝ ██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔══██╗██║     ██╔═══██╗╚══██╔══╝
+  ╚█████╗  ██║     ██████╔╝███████║██████╔╝███████║██║     ██║   ██║   ██║
+   ╚═══██╗ ██║     ██╔══██╗██╔══██║██╔═══╝ ██╔══██║██║     ██║   ██║   ██║
+  ██████╔╝ ╚██████╗██║  ██║██║  ██║██║     ██║  ██║███████╗╚██████╔╝   ██║
+  ╚═════╝   ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝ ╚═════╝    ╚═╝
+${AnsiColor.DEFAULT}
+${AnsiColor.BRIGHT_CYAN}         :: Spring Boot Backend :: ${AnsiColor.BRIGHT_WHITE}Advanced RAG System with Tri-Modal Fusion${AnsiColor.DEFAULT}
+
+${AnsiColor.BRIGHT_BLUE}════════════════════════════════════════════════════════════════════════════════${AnsiColor.DEFAULT}
+${AnsiColor.BRIGHT_GREEN}  Version:${AnsiColor.DEFAULT}        ${spring-boot.formatted-version}
+${AnsiColor.BRIGHT_GREEN}  Database:${AnsiColor.DEFAULT}       PostgreSQL (port ${POSTGRES_BACKEND_PORT:5433}) + Liquibase Migrations
+${AnsiColor.BRIGHT_GREEN}  gRPC Server:${AnsiColor.DEFAULT}    Port ${GRPC_PORT:9090} (7 services, 60+ RPC methods)
+${AnsiColor.BRIGHT_GREEN}  REST API:${AnsiColor.DEFAULT}       Port ${server.port:8091} (Spring MVC + JWT Auth)
+${AnsiColor.BRIGHT_GREEN}  Redis Pub/Sub:${AnsiColor.DEFAULT}  Port ${REDIS_PORT:6379} (Event-driven with Python)
+${AnsiColor.BRIGHT_GREEN}  Logging:${AnsiColor.DEFAULT}        Logback with color formatting + emojis ⚠️❌🔥
+${AnsiColor.BRIGHT_BLUE}════════════════════════════════════════════════════════════════════════════════${AnsiColor.DEFAULT}
+
+${AnsiColor.BRIGHT_YELLOW}  🚀 Features:${AnsiColor.DEFAULT}
+     • User Management (Auth, OAuth, API Keys)
+     • Workspace CRUD + Sharing + Permissions
+     • Collection & Document Management
+     • Notes Collaboration (TipTap, Versioning, Comments)
+     • gRPC Services for Python Integration
+     • Redis Event Publishing (7 channels)
+     • Row Level Security (RLS) for multi-tenancy
+
+${AnsiColor.BRIGHT_MAGENTA}  🔗 Architecture:${AnsiColor.DEFAULT}
+     React UI (3000) ←→ Spring Boot (8091) ←→ Python FastAPI (8090)
+                              ↓                        ↓
+                         gRPC (9090) ←────────────────┘
+                              ↓                        ↓
+                         Redis (6379) ←───────────────┘
+                         PostgreSQL (15432/5433)
+
+${AnsiColor.BRIGHT_BLUE}════════════════════════════════════════════════════════════════════════════════${AnsiColor.DEFAULT}
+${AnsiColor.BRIGHT_WHITE}  Documentation: README_SETUP_COMPLETE.md | README_GRPC_ARCHITECTURE.md${AnsiColor.DEFAULT}
+${AnsiColor.BRIGHT_BLUE}════════════════════════════════════════════════════════════════════════════════${AnsiColor.DEFAULT}
+

@@ -1,0 +1,33 @@
+# Scrapalot Backend - Spring Boot Configuration
+
+server:
+  port: ${SERVER_PORT:8091}
+  shutdown: graceful
+
+spring:
+  application:
+    name: scrapalot-backend
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:prod}
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+# Springdoc OpenAPI Configuration
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+    disable-swagger-default-url: true
+
+# Logging
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:WARN}
+    com.scrapalot.backend: ${LOG_LEVEL_APP:INFO}

@@ -1,0 +1,174 @@
+# Migration 084: Update subscription plans with revised limits and add team plan
+# Purpose: Revise free/pro plan limits, rename professional→pro and enterprise→team,
+#          insert new enterprise plan for custom/contact-us pricing.
+
+databaseChangeLog:
+
+  # ============================================
+  # UPDATE "researcher" (free) plan limits
+  # ============================================
+  - changeSet:
+      id: 084-update-researcher-plan
+      author: scrapalot
+      labels: billing,subscriptions
+      comment: "Update researcher (free) plan with revised limits"
+      changes:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET storage_limit_bytes = 1073741824,
+                  documents_limit = 100,
+                  tokens_limit = 100000,
+                  max_workspaces = 1,
+                  max_collections_per_workspace = 3,
+                  max_documents_per_collection = 50,
+                  features = '{"api_access": false, "priority_support": false, "shared_workspaces": false, "deep_research": false}'::jsonb,
+                  sort_order = 1,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'researcher';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET storage_limit_bytes = NULL,
+                  documents_limit = NULL,
+                  tokens_limit = NULL,
+                  max_workspaces = NULL,
+                  max_collections_per_workspace = NULL,
+                  max_documents_per_collection = NULL,
+                  features = '{"shared_workspaces": false, "priority_support": false, "api_access": false}'::jsonb,
+                  sort_order = NULL,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'researcher';
+
+  # ============================================
+  # RENAME "professional" → "pro" and update limits
+  # ============================================
+  - changeSet:
+      id: 084-update-professional-to-pro
+      author: scrapalot
+      labels: billing,subscriptions
+      comment: "Rename professional plan to pro and update limits"
+      changes:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET name = 'pro',
+                  display_name = 'Pro',
+                  price_monthly = 14.99,
+                  price_annual = 149.99,
+                  storage_limit_bytes = 10737418240,
+                  documents_limit = 5000,
+                  tokens_limit = 5000000,
+                  max_workspaces = 10,
+                  max_collections_per_workspace = 50,
+                  max_documents_per_collection = 500,
+                  features = '{"api_access": true, "priority_support": true, "shared_workspaces": true, "deep_research": true, "advanced_analytics": false}'::jsonb,
+                  trial_days = 14,
+                  sort_order = 2,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'professional';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET name = 'professional',
+                  display_name = 'Professional',
+                  price_monthly = 0,
+                  price_annual = 0,
+                  storage_limit_bytes = NULL,
+                  documents_limit = NULL,
+                  tokens_limit = NULL,
+                  max_workspaces = NULL,
+                  max_collections_per_workspace = NULL,
+                  max_documents_per_collection = NULL,
+                  features = '{"shared_workspaces": true, "priority_support": true, "api_access": true, "advanced_analytics": true}'::jsonb,
+                  trial_days = 0,
+                  sort_order = NULL,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'pro';
+
+  # ============================================
+  # RENAME "enterprise" → "team" and update limits
+  # ============================================
+  - changeSet:
+      id: 084-update-enterprise-to-team
+      author: scrapalot
+      labels: billing,subscriptions
+      comment: "Rename enterprise plan to team and update limits"
+      changes:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET name = 'team',
+                  display_name = 'Team',
+                  price_monthly = 39.99,
+                  price_annual = 399.99,
+                  storage_limit_bytes = 107374182400,
+                  documents_limit = 50000,
+                  tokens_limit = 50000000,
+                  max_workspaces = NULL,
+                  max_collections_per_workspace = NULL,
+                  max_documents_per_collection = NULL,
+                  features = '{"api_access": true, "priority_support": true, "shared_workspaces": true, "deep_research": true, "advanced_analytics": true}'::jsonb,
+                  trial_days = 14,
+                  sort_order = 3,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'enterprise';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET name = 'enterprise',
+                  display_name = 'Enterprise',
+                  price_monthly = 0,
+                  price_annual = 0,
+                  storage_limit_bytes = NULL,
+                  documents_limit = NULL,
+                  tokens_limit = NULL,
+                  max_workspaces = NULL,
+                  max_collections_per_workspace = NULL,
+                  max_documents_per_collection = NULL,
+                  features = '{"shared_workspaces": true, "priority_support": true, "api_access": true, "advanced_analytics": true, "custom_integrations": true, "dedicated_support": true, "sla": true, "on_premise": true}'::jsonb,
+                  trial_days = 0,
+                  sort_order = NULL,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'team';
+
+  # ============================================
+  # INSERT new "enterprise" plan (custom pricing)
+  # ============================================
+  - changeSet:
+      id: 084-insert-enterprise-plan
+      author: scrapalot
+      labels: billing,subscriptions
+      comment: "Insert new enterprise plan for custom/contact-us pricing"
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: 0
+            sql: SELECT COUNT(*) FROM scrapalot.subscription_plans WHERE name = 'enterprise'
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO scrapalot.subscription_plans (
+                id, name, display_name, description,
+                price_monthly, price_annual,
+                storage_limit_bytes, documents_limit, tokens_limit,
+                max_workspaces, max_collections_per_workspace, max_documents_per_collection,
+                is_active, trial_days, sort_order,
+                features,
+                created_at, updated_at
+              ) VALUES (
+                gen_random_uuid(), 'enterprise', 'Enterprise', 'Custom solutions for organizations',
+                0, 0,
+                NULL, NULL, NULL,
+                NULL, NULL, NULL,
+                true, 0, 4,
+                '{"sla": true, "api_access": true, "on_premise": true, "priority_support": true, "dedicated_support": true, "shared_workspaces": true, "advanced_analytics": true, "custom_integrations": true, "deep_research": true}'::jsonb,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              );
+      rollback:
+        - sql:
+            sql: |
+              DELETE FROM scrapalot.subscription_plans WHERE name = 'enterprise' AND description = 'Custom solutions for organizations';

@@ -1,0 +1,441 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET:your-256-bit-secret-key-change-this-in-production-minimum-32-characters}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+# gRPC Client Configuration
+grpc:
+  client:
+    backend:
+      host: ${GRPC_CLIENT_HOST:scrapalot-backend}
+      port: ${GRPC_CLIENT_PORT:9090}
+      timeout-ms: ${GRPC_CLIENT_TIMEOUT_MS:5000}
+
+spring:
+  application:
+    name: scrapalot-gw
+
+  codec:
+    max-in-memory-size: 512MB  # Default 256KB blocks uploads >256KB through reactive gateway
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  # Disable Redis for Phase 1 (rate limiting can be added in Phase 2)
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration
+
+  cloud:
+    gateway:
+      # proxy-ping keeps STOMP upstream alive (without it, idle WebSocket → code 1002 every ~2 min)
+      httpclient:
+        websocket:
+          proxy-ping: true
+          max-frame-payload-length: 1048576
+
+      # Global CORS configuration
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:3000"
+              - "https://scrapalot.app"
+              - "https://www.scrapalot.app"
+            allowedMethods:
+              - GET
+              - HEAD
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            exposedHeaders:
+              - Authorization
+              - X-Total-Count
+              - X-User-ID
+              - X-User-Role
+              - X-Subscription-Tier
+            allowCredentials: true
+            maxAge: 3600
+
+      # Route definitions
+      # All REST traffic routes to Kotlin backend.
+      # Kotlin owns CRUD (sessions, messages, users, etc.) and proxies AI operations to Python via gRPC.
+      routes:
+        # ============================================
+        # OpenAPI Documentation Proxy Routes
+        # ============================================
+
+        # Bare /api-docs aliases to the gateway's own /v3/api-docs so callers
+        # that omit the /backend or /chat suffix don't 404 against the static
+        # resource handler.
+        - id: openapi-docs-root
+          uri: http://localhost:8080
+          predicates:
+            - Path=/api-docs
+          filters:
+            - RewritePath=/api-docs, /v3/api-docs
+          order: 1
+
+        - id: openapi-docs
+          uri: ${BACKEND_URL:http://scrapalot-backend:8091}
+          predicates:
+            - Path=/api-docs/backend
+          filters:
+            - RewritePath=/api-docs/backend, /v3/api-docs
+          order: 1
+
+        - id: openapi-chat
+          uri: ${BACKEND_URL:http://scrapalot-backend:8091}
+          predicates:
+            - Path=/api-docs/chat
+          filters:
+            - RewritePath=/api-docs/chat, /openapi.json
+          order: 1
+
+        # ============================================
+        # ALL REST ROUTES → KOTLIN BACKEND
+        # Kotlin handles CRUD directly, proxies AI operations to Python via gRPC/HTTP
+        # ============================================
+
+        # Python-direct routes (REST endpoints that bypass Kotlin proxy)
+        - id: python-research-export
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/research/export
+          metadata:
+            description: "Research report export (DOCX/HTML) - direct to Python"
+          order: 3
+
+        - id: python-council-deliberation
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/council/**
+          metadata:
+            description: "Council deliberation data - direct to Python (bypasses gRPC proto)"
+          order: 3
+
+        - id: python-hypothesis-direct
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/hypothesis
+            - Method=POST
+          metadata:
+            description: "Competing hypotheses - direct to Python (bypasses gRPC proto for new fields)"
+          order: 3
+
+        - id: python-what-if-direct
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/what-if
+            - Method=POST
+          metadata:
+            description: "What-If Oracle scenario analysis - direct to Python"
+          order: 3
+
+        - id: python-research-templates
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/research/templates
+            - Method=GET
+          metadata:
+            description: "Research templates - direct to Python (source of truth for PRISMA + all templates)"
+          order: 2
+
+        - id: python-paper-venues
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/papers/venues
+            - Method=GET
+          metadata:
+            description: "Paper venue templates (Feature 8) - direct to Python"
+          order: 2
+
+        - id: python-citation-stance
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/citations/classify-stance
+            - Method=POST
+          metadata:
+            description: "Smart Citations stance classifier (Scite integration) - direct to Python"
+          order: 2
+
+        - id: python-doi-import
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/doi-import
+            - Method=POST
+          metadata:
+            description: "DOI → virtual collection (Scite PRD #10) - direct to Python"
+          order: 2
+
+        - id: python-podcast
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/podcast/**
+          metadata:
+            description: "NotebookLM-style podcast generation + playback - direct to Python"
+          order: 2
+
+        - id: python-voice
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/voice/**
+            - Method=POST
+          metadata:
+            description: "Live voice mode (BYOK Whisper + Edge-TTS) - direct to Python"
+          order: 2
+
+        - id: python-explain
+          uri: ${CHAT_URL:http://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/v1/explain/**
+            - Method=POST
+          metadata:
+            description: "Highlight-to-Explain (SciSpace #6) - fast direct-LLM gloss on reader selection"
+          order: 2
+
+        # Admin inspector routes get their OWN circuit breaker so a slow admin
+        # graph/stats query (heavy Neo4j over 260K+ nodes) can never poison the
+        # breaker that user-facing routes (auth, workspaces, documents…) share.
+        # MUST be a separate predicate block AND removed from backend-routes —
+        # a wildcard inside one predicate list wins regardless of order (rule #10).
+        - id: admin-routes
+          uri: ${BACKEND_URL:http://scrapalot-backend:8091}
+          predicates:
+            - Path=/api/v1/admin/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: adminCircuitBreaker
+                fallbackUri: forward:/fallback/backend
+          metadata:
+            description: "Admin inspector REST - isolated circuit breaker (slow Neo4j ops must not 503 user routes)"
+          order: 4
+
+        - id: backend-routes
+          uri: ${BACKEND_URL:http://scrapalot-backend:8091}
+          predicates:
+            - Path=/api/v1/users/**, /api/v1/workspaces/**, /api/v1/collections/**, /api/v1/subscriptions/**, /api/v1/auth/**, /api/v1/notes/**, /api/v1/settings/**, /api/v1/jobs/**, /api/v1/storage/**, /api/v1/desktop/**, /api/v1/external-books/**, /api/v1/tts/**, /api/v1/stt/**, /api/v1/chat/**, /api/v1/sessions/**, /api/v1/messages/**, /api/v1/research/plans/**, /api/v1/research/start, /api/v1/research/continue, /api/v1/llm-inference/**, /api/v1/documents/**, /api/v1/shared/**, /api/v1/contact, /upload/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: backendCircuitBreaker
+                fallbackUri: forward:/fallback/backend
+          metadata:
+            description: "All REST traffic - Kotlin backend (gRPC to Python for AI operations)"
+          order: 5
+
+        # ============================================
+        # WEBSOCKET ROUTES
+        # ============================================
+
+        - id: notes-websocket
+          uri: ${CHAT_WEBSOCKET_URL:ws://scrapalot-chat:8090}
+          predicates:
+            - Path=/api/ws/notes/**
+          metadata:
+            description: "Y.js WebSocket for note collaboration - Python AI backend"
+          order: 2
+
+        - id: backend-stomp-websocket
+          uri: ${BACKEND_WEBSOCKET_URL:ws://scrapalot-backend:8091}
+          predicates:
+            - Path=/stomp-backend/ws,/stomp-backend/ws/**
+          metadata:
+            description: "STOMP WebSocket for workspace chat - Kotlin backend"
+          order: 2
+
+        - id: chat-stomp-websocket
+          uri: ${CHAT_WEBSOCKET_URL:ws://scrapalot-chat:8090}
+          predicates:
+            - Path=/stomp-direct/ws
+          metadata:
+            description: "STOMP WebSocket for job progress - Python AI backend"
+
+        - id: chat-websocket
+          uri: ${CHAT_WEBSOCKET_URL:ws://scrapalot-chat:8090}
+          predicates:
+            - Path=/stomp/**, /ws/**
+          metadata:
+            description: "Socket.IO and STOMP WebSocket - Python AI backend"
+
+        # ============================================
+        # Fallback: Catch-all to Kotlin backend
+        # ============================================
+
+        - id: api-v1-fallback
+          uri: ${BACKEND_URL:http://scrapalot-backend:8091}
+          predicates:
+            - Path=/api/v1/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: backendCircuitBreaker
+                fallbackUri: forward:/fallback/backend
+          order: 10
+          metadata:
+            migration-status: FALLBACK
+            description: "Catch-all for unmatched v1 endpoints"
+
+        # ============================================
+        # Health & Actuator
+        # ============================================
+
+        - id: health-route
+          uri: http://localhost:8080
+          predicates:
+            - Path=/actuator/health, /health
+          filters:
+            - StripPrefix=0
+
+      # Default filters applied to all routes
+      default-filters:
+        # Strip duplicate CORS headers that upstream services (backend dev profile) may also emit.
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials Access-Control-Allow-Methods Access-Control-Allow-Headers Access-Control-Expose-Headers, RETAIN_FIRST
+        - name: Retry
+          args:
+            retries: 3
+            statuses: BAD_GATEWAY, SERVICE_UNAVAILABLE
+            methods: GET, POST
+            backoff:
+              firstBackoff: 50ms
+              maxBackoff: 500ms
+              factor: 2
+              basedOnPreviousValue: true
+        - name: AddResponseHeader
+          args:
+            name: X-Gateway-Version
+            value: "1.0.0"
+        - name: AddResponseHeader
+          args:
+            name: X-Gateway-Name
+            value: "scrapalot-gw"
+
+  # Redis configuration (for rate limiting)
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+# Resilience4j Circuit Breaker Configuration
+resilience4j:
+  circuitbreaker:
+    instances:
+      # All traffic goes through Kotlin backend (which proxies AI operations to Python via gRPC/HTTP).
+      #
+      # slowCallDurationThreshold is intentionally high (60s, was 10s) because
+      # several admin-inspector endpoints query Neo4j with 217 K+ nodes and
+      # 5.9 M+ edges (graph/knowledge-gaps ~29 s, quality-audit ~25 s,
+      # collection/evaluation ~46 s) — all legitimate under the current
+      # graph size. A 10 s threshold treated every admin page visit as a
+      # slow call, and a burst of 12+ admin calls in the sliding window of
+      # 20 tripped the shared circuit, which then returned 503 for ALL
+      # routes (including fast ones like /workspaces/default) for 30 s.
+      # Deep-research chat calls can also legitimately exceed 10 s.
+      #
+      # slidingWindowSize and slowCallRateThreshold kept as-is: we still
+      # trip if >60% of 20 calls exceed the (new) 60s bar — that still
+      # catches a truly degraded backend without penalising slow admin
+      # panels.
+      backendCircuitBreaker:
+        registerHealthIndicator: true
+        slidingWindowSize: 20
+        minimumNumberOfCalls: 10
+        permittedNumberOfCallsInHalfOpenState: 3
+        waitDurationInOpenState: 30s
+        failureRateThreshold: 60
+        slowCallRateThreshold: 60
+        slowCallDurationThreshold: ${BACKEND_SLOW_CALL_THRESHOLD:60s}
+
+      # Dedicated breaker for /api/v1/admin/** so heavy admin-inspector Neo4j
+      # queries can be slow (or even fail) WITHOUT opening the breaker that
+      # user-facing routes use. Deliberately lenient: admin pages are operator
+      # tooling, not hot-path — we tolerate slowness here and only isolate the
+      # blast radius. Even if it does open, only admin routes are affected.
+      adminCircuitBreaker:
+        registerHealthIndicator: true
+        slidingWindowSize: 30
+        minimumNumberOfCalls: 20
+        permittedNumberOfCallsInHalfOpenState: 3
+        waitDurationInOpenState: 15s
+        failureRateThreshold: 90
+        slowCallRateThreshold: 100
+        slowCallDurationThreshold: ${ADMIN_SLOW_CALL_THRESHOLD:120s}
+
+  timelimiter:
+    instances:
+      backendCircuitBreaker:
+        timeoutDuration: ${BACKEND_TIMEOUT_DURATION:1800s}  # 30 min (deep research with iterations can take 15+ min)
+      adminCircuitBreaker:
+        timeoutDuration: ${ADMIN_TIMEOUT_DURATION:300s}  # 5 min cap for admin inspector ops
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gateway
+  endpoint:
+    health:
+      show-details: when-authorized
+    gateway:
+      access: unrestricted
+  tracing:
+    enabled: false  # Disable distributed tracing (Zipkin not configured)
+    sampling:
+      probability: 0.0
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.scrapalot.gateway: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Springdoc OpenAPI / Swagger UI Configuration
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /
+    urls:
+      - name: Backend API (Kotlin)
+        url: /api-docs/backend
+      - name: Chat API (Python - 177 endpoints)
+        url: /api-docs/chat
+      - name: Gateway API
+        url: /v3/api-docs
+    oauth:
+      use-pkce-with-authorization-code-grant: false
+    disable-swagger-default-url: true
+    display-request-duration: true
+    operations-sorter: alpha
+    tags-sorter: alpha
+    custom-css-url: /swagger-ui-custom.css

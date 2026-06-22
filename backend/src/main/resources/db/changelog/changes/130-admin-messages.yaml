@@ -1,0 +1,99 @@
+# Migration 130: Admin messaging overlay on the direct-message tables
+# Purpose: let an admin send a (replyable) direct message to any user, and broadcast
+# announcements to all users, reusing direct_conversations/direct_messages. Admin
+# conversations are NOT workspace-scoped (workspace_id IS NULL) and are tagged via `kind`.
+# The existing peer unique constraint (participant_one_id, participant_two_id, workspace_id)
+# is left intact — NULL workspace_id rows never collide under it (NULL != NULL in SQL),
+# so peer DM behaviour is unchanged. Admin-conversation uniqueness is enforced by a
+# separate PARTIAL unique index below.
+
+databaseChangeLog:
+
+  # ============================================
+  # kind discriminator: peer | admin_dm | admin_broadcast
+  # ============================================
+  - changeSet:
+      id: 130-direct-conversations-kind
+      author: scrapalot
+      labels: chat,admin-messages
+      comment: "Add kind discriminator to direct_conversations (default peer)"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: direct_conversations
+                columnName: kind
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: direct_conversations
+            columns:
+              - column:
+                  name: kind
+                  type: VARCHAR(20)
+                  defaultValue: peer
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: direct_conversations
+            columnName: kind
+
+  # ============================================
+  # admin conversations have no workspace -> workspace_id must allow NULL
+  # ============================================
+  - changeSet:
+      id: 130-direct-conversations-workspace-nullable
+      author: scrapalot
+      labels: chat,admin-messages
+      comment: "Allow NULL workspace_id for admin (non-workspace) conversations"
+      changes:
+        - dropNotNullConstraint:
+            schemaName: scrapalot
+            tableName: direct_conversations
+            columnName: workspace_id
+            columnDataType: uuid
+      rollback: []
+
+  # ============================================
+  # one admin_dm + one admin_broadcast conversation per (admin, user) pair.
+  # Partial unique index — only governs admin (NULL-workspace) rows, so peer rows
+  # and their existing unique constraint are untouched.
+  # ============================================
+  - changeSet:
+      id: 130-direct-conversations-admin-unique
+      author: scrapalot
+      labels: chat,admin-messages
+      comment: "Partial unique index for admin conversations (participant_one, participant_two, kind) where workspace is NULL"
+      changes:
+        - sql:
+            dbms: postgresql
+            sql: >-
+              CREATE UNIQUE INDEX IF NOT EXISTS uq_direct_conversations_admin
+              ON scrapalot.direct_conversations (participant_one_id, participant_two_id, kind)
+              WHERE workspace_id IS NULL
+      rollback:
+        - sql:
+            dbms: postgresql
+            sql: DROP INDEX IF EXISTS scrapalot.uq_direct_conversations_admin
+
+  # ============================================
+  # fast recipient lookup of admin threads
+  # ============================================
+  - changeSet:
+      id: 130-direct-conversations-kind-recipient-idx
+      author: scrapalot
+      labels: chat,admin-messages
+      comment: "Index for fetching a recipient's conversations by kind"
+      changes:
+        - sql:
+            dbms: postgresql
+            sql: >-
+              CREATE INDEX IF NOT EXISTS idx_direct_conversations_kind_p2
+              ON scrapalot.direct_conversations (kind, participant_two_id)
+      rollback:
+        - sql:
+            dbms: postgresql
+            sql: DROP INDEX IF EXISTS scrapalot.idx_direct_conversations_kind_p2

@@ -1,0 +1,51 @@
+# Migration 121: sessions.marker_icon + marker_color
+#
+# Per-session "marker" — a Gmail-label-style visual tag the user sets from the
+# session row's three-dots menu: one curated priority icon (emoji) + one palette
+# color. Used to flag/important sessions and to sort the list by priority.
+# Single marker per session; both columns NULL = unmarked. Independent of folders.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 121-add-sessions-marker
+      author: scrapalot
+      labels: sessions,marker,ux
+      comment: "Add marker_icon + marker_color to sessions for per-session priority labels"
+      preConditions:
+        - onFail: MARK_RAN
+        - and:
+          - tableExists:
+              tableName: sessions
+              schemaName: scrapalot
+          - not:
+              - columnExists:
+                  tableName: sessions
+                  schemaName: scrapalot
+                  columnName: marker_icon
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: sessions
+            columns:
+              - column:
+                  name: marker_icon
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: true
+                  remarks: "Curated priority emoji (e.g. ⭐ ❗ 📌); NULL = unmarked."
+              - column:
+                  name: marker_color
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: true
+                  remarks: "Palette hex color for the marker; NULL = default."
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: sessions
+            columnName: marker_icon
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: sessions
+            columnName: marker_color

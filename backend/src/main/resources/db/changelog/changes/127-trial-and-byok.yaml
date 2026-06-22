@@ -1,0 +1,130 @@
+# Migration 127: per-user free trial + BYOK pricing
+#
+# 1. users.trial_used_at — the 14-day no-credit-card trial is once PER USER
+#    (not per plan); set when a trial starts (either the in-app start-trial
+#    endpoint or a Stripe checkout that began with a trial period).
+# 2. user_subscriptions.byok — the user subscribed at the bring-your-own-key
+#    price: their chat/RAG calls run on their own provider keys, so the plan
+#    costs less. System agents (deep research planner, title generation, …)
+#    still use the Scrapalot provider and count against tokens_limit.
+# 3. subscription_plans BYOK price columns (+ Stripe price ids, filled by the
+#    sync-stripe-products endpoint). Seeded: pro 9.99/8.33, team 23.99/19.99
+#    (same ~17% annual discount shape as the standard prices). researcher and
+#    enterprise have no BYOK variant (free / custom).
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 127-users-trial-used-at
+      author: scrapalot
+      labels: billing,trial
+      comment: "Track the once-per-user free trial"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: users
+                schemaName: scrapalot
+                columnName: trial_used_at
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: users
+            columns:
+              - column:
+                  name: trial_used_at
+                  type: TIMESTAMPTZ
+                  remarks: "When the user consumed their one free trial (NULL = still available)."
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: users
+            columnName: trial_used_at
+
+  - changeSet:
+      id: 127-user-subscriptions-byok
+      author: scrapalot
+      labels: billing,byok
+      comment: "Flag subscriptions bought at the bring-your-own-key price"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: user_subscriptions
+                schemaName: scrapalot
+                columnName: byok
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: user_subscriptions
+            columns:
+              - column:
+                  name: byok
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+                  remarks: "Subscribed at the BYOK (bring-your-own-key) discounted price."
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: user_subscriptions
+            columnName: byok
+
+  - changeSet:
+      id: 127-plans-byok-prices
+      author: scrapalot
+      labels: billing,byok
+      comment: "BYOK price variants on subscription plans"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: subscription_plans
+                schemaName: scrapalot
+                columnName: price_monthly_byok
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: subscription_plans
+            columns:
+              - column:
+                  name: price_monthly_byok
+                  type: "NUMERIC(10,2)"
+                  remarks: "Monthly price when the user brings their own AI keys (NULL = no BYOK variant)."
+              - column:
+                  name: price_annual_byok
+                  type: "NUMERIC(10,2)"
+                  remarks: "Per-month price on annual billing with BYOK."
+              - column:
+                  name: stripe_price_id_monthly_byok
+                  type: "VARCHAR(255)"
+              - column:
+                  name: stripe_price_id_annual_byok
+                  type: "VARCHAR(255)"
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET price_monthly_byok = 9.99, price_annual_byok = 8.33, updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'pro';
+
+              UPDATE scrapalot.subscription_plans
+              SET price_monthly_byok = 23.99, price_annual_byok = 19.99, updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'team';
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: subscription_plans
+            columnName: price_monthly_byok
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: subscription_plans
+            columnName: price_annual_byok
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: subscription_plans
+            columnName: stripe_price_id_monthly_byok
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: subscription_plans
+            columnName: stripe_price_id_annual_byok

@@ -1,0 +1,106 @@
+# Migration 105: message feedback graph-trace columns (Memify / User Memory).
+#
+# Extends 097-message-feedback (binary feedback SMALLINT) with two columns
+# needed to feed graph-side EMA reweighting (Cognee memify pipeline):
+#
+#   feedback_detail            optional 1..5 user rating ("how accurate was this answer?")
+#                              binary feedback maps to detail=1 (thumbs-down) / detail=5 (thumbs-up)
+#                              when no detail was given.
+#   used_graph_element_ids     JSONB shape {"node_ids":[uuid], "edge_ids":[uuid]}
+#                              identifies which Neo4j Entity nodes / relationships
+#                              the AI answer touched. Capped at 50 edge_ids server-side.
+#
+# Both nullable. Pre-existing rows treat NULL as "no graph touch — pipeline skips them".
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 105-add-message-feedback-detail
+      author: scrapalot
+      labels: messages,feedback,memify
+      comment: "Add feedback_detail (1..5) for fine-grained EMA rating"
+      preConditions:
+        - onFail: MARK_RAN
+        - and:
+          - tableExists:
+              tableName: messages
+              schemaName: scrapalot
+          - not:
+              - columnExists:
+                  tableName: messages
+                  schemaName: scrapalot
+                  columnName: feedback_detail
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: messages
+            columns:
+              - column:
+                  name: feedback_detail
+                  type: SMALLINT
+                  constraints:
+                    nullable: true
+                  remarks: "Optional 1..5 fine-grained rating; binary feedback maps to 1 or 5 if NULL"
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: messages
+            columnName: feedback_detail
+
+  - changeSet:
+      id: 105-add-message-feedback-detail-check
+      author: scrapalot
+      labels: messages,feedback,memify
+      comment: "Constrain feedback_detail to 1..5"
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: 0
+            sql: |
+              SELECT COUNT(*) FROM information_schema.check_constraints
+              WHERE constraint_schema = 'scrapalot'
+                AND constraint_name = 'messages_feedback_detail_check'
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE scrapalot.messages
+              ADD CONSTRAINT messages_feedback_detail_check
+              CHECK (feedback_detail IS NULL OR feedback_detail BETWEEN 1 AND 5);
+      rollback:
+        - sql: |
+            ALTER TABLE scrapalot.messages
+            DROP CONSTRAINT IF EXISTS messages_feedback_detail_check;
+
+  - changeSet:
+      id: 105-add-message-used-graph-element-ids
+      author: scrapalot
+      labels: messages,feedback,memify
+      comment: "Add used_graph_element_ids JSONB for graph-element provenance"
+      preConditions:
+        - onFail: MARK_RAN
+        - and:
+          - tableExists:
+              tableName: messages
+              schemaName: scrapalot
+          - not:
+              - columnExists:
+                  tableName: messages
+                  schemaName: scrapalot
+                  columnName: used_graph_element_ids
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: messages
+            columns:
+              - column:
+                  name: used_graph_element_ids
+                  type: JSONB
+                  constraints:
+                    nullable: true
+                  remarks: "{node_ids: [uuid], edge_ids: [uuid]} — graph elements the AI answer touched"
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: messages
+            columnName: used_graph_element_ids

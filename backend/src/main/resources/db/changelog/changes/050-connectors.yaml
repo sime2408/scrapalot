@@ -1,0 +1,728 @@
+# Migration 050: Connectors
+# External data source connectors (Google Drive, Dropbox, SharePoint, etc.)
+# Matches Python Alembic connector models
+
+databaseChangeLog:
+  # ============================================
+  # CONNECTOR CREDENTIALS TABLE
+  # ============================================
+  - changeSet:
+      id: 050-create-connector-credentials
+      author: liquibase-auto
+      labels: connectors,credentials
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: connector_credentials
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: connector_credentials
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_connector_credentials
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_connector_credentials_name
+              - column:
+                  name: connector_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: credential_json
+                  type: TEXT
+              - column:
+                  name: access_token
+                  type: VARCHAR(1000)
+              - column:
+                  name: refresh_token
+                  type: VARCHAR(1000)
+              - column:
+                  name: token_expires_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: scope
+                  type: VARCHAR(500)
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_validated_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: validation_error
+                  type: TEXT
+              - column:
+                  name: metadata
+                  type: JSONB
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connector_credentials
+            indexName: idx_connector_credentials_connector_type
+            columns:
+              - column:
+                  name: connector_type
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: connector_credentials
+
+  # ============================================
+  # CONNECTORS TABLE
+  # ============================================
+  - changeSet:
+      id: 050-create-connectors
+      author: liquibase-auto
+      labels: connectors
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: connectors
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: connectors
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_connectors
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: workspace_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_connectors_workspace_id
+                    references: scrapalot.workspaces(id)
+                    deleteCascade: true
+              - column:
+                  name: credential_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_connectors_credential_id
+                    references: scrapalot.connector_credentials(id)
+                    deleteCascade: true
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: connector_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sync_enabled
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sync_frequency
+                  type: VARCHAR(50)
+                  defaultValue: daily
+              - column:
+                  name: auto_sync
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_path
+                  type: VARCHAR(500)
+              - column:
+                  name: file_filters
+                  type: JSONB
+              - column:
+                  name: exclude_patterns
+                  type: JSONB
+              - column:
+                  name: last_sync_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: next_sync_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: sync_status
+                  type: VARCHAR(20)
+                  defaultValue: idle
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sync_error
+                  type: TEXT
+              - column:
+                  name: total_files
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: synced_files
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: failed_files
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_size_bytes
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: config
+                  type: JSONB
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connectors
+            indexName: idx_connectors_workspace_id
+            columns:
+              - column:
+                  name: workspace_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connectors
+            indexName: idx_connectors_credential_id
+            columns:
+              - column:
+                  name: credential_id
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: connectors
+
+  # ============================================
+  # CONNECTOR SYNC DESTINATIONS TABLE
+  # ============================================
+  - changeSet:
+      id: 050-create-connector-sync-destinations
+      author: liquibase-auto
+      labels: connectors,sync
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: connector_sync_destinations
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: connector_sync_destinations
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_connector_sync_destinations
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: connector_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_sync_destinations_connector_id
+                    references: scrapalot.connectors(id)
+                    deleteCascade: true
+              - column:
+                  name: collection_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_sync_destinations_collection_id
+                    references: scrapalot.collections(id)
+                    deleteCascade: true
+              - column:
+                  name: destination_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: destination_path
+                  type: VARCHAR(500)
+              - column:
+                  name: auto_process
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: chunking_strategy
+                  type: VARCHAR(50)
+              - column:
+                  name: overwrite_existing
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: preserve_structure
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_filters
+                  type: JSONB
+              - column:
+                  name: transform_rules
+                  type: JSONB
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connector_sync_destinations
+            indexName: idx_connector_sync_destinations_connector_id
+            columns:
+              - column:
+                  name: connector_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connector_sync_destinations
+            indexName: idx_connector_sync_destinations_collection_id
+            columns:
+              - column:
+                  name: collection_id
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: connector_sync_destinations
+
+  # ============================================
+  # CONNECTOR FILE SYNCS TABLE
+  # ============================================
+  - changeSet:
+      id: 050-create-connector-file-syncs
+      author: liquibase-auto
+      labels: connectors,sync
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: connector_file_syncs
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: connector_file_syncs
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_connector_file_syncs
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: connector_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_file_syncs_connector_id
+                    references: scrapalot.connectors(id)
+                    deleteCascade: true
+              - column:
+                  name: document_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_file_syncs_document_id
+                    references: scrapalot.documents(id)
+              - column:
+                  name: external_file_id
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: external_file_path
+                  type: VARCHAR(1000)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_size
+                  type: BIGINT
+              - column:
+                  name: file_type
+                  type: VARCHAR(50)
+              - column:
+                  name: external_modified_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: external_checksum
+                  type: VARCHAR(100)
+              - column:
+                  name: sync_status
+                  type: VARCHAR(20)
+                  defaultValue: pending
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_sync_attempt
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: last_successful_sync
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: sync_error
+                  type: TEXT
+              - column:
+                  name: retry_count
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: local_file_path
+                  type: VARCHAR(500)
+              - column:
+                  name: local_checksum
+                  type: VARCHAR(100)
+              - column:
+                  name: sync_metadata
+                  type: JSONB
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connector_file_syncs
+            indexName: idx_connector_file_syncs_connector_id
+            columns:
+              - column:
+                  name: connector_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connector_file_syncs
+            indexName: idx_connector_file_syncs_document_id
+            columns:
+              - column:
+                  name: document_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connector_file_syncs
+            indexName: idx_connector_file_syncs_external_file_id
+            columns:
+              - column:
+                  name: external_file_id
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: connector_file_syncs
+
+  # ============================================
+  # CONNECTOR SYNC JOBS TABLE
+  # ============================================
+  - changeSet:
+      id: 050-create-connector-sync-jobs
+      author: liquibase-auto
+      labels: connectors,jobs
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: connector_sync_jobs
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: connector_sync_jobs
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_connector_sync_jobs
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: connector_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_sync_jobs_connector_id
+                    references: scrapalot.connectors(id)
+                    deleteCascade: true
+              - column:
+                  name: job_id
+                  type: UUID
+              - column:
+                  name: sync_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: trigger
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: pending
+                  constraints:
+                    nullable: false
+              - column:
+                  name: progress
+                  type: DOUBLE
+                  defaultValueNumeric: 0.0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: started_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: completed_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: duration_seconds
+                  type: INTEGER
+              - column:
+                  name: files_discovered
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: files_new
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: files_updated
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: files_deleted
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: files_failed
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: files_skipped
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: bytes_transferred
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: transfer_rate_mbps
+                  type: DOUBLE
+              - column:
+                  name: error_summary
+                  type: TEXT
+              - column:
+                  name: error_details
+                  type: JSONB
+              - column:
+                  name: metadata
+                  type: JSONB
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connector_sync_jobs
+            indexName: idx_connector_sync_jobs_connector_id
+            columns:
+              - column:
+                  name: connector_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connector_sync_jobs
+            indexName: idx_connector_sync_jobs_status
+            columns:
+              - column:
+                  name: status
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: connector_sync_jobs
+
+  # ============================================
+  # CONNECTOR OAUTH STATES TABLE
+  # ============================================
+  - changeSet:
+      id: 050-create-connector-oauth-states
+      author: liquibase-auto
+      labels: connectors,oauth
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: connector_oauth_states
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: connector_oauth_states
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_connector_oauth_states
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: connector_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_oauth_states_connector_id
+                    references: scrapalot.connectors(id)
+                    deleteCascade: true
+              - column:
+                  name: state
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_connector_oauth_states_state
+              - column:
+                  name: provider
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: redirect_uri
+                  type: VARCHAR(500)
+              - column:
+                  name: scope
+                  type: VARCHAR(500)
+              - column:
+                  name: expires_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_used
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: credentials
+                  type: JSONB
+              - column:
+                  name: flow_data
+                  type: JSONB
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connector_oauth_states
+            indexName: idx_connector_oauth_states_state
+            columns:
+              - column:
+                  name: state
+        - createIndex:
+            schemaName: scrapalot
+            tableName: connector_oauth_states
+            indexName: idx_connector_oauth_states_connector_id
+            columns:
+              - column:
+                  name: connector_id
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: connector_oauth_states

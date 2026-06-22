@@ -1,0 +1,106 @@
+# Migration 003: Collections Table
+# Based on: Alembic 00001_initial_schema.py (collections table)
+# Purpose: Document groups with RAG processing settings
+
+databaseChangeLog:
+  - changeSet:
+      id: 003-create-collections-table
+      author: liquibase-auto
+      labels: core,collections
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: collections
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: collections
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_collections
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: workspace_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_collections_workspace_id
+                    references: scrapalot.workspaces(id)
+                    deleteCascade: true
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: chunking_strategy
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: chunk_size
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: chunk_overlap
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: is_processing
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: processing_error
+                  type: TEXT
+                  constraints:
+                    nullable: true
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: collections
+
+  - changeSet:
+      id: 003-create-collections-indexes
+      author: liquibase-auto
+      labels: core,collections,indexes
+      changes:
+        - createIndex:
+            schemaName: scrapalot
+            tableName: collections
+            indexName: idx_collections_workspace_id
+            columns:
+              - column:
+                  name: workspace_id
+
+      rollback:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: collections
+            indexName: idx_collections_workspace_id

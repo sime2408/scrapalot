@@ -1,0 +1,706 @@
+syntax = "proto3";
+
+// Notes Research Assistant Service
+// Provides inline research, citation lookup, text transformation,
+// claim verification, translation, hypothesis generation, and outline generation
+// for the Notes Editor AI companion (AI Scientist).
+
+package scrapalot.notes_assistant;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.notes_assistant";
+option java_outer_classname = "NotesAssistantProto";
+
+service NotesAssistantService {
+  // Quick RAG + web search for a concept (< 5s response)
+  rpc InlineResearch(InlineResearchRequest) returns (InlineResearchResponse);
+
+  // Find academic citation for a claim
+  rpc FindCitation(FindCitationRequest) returns (FindCitationResponse);
+
+  // Rephrase/simplify/expand text with LLM
+  rpc TransformText(TransformTextRequest) returns (TransformTextResponse);
+
+  // Verify a claim against sources
+  rpc VerifyClaim(VerifyClaimRequest) returns (VerifyClaimResponse);
+
+  // Translate text between supported languages
+  rpc TranslateText(TranslateTextRequest) returns (TranslateTextResponse);
+
+  // Generate hypothesis from surrounding context
+  rpc GenerateHypothesis(GenerateHypothesisRequest) returns (GenerateHypothesisResponse);
+
+  // Generate document outline from notes content
+  rpc GenerateOutline(GenerateOutlineRequest) returns (GenerateOutlineResponse);
+
+  // Feature 3 — structured peer review of a note / deep research report /
+  // paper. Runs a 7-stage critical-thinking pass (initial, sections,
+  // methods, reproducibility, figures, ethics, writing) and returns a
+  // full PaperReview with verdict + per-stage health + severity-coded
+  // comments + questions for the author. Bias-free prompt: charitable
+  // interpretation, steelman, multi-perspective on controversial claims.
+  rpc ReviewDocument(ReviewDocumentRequest) returns (ReviewDocumentResponse);
+
+  // "Connect the dots". Extracts entities from the note
+  // body and intersects them with chunks in collections OUTSIDE the
+  // note's active research context. Returns a ranked list of bridging
+  // concepts — entities that link the note to adjacent knowledge the
+  // user has but did not point to.
+  rpc ConnectDots(ConnectDotsRequest) returns (ConnectDotsResponse);
+
+  // "Fact-check whole note". Splits the note into
+  // sentences, classifies which are factual claims with one LLM call,
+  // then runs verify_claim in parallel on each claim. Returns a report
+  // card with per-sentence verdict + GRADE + bias / fallacy flags.
+  rpc FactCheckWholeNote(FactCheckWholeNoteRequest) returns (FactCheckWholeNoteResponse);
+
+  // Feature 6 — "What-If Oracle". Takes a paragraph of context and
+  // returns 4–6 scenario branches (best / likely / worst / wild-card /
+  // contrarian / second-order) with probability, timeframe, trigger
+  // conditions, consequences, plus a cross-branch synthesis (robust
+  // actions, hedges, decision triggers, one-percent insight).
+  rpc GenerateScenarioAnalysis(ScenarioAnalysisRequest) returns (ScenarioAnalysisResponse);
+
+  // 7.7 — Thought Partner.  Returns 3-5 probing questions that test
+  // assumptions in the user's draft instead of synthesising an answer.
+  // Intentionally retrieval-free — the goal is sharper thinking, not
+  // more data.
+  rpc CritiqueWithQuestions(CritiqueWithQuestionsRequest) returns (CritiqueWithQuestionsResponse);
+
+  // 7.1 — Ghost-text autocomplete for the Notes editor.  Single short
+  // call (max_tokens ~80), system provider, low temperature — must
+  // return p95 ≤ 800 ms end-to-end so the editor can render the
+  // suggestion before the user types another character.
+  rpc GhostCompleteNote(GhostCompleteNoteRequest) returns (GhostCompleteNoteResponse);
+
+  // 7.3 — Source-grounded composition.  Retrieve top-K chunks from the
+  // user's collections, then LLM-write a paragraph / section that
+  // tags each claim with [source-N] markers.  The frontend converts
+  // markers to TipTap citation marks at insert time so the user can
+  // click through to the source PDF.  Single-shot for v1 (no token
+  // streaming) — the response is small enough that a buffered call
+  // beats the streaming-protocol scaffolding cost.
+  rpc ComposeFromSources(ComposeFromSourcesRequest) returns (ComposeFromSourcesResponse);
+}
+
+// ─── Shared Messages ─────────────────────────────────────────────────────────
+
+message CitationMetadata {
+  string title = 1;
+  repeated string authors = 2;
+  string year = 3;
+  string publisher = 4;
+  string journal = 5;
+  string doi = 6;
+  string isbn = 7;
+  string url = 8;
+  string formatted_apa = 9;
+}
+
+message ResearchResult {
+  string source_title = 1;
+  string snippet = 2;
+  string source_type = 3;       // "book", "pdf", "epub", "web", "academic"
+  float relevance_score = 4;    // 0.0-1.0
+  string chapter = 5;
+  string page = 6;
+  string document_id = 7;
+  string collection_id = 8;
+  string url = 9;
+  string doi = 10;
+  CitationMetadata citation = 11;
+  // Open-access PDF URL resolved via Unpaywall (DOI → free legal copy).
+  // Empty when no OA version exists. When set, `url` is also populated
+  // with this value so older clients that only read `url` still get the
+  // PDF. Clients that want to render a distinct "Download PDF" button
+  // should prefer reading `oa_pdf_url` directly.
+  string oa_pdf_url = 12;
+  // Unpaywall OA status: "gold" | "green" | "hybrid" | "bronze" | "closed"
+  // Empty string means Unpaywall was not consulted or the lookup failed.
+  string oa_status = 13;
+}
+
+message EvidenceItem {
+  string snippet = 1;
+  string source_title = 2;
+  string source_type = 3;
+  CitationMetadata citation = 4;
+}
+
+// ─── InlineResearch ──────────────────────────────────────────────────────────
+
+message InlineResearchRequest {
+  string query = 1;
+  string user_id = 2;
+  repeated string collection_ids = 3;
+  int32 max_library_results = 4;    // default 5
+  int32 max_web_results = 5;        // default 3
+  bool include_web = 6;             // default true
+}
+
+message InlineResearchResponse {
+  repeated ResearchResult library_results = 1;
+  repeated ResearchResult web_results = 2;
+  int32 total_results = 3;
+  float search_duration_ms = 4;
+}
+
+// ─── FindCitation ────────────────────────────────────────────────────────────
+
+message FindCitationRequest {
+  string claim_text = 1;
+  string user_id = 2;
+  repeated string collection_ids = 3;
+  bool search_crossref = 4;        // default true
+  int32 max_results = 5;           // default 5
+  // Per-provider opt-outs. proto3 bool defaults to false, so these are
+  // SEMANTICALLY-INVERTED: set to `true` to DISABLE a provider. Kept this
+  // way so callers that never set the fields preserve the "all enabled"
+  // default the Notes AI service has always had. Using explicit `optional
+  // bool` on proto3 would be cleaner but needs a schema version bump —
+  // deferred to a future refactor.
+  bool disable_openalex = 6;
+  bool disable_semantic_scholar = 7;
+  bool disable_oa_enrichment = 8;
+}
+
+message FindCitationResponse {
+  repeated ResearchResult library_citations = 1;
+  repeated ResearchResult academic_citations = 2;
+}
+
+// ─── TransformText ───────────────────────────────────────────────────────────
+
+message TransformTextRequest {
+  string text = 1;
+  string user_id = 2;
+  string transform_type = 3;       // "academic", "simplify", "expand"
+  string surrounding_context = 4;  // 2 paragraphs before+after
+  repeated string collection_ids = 5;
+  string locale = 6;               // UI language code: "en", "hr"
+}
+
+message TransformTextResponse {
+  string original_text = 1;
+  string transformed_text = 2;
+  string transform_type = 3;
+}
+
+// ─── VerifyClaim ─────────────────────────────────────────────────────────────
+
+message VerifyClaimRequest {
+  string claim_text = 1;
+  string user_id = 2;
+  repeated string collection_ids = 3;
+  bool include_web = 4;            // default true
+  string locale = 5;               // UI language code: "en", "hr"
+}
+
+message VerifyClaimResponse {
+  string verdict = 1;              // "supported", "partially_supported", "contradicted", "unverified"
+  string confidence = 2;           // "low", "medium", "high"
+  repeated EvidenceItem supporting_evidence = 3;
+  repeated EvidenceItem contradicting_evidence = 4;
+  string suggestion = 5;
+  // Feature 2 — GRADE Evidence Grading + Critical Thinking.
+  // All three fields are populated by a single LLM call in
+  // claim_verification_service, so evidence_quality is always set
+  // (never null, downgrade to "very_low" if nothing usable was found)
+  // while bias_flags and fallacy_warnings may be empty lists.
+  EvidenceQuality evidence_quality = 6;
+  repeated BiasFlag bias_flags = 7;
+  repeated FallacyWarning fallacy_warnings = 8;
+}
+
+// GRADE evidence quality summary for the body of evidence behind a claim.
+// Start with study design hierarchy (systematic review > RCT > cohort >
+// case-control > cross-sectional > case report > expert opinion), then
+// downgrade for risk of bias / inconsistency / indirectness / imprecision
+// / publication bias, upgrade for large effect / dose-response /
+// residual confounding in the right direction. Distinct from
+// VerifyClaimResponse.confidence, which is confidence-in-verdict, not
+// quality-of-evidence — a claim can be "partially_supported" with
+// "very_low" evidence (forum anecdotes only).
+message EvidenceQuality {
+  string grade = 1;                   // "high" | "moderate" | "low" | "very_low"
+  string rationale = 2;               // 1-2 sentence explanation of the grade
+  repeated string downgrades = 3;     // ["risk_of_bias", "inconsistency", "indirectness", "imprecision", "publication_bias"]
+  repeated string upgrades = 4;       // ["large_effect", "dose_response", "confounders_reduce_effect"]
+}
+
+// A single bias detected in the evidence or the claim's framing.
+// Categories match the scientific-critical-thinking skill taxonomy.
+message BiasFlag {
+  string category = 1;    // "cognitive" | "selection" | "measurement" | "analysis" | "confounding"
+  string name = 2;        // e.g. "confirmation", "survivorship", "p_hacking"
+  string description = 3; // Why this bias is flagged in this specific claim/evidence
+}
+
+// A logical fallacy detected in the claim's reasoning.
+// Categories match the scientific-critical-thinking skill taxonomy.
+message FallacyWarning {
+  string category = 1;    // "causation" | "generalization" | "authority" | "statistical" | "structural" | "science_specific"
+  string name = 2;        // e.g. "post_hoc", "hasty_generalization", "appeal_to_authority"
+  string description = 3; // Why this fallacy applies to this specific claim
+}
+
+// ─── TranslateText ───────────────────────────────────────────────────────────
+
+message TranslateTextRequest {
+  string text = 1;
+  string user_id = 2;
+  string target_language = 3;      // "en" or "hr"
+}
+
+message TranslateTextResponse {
+  string original_text = 1;
+  string translated_text = 2;
+  string source_language = 3;
+  string target_language = 4;
+}
+
+// ─── GenerateHypothesis ──────────────────────────────────────────────────────
+
+message GenerateHypothesisRequest {
+  string context = 1;              // Surrounding text (up to 2000 chars)
+  string user_id = 2;
+  repeated string collection_ids = 3;
+  string locale = 4;               // UI language code: "en", "hr"
+}
+
+message GenerateHypothesisResponse {
+  string hypothesis = 1;
+  string rationale = 2;
+  string experimental_design = 3;
+  // Feature 5 — competing hypotheses (optional; controller reads as JSON
+  // string and decodes client-side so the schema can evolve without a
+  // proto bump).
+  string competing_hypotheses_json = 4;
+  string research_question = 5;
+  string recommendation = 6;
+}
+
+// ─── GenerateOutline ─────────────────────────────────────────────────────────
+
+message GenerateOutlineRequest {
+  string notes_content = 1;        // Full text content of the note
+  string user_id = 2;
+  repeated string collection_ids = 3;
+  string locale = 4;               // UI language code: "en", "hr"
+  // 7.2 — template variant. Drives prompt selection:
+  //   "imrad"      — IMRAD: Introduction / Methods / Results / Discussion
+  //   "lit_review" — Systematic literature review (PRISMA-style)
+  //   "thesis"     — Doctoral / master's thesis chapter scaffold
+  //   "grant"      — Funding-grant proposal (Aims / Significance / Approach)
+  // Empty falls back to the legacy generic outline prompt.
+  string template_type = 5;
+}
+
+message GenerateOutlineResponse {
+  repeated OutlineSection sections = 1;
+  string formatted_outline = 2;    // Markdown-formatted outline
+}
+
+message OutlineSection {
+  string title = 1;
+  string description = 2;
+  int32 level = 3;                 // 1 = top-level, 2 = subsection
+  bool covered_in_notes = 4;
+  int32 source_count = 5;
+}
+
+// ─── ReviewDocument (Feature 3) ──────────────────────────────────────────────
+
+message ReviewDocumentRequest {
+  // Raw text to review. For now the caller (frontend / Kotlin controller)
+  // flattens its source — note body, deep research report markdown, paper
+  // abstract — into one plain text blob. Book mode with chapter hierarchy
+  // is a separate iteration that will add a `document_id` field later.
+  string content = 1;
+  string user_id = 2;
+
+  // Where the text came from. Used only for telemetry and for the
+  // initial_assessment stage so the reviewer knows whether it is judging
+  // a blog-style note vs a deep research report vs an actual paper.
+  // Allowed values: "note" | "deep_research" | "paper" | "unknown"
+  string source_type = 3;
+
+  // Short human-readable title for the scanner header ("Reviewing:
+  // <title>"). Optional — frontend passes the note title or research
+  // query here.
+  string source_title = 4;
+
+  string locale = 5;               // UI language code: "en", "hr"
+}
+
+message ReviewDocumentResponse {
+  // Overall verdict. Follows the peer-review skill taxonomy:
+  // "accept" | "minor_revisions" | "major_revisions" | "reject"
+  string verdict = 1;
+
+  // 0-100 aggregate quality score. Computed as a weighted average of
+  // the seven per-stage scores using the ScholarEval 5-point rubric
+  // (scholar-evaluation skill, arxiv:2510.16234): each stage is scored
+  // 1..5, then averaged and rescaled to 0..100. Distinct from verdict
+  // because a paper can score 62/100 and still be "major_revisions".
+  int32 score = 2;
+
+  // One-line summary of the manuscript's essence + overall impression.
+  string summary = 3;
+
+  // 2-4 overall strengths in the user's locale.
+  repeated string overall_strengths = 4;
+
+  // 2-4 overall weaknesses in the user's locale.
+  repeated string overall_weaknesses = 5;
+
+  // Always exactly 7 stages, in the order defined by the peer-review
+  // skill: initial → sections → methods → reproducibility → figures →
+  // ethics → writing. Stages with no issues still appear (health = "ok",
+  // comments = [], summary = why things look fine).
+  repeated ReviewStage stages = 6;
+
+  // Open-ended questions the reviewer would ask the author.
+  repeated string questions_for_authors = 7;
+
+  // Total wall-clock time in ms (review LLM call + parallel claim
+  // verifications). Frontend uses this to calibrate scanner animation
+  // pacing on subsequent runs.
+  int32 latency_ms = 8;
+
+  // Feature 2 + 3 integration — the reviewer extracts 0-3 central
+  // factual claims from the document and verifies each against the
+  // same library + academic DB pipeline used by VerifyClaim (Feature 2),
+  // running all lookups in parallel. Results are attached here so the
+  // scanner panel can show "claim → external verdict" under the review.
+  // May be empty for documents that have no falsifiable claims
+  // (opinion essays, methodology chapters, etc.).
+  repeated ClaimVerification claim_verifications = 9;
+}
+
+message ReviewStage {
+  // 1..7 — matches the 7-stage peer-review skill taxonomy.
+  int32 stage_number = 1;
+
+  // Canonical identifier, always one of:
+  // "initial" | "sections" | "methods" | "reproducibility"
+  // | "figures" | "ethics" | "writing"
+  string stage_name = 2;
+
+  // LED color hint for the scanner:
+  // "ok"       → green solid
+  // "concerns" → amber pulse
+  // "critical" → red solid
+  string health = 3;
+
+  // 1-2 sentence summary in the user's locale explaining the health.
+  string summary = 4;
+
+  // Per-stage comments, ordered by severity. May be empty when
+  // health = "ok".
+  repeated ReviewComment comments = 5;
+
+  // ScholarEval 5-point score for this dimension, 1..5:
+  //   5 = Excellent (exemplary, publishable in top venues)
+  //   4 = Good (strong quality, minor improvements needed)
+  //   3 = Adequate (acceptable with notable areas for improvement)
+  //   2 = Needs Improvement (significant revisions required)
+  //   1 = Poor (fundamental issues, major revision)
+  // Aggregated to the response-level `score` field as a weighted mean.
+  int32 stage_score = 6;
+}
+
+message ReviewComment {
+  // "critical" | "important" | "minor"
+  string severity = 1;
+
+  // Free-form reference to where in the text the comment applies
+  // (e.g. "§2.1 Methods", "paragraph 3", "Figure 1 caption").
+  string section_ref = 2;
+
+  // Plain-language description of the issue in the user's locale.
+  string issue = 3;
+
+  // Concrete, actionable fix suggestion in the user's locale.
+  string suggestion = 4;
+}
+
+// Feature 2 + 3 — one extracted factual claim paired with the result
+// of running it through the VerifyClaim pipeline (library search +
+// Crossref/OpenAlex/Semantic Scholar + Unpaywall + LLM verdict).
+//
+// Reuses the Feature 2 verdict/confidence vocabulary exactly — the
+// values here are byte-for-byte identical to VerifyClaimResponse so
+// the frontend can render them with the same badges and colors.
+message ClaimVerification {
+  // The claim as extracted by the reviewer from the document, usually
+  // a single sentence. Written in the original document language, not
+  // necessarily the user's locale — users reviewing English papers in
+  // a Croatian UI will see the claim in English.
+  string claim_text = 1;
+
+  // Reuses VerifyClaimResponse.verdict:
+  // "supported" | "partially_supported" | "contradicted" | "unverified"
+  string verdict = 2;
+
+  // Reuses VerifyClaimResponse.confidence:
+  // "low" | "medium" | "high"
+  string confidence = 3;
+
+  // Reuses Feature 2 EvidenceQuality (GRADE + downgrades/upgrades +
+  // rationale). Always set — on failed verification, falls back to
+  // the service-level default (grade=very_low with a generic reason).
+  EvidenceQuality evidence_quality = 4;
+
+  // Where in the document this claim appears — same free-form shape
+  // as ReviewComment.section_ref (e.g. "§2 Introduction, paragraph 4").
+  string section_ref = 5;
+}
+
+// ─── Connect Dots ────────────────────────────────────────────────────────
+
+message ConnectDotsRequest {
+  string user_id = 1;
+  // Raw note body (HTML as stored by the editor). The service strips
+  // tags and caps at ~8k characters before entity extraction.
+  string note_text = 2;
+  // Collections already in the note's research context — their mentions
+  // of the note's entities DON'T count as bridges (that's not a bridge,
+  // that's the source domain itself).
+  repeated string exclude_collection_ids = 3;
+  // Max bridging concepts returned to the UI. Defaults to 8 server-side.
+  int32 top_k = 4;
+}
+
+message CollectionCoverage {
+  string collection_id = 1;
+  string collection_name = 2;
+  int32 chunk_count = 3;
+  int32 book_count = 4;
+}
+
+message BridgingConcept {
+  string entity = 1;
+  int32 total_chunks = 2;
+  int32 total_books = 3;
+  repeated CollectionCoverage collections = 4;
+}
+
+message ConnectDotsResponse {
+  bool success = 1;
+  int32 entities_extracted = 2;
+  repeated BridgingConcept bridging_concepts = 3;
+  // "ok" | "empty_note" | "no_entities_found" | "entity_extraction_failed"
+  // | "graph_query_failed"
+  string message = 4;
+}
+
+// ─── Fact-check whole note ───────────────────────────────────────────────
+
+message FactCheckWholeNoteRequest {
+  string user_id = 1;
+  string note_text = 2;
+  repeated string collection_ids = 3;
+  bool include_web = 4;          // default true
+  string locale = 5;             // UI language code: "en" | "hr" | "mk"
+}
+
+message ClaimCheck {
+  // Index of the sentence within the HTML-stripped plain text, in
+  // reading order. Frontend uses this to render per-sentence marks.
+  int32 sentence_index = 1;
+  string sentence = 2;
+  string verdict = 3;            // supported | partially_supported | contradicted | unverified
+  string confidence = 4;         // low | medium | high
+  string suggestion = 5;
+  EvidenceQuality evidence_quality = 6;
+  repeated BiasFlag bias_flags = 7;
+  repeated FallacyWarning fallacy_warnings = 8;
+  // Character-level position in the HTML-stripped text. Frontend can
+  // map these to TipTap doc positions when inline marks ship.
+  int32 char_offset = 9;
+  int32 char_length = 10;
+}
+
+message FactCheckWholeNoteResponse {
+  bool success = 1;
+  int32 total_sentences = 2;
+  int32 candidates_classified = 3;
+  int32 claims_verified = 4;
+  repeated ClaimCheck checks = 5;
+  // "ok" | "empty_note" | "no_claims_found"
+  string message = 6;
+}
+
+// ─── Feature 6 — What-If Oracle (Scenario Analysis) ──────────────────────
+
+message ScenarioAnalysisRequest {
+  string context = 1;
+  string user_id = 2;
+  repeated string collection_ids = 3;  // reserved for future RAG grounding
+  string locale = 4;                   // "en" | "hr" | "mk"
+}
+
+message ScenarioBranch {
+  // One of: best_case | likely_case | worst_case | wild_card | contrarian | second_order
+  string branch_type = 1;
+  string title = 2;
+  float probability = 3;
+  float confidence = 4;
+  string timeframe = 5;
+  string narrative = 6;
+  repeated string trigger_conditions = 7;
+  repeated string consequences = 8;
+}
+
+message ScenarioSynthesis {
+  repeated string robust_actions = 1;
+  repeated string hedge_actions = 2;
+  repeated string decision_triggers = 3;
+  string one_percent_insight = 4;
+}
+
+message ScenarioAnalysisResponse {
+  string scenario_question = 1;
+  repeated ScenarioBranch branches = 2;
+  ScenarioSynthesis synthesis = 3;
+  // Populated with a machine-readable error code when the LLM pass fails
+  // and the service returns a fallback empty result.
+  string error = 4;
+}
+
+// ─── CritiqueWithQuestions (7.7 Thought Partner) ────────────────────────────
+//
+// Pure socratic mode: the agent asks 3-5 short questions that probe the
+// user's reasoning rather than offering an answer. No retrieval; no
+// citations. Deliberately a single-shot RPC (not streaming) — the
+// response is short and the front-end inserts it as one callout block.
+
+message CritiqueWithQuestionsRequest {
+  string user_id = 1;
+  // Raw HTML as stored by the editor. Service strips tags and caps at
+  // ~6k characters before sending to the model.
+  string note_text = 2;
+  // Output language; defaults to the user's UI language.
+  string language = 3;
+}
+
+message CritiqueWithQuestionsResponse {
+  bool success = 1;
+  // Pre-formatted markdown ready to drop into a TipTap callout block:
+  // a numbered list of 3-5 questions, one sentence each.
+  string formatted_questions = 2;
+  // Same questions, but split for callers that want to render them
+  // individually (e.g. as drill-in chips).
+  repeated string questions = 3;
+  // Populated when the LLM call fails and we return an empty response.
+  string error = 4;
+}
+
+// ─── GhostCompleteNote (7.1 AI Autocomplete) ────────────────────────────────
+//
+// Fast continuation of the user's draft at the cursor.  Inputs are kept
+// small on purpose — the model only needs the immediate vicinity plus a
+// thin "what is this note about" anchor (the heading outline).
+
+message GhostCompleteNoteRequest {
+  string user_id = 1;
+  // Last ~1500 chars of plain text leading up to the cursor.
+  string text_before_cursor = 2;
+  // Next ~500 chars after the cursor (helps when cursor is mid-sentence).
+  string text_after_cursor = 3;
+  // Headings only, ≤ 200 chars — gives the model a thematic anchor
+  // without burning tokens on the full doc.
+  string note_outline = 4;
+  // Output language (matches the user's UI language).
+  string language = 5;
+}
+
+message GhostCompleteNoteResponse {
+  bool success = 1;
+  // 1-3 sentence continuation; empty string is a valid no-op (e.g.
+  // context too short, model returned nothing).
+  string suggestion = 2;
+  // Populated when the LLM call fails or input is rejected.  Special
+  // value "rate_limited" tells the UI to show a soft cooldown badge
+  // without surfacing an error toast.
+  string error = 3;
+  // 7.1 cost guard — sliding-window quota.  `quota_used` reflects the
+  // number of autocomplete calls in the last hour for this user
+  // (after this call has been counted, regardless of success); the
+  // limit is fixed server-side.
+  int32 quota_used = 4;
+  int32 quota_limit = 5;
+}
+
+// ─── ComposeFromSources (7.3) ───────────────────────────────────────────────
+//
+// Retrieval-grounded paragraph generation. The service runs the same
+// pgvector retriever the chat side uses, then asks the LLM to write
+// `target_length` words of prose that cite the retrieved chunks via
+// [source-N] markers (1-indexed). The post-processor leaves the markers
+// in place; the frontend swaps them for TipTap citation marks at
+// insert time so each claim is clickable to the source PDF.
+
+message ComposeFromSourcesRequest {
+  string user_id = 1;
+  // Optional steering hint typed into the dialog ("write about X").
+  // When omitted the service derives the retrieval query from the
+  // cursor context (text_before_cursor + text_after_cursor) so the
+  // generated passage is a continuation of what the writer is
+  // actively typing rather than a standalone paragraph.
+  string topic_or_section = 2;
+  // Collections to retrieve from. Empty means "no retrieval"; the
+  // service falls back to plain LLM generation and emits no sources.
+  repeated string collection_ids = 3;
+  // Approximate prose length: 'short' (~200w) | 'medium' (~500w) | 'long' (~1500w).
+  string target_length = 4;
+  // Output language; defaults to the user's UI language.
+  string language = 5;
+  // When the user is filling in a 7.2 outline section, the H2 heading
+  // text. Steers the model toward section-shaped writing instead of
+  // standalone paragraphs.
+  string outline_section_anchor = 6;
+  // Up to ~4000 chars of editor text immediately BEFORE the cursor.
+  // Used as the primary retrieval query (so similarity search picks
+  // chunks relevant to what the writer just typed, not to a
+  // generic topic) and fed into the LLM prompt so the generated
+  // passage continues from where the cursor sits instead of
+  // restarting the topic.
+  string text_before_cursor = 7;
+  // Up to ~4000 chars of editor text immediately AFTER the cursor.
+  // Helps the model avoid repeating content that already comes
+  // later in the doc when the cursor is parked mid-section.
+  string text_after_cursor = 8;
+}
+
+message ComposedSource {
+  // 1-indexed source number used in the [source-N] markers inside
+  // `composed_text`. The frontend uses this to wire the citation
+  // mark to the document_id.
+  int32 source_number = 1;
+  string document_id = 2;
+  string collection_id = 3;
+  string source_title = 4;
+  // The chunk text actually used for grounding. Helpful for the user
+  // to verify the cite without leaving the editor.
+  string chunk_text = 5;
+  string chapter = 6;
+  string page = 7;
+  CitationMetadata citation = 8;
+}
+
+message ComposeFromSourcesResponse {
+  bool success = 1;
+  // Markdown-ish prose with [source-N] markers in place. The frontend
+  // converts those markers to citation marks at insert time.
+  string composed_text = 2;
+  // Sources ordered by source_number ascending. Empty when the user
+  // didn't pick any collections (the model still wrote, just without
+  // citations).
+  repeated ComposedSource sources = 3;
+  // Populated when the LLM call fails or input is rejected.
+  string error = 4;
+}

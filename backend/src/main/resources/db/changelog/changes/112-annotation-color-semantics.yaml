@@ -1,0 +1,56 @@
+# Migration 112: annotation_color_semantics — workspace-level meaning for
+# annotation colors. Lets a workspace admin map every hex swatch in the
+# 8-color palette to a human label ("red = critical", "yellow = insight"),
+# so collaborators on the same workspace share a common semantic instead
+# of memorising per-user conventions.
+#
+# Single row per workspace; the map lives in a JSONB column keyed by hex
+# string ("#ef4444"). Reading is unauthenticated within the workspace
+# (any member sees the labels); writing requires workspace edit rights
+# (enforced in the service layer, not at DB level).
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 112-create-annotation-color-semantics
+      author: scrapalot
+      labels: annotations,workspace,collaboration
+      comment: "Workspace-level color → label map for annotation swatches"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: annotation_color_semantics
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: annotation_color_semantics
+            columns:
+              - column:
+                  name: workspace_id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+                    foreignKeyName: fk_annotation_color_semantics_workspace_id
+                    references: scrapalot.workspaces(id)
+                    deleteCascade: true
+              - column:
+                  name: color_to_label
+                  type: JSONB
+                  constraints:
+                    nullable: false
+                  defaultValueComputed: "'{}'::jsonb"
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+                  defaultValueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+                  defaultValueComputed: "CURRENT_TIMESTAMP"

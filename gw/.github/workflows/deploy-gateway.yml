@@ -1,0 +1,374 @@
+name: CICD-Gateway
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - dev
+          - rc
+          - prod
+
+  # Auto-deployment enabled
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'build.gradle.kts'
+      - 'Dockerfile'
+      - '.github/workflows/deploy-gateway.yml'
+
+jobs:
+  check-changes:
+    runs-on: self-hosted
+    outputs:
+      should-deploy: ${{ steps.changes.outputs.gateway }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for gateway changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            gateway:
+              - 'src/**'
+              - 'build.gradle.kts'
+              - 'Dockerfile'
+              - '.github/workflows/deploy-gateway.yml'
+
+  deploy:
+    needs: check-changes
+    if: needs.check-changes.outputs.should-deploy == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: self-hosted
+    # Use environment-specific secrets (dev, rc, prod) instead of repository secrets
+    # Secrets are configured at: https://github.com/sime2408/scrapalot-gw/settings/environments
+    environment: ${{ github.event.inputs.environment || 'prod' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: scrapalot-gw
+
+      - name: Configure Docker Build Cache
+        run: |
+          # Clean up old images to prevent disk space issues
+          docker image prune -f || true
+
+          # Remove old test images if any exist
+          docker images | grep -E "scrapalot-gw.*test" | awk '{print $1":"$2}' | xargs -r docker rmi -f 2>/dev/null || true
+
+          # Pull previous image for cache if exists
+          docker pull scrapalot-gw:latest || true
+
+          # Enable BuildKit for all Docker operations
+          echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
+          echo "BUILDKIT_PROGRESS=plain" >> $GITHUB_ENV
+
+      - name: Set up deployment directory
+        run: |
+          mkdir -p /opt/scrapalot
+          rm -rf /opt/scrapalot/scrapalot-gw
+          cp -r scrapalot-gw /opt/scrapalot/
+
+          # Fix permissions for multi-user environment
+          sudo chgrp -R scrapalot /opt/scrapalot/scrapalot-gw
+          sudo chmod -R g+rw /opt/scrapalot/scrapalot-gw
+          sudo usermod -a -G scrapalot github-runner || true
+          find /opt/scrapalot/scrapalot-gw -type d -exec sudo chmod g+rwx {} \;
+
+      - name: Create production environment file
+        working-directory: /opt/scrapalot/scrapalot-gw
+        run: |
+          cat > .env << EOF
+          # Spring Configuration
+          SPRING_PROFILES_ACTIVE=prod
+          SERVER_PORT=8080
+
+          # JWT Configuration (from environment-specific secrets)
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          JWT_EXPIRATION_MS=1800000
+
+          # Redis Configuration (for rate limiting and session affinity)
+          REDIS_ENABLED=true
+          REDIS_HOST=redis
+          REDIS_PORT=6379
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+          REDIS_DB=2
+
+          # Backend Service Configuration
+          BACKEND_URL=http://scrapalot-backend:8091
+          BACKEND_TIMEOUT_MS=60000
+
+          # Chat Service Configuration
+          CHAT_URL=http://scrapalot-chat:8090
+          CHAT_TIMEOUT_MS=120000
+
+          # gRPC Client Configuration (for auth validation)
+          GRPC_CLIENT_HOST=scrapalot-backend
+          GRPC_CLIENT_PORT=9090
+          GRPC_CLIENT_TIMEOUT_MS=5000
+
+          # CORS Configuration
+          CORS_ALLOWED_ORIGINS=${{ vars.CORS_ALLOWED_ORIGINS }}
+          CORS_ALLOW_CREDENTIALS=true
+
+          # Rate Limiting Configuration
+          RATE_LIMIT_ENABLED=true
+          RATE_LIMIT_RESEARCHER_RATE=10
+          RATE_LIMIT_RESEARCHER_CAPACITY=20
+          RATE_LIMIT_PROFESSIONAL_RATE=50
+          RATE_LIMIT_PROFESSIONAL_CAPACITY=100
+          RATE_LIMIT_ENTERPRISE_RATE=1000
+          RATE_LIMIT_ENTERPRISE_CAPACITY=2000
+
+          # Circuit Breaker Configuration
+          CIRCUIT_BREAKER_ENABLED=true
+          CIRCUIT_BREAKER_FAILURE_THRESHOLD=60
+          CIRCUIT_BREAKER_SLOW_CALL_THRESHOLD=80
+          CIRCUIT_BREAKER_WAIT_DURATION_SECONDS=60
+
+          # Logging Configuration
+          LOG_LEVEL_ROOT=WARN
+          LOG_LEVEL_APP=INFO
+          LOG_LEVEL_GATEWAY=INFO
+
+          # Actuator Configuration
+          ACTUATOR_ENDPOINTS=health,info,metrics,prometheus
+
+          # API Versioning
+          API_VERSION_ENABLED=true
+          API_VERSIONS=v1,v2
+
+          # Java Options
+          JAVA_OPTS=-Xms256m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+
+          # GitHub Integration (from environment-specific secrets)
+          GITHUB_TOKEN=${{ secrets.GH_TOKEN }}
+          GH_TOKEN=${{ secrets.GH_TOKEN }}
+
+          # Build Configuration
+          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          EOF
+
+          echo "✓ Environment file created"
+
+      - name: Build Gateway Docker Image (Optimized)
+        id: build
+        working-directory: /opt/scrapalot/scrapalot-gw
+        run: |
+          echo "Building scrapalot-gw image with caching..."
+
+          # Build with BuildKit enabled (set in env)
+          docker build \
+            --cache-from scrapalot-gw:latest \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            -f Dockerfile \
+            -t scrapalot-gw:latest \
+            -t scrapalot-gw:${{ github.sha }} \
+            .
+
+          echo "✓ Gateway image built successfully with caching"
+
+      - name: Auto-fix Build Failure
+        if: failure() && steps.build.outcome == 'failure'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔧 Build failed! Creating auto-fix PR for review..."
+          BUILD_ERROR=$(docker build -f Dockerfile . 2>&1 | tail -20)
+          BRANCH_NAME="quickfix/build-failure-$(date +%s)"
+
+          # Trigger auto-fix PR workflow (if exists)
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/auto-fix-pr.yml/dispatches \
+            -d "{
+              \"ref\": \"main\",
+              \"inputs\": {
+                \"error_log\": $(echo "$BUILD_ERROR" | jq -R -s .),
+                \"error_context\": \"Docker build failure in deploy-gateway.yml workflow\",
+                \"branch_name\": \"$BRANCH_NAME\"
+              }
+            }" || echo "Auto-fix workflow not found (skipped)"
+
+          echo "Auto-fix PR creation triggered (if workflow exists)"
+          echo "🔍 Check for new PR at: https://github.com/${{ github.repository }}/pulls"
+          echo "📂 Branch: $BRANCH_NAME"
+
+      - name: Deploy Gateway Application
+        id: deploy
+        working-directory: /opt/scrapalot/scrapalot-gw
+        run: |
+          echo "Stopping existing gateway container..."
+
+          # Wait for active uploads to finish before restart (gateway proxy breaks streaming uploads)
+          ACTIVE=$(docker exec pgvector psql -U scrapalot -d scrapalot -t -c \
+            "SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND job_type='document_processing' AND updated_at > NOW() - INTERVAL '30 minutes'" 2>/dev/null | tr -d ' \n' || echo "0")
+          if [ "$ACTIVE" -gt 0 ]; then
+            echo "⏳ $ACTIVE active upload(s) detected. Waiting up to 5 min..."
+            for i in $(seq 1 20); do
+              REMAINING=$(docker exec pgvector psql -U scrapalot -d scrapalot -t -c \
+                "SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND job_type='document_processing' AND updated_at > NOW() - INTERVAL '30 minutes'" 2>/dev/null | tr -d ' \n' || echo "0")
+              if [ "$REMAINING" = "0" ] || [ "$REMAINING" = "" ]; then
+                echo "✓ All uploads completed"
+                break
+              fi
+              echo "  $REMAINING upload(s) still active (attempt $i/20)..."
+              sleep 15
+            done
+          fi
+
+          docker stop scrapalot-gw || true
+          docker rm scrapalot-gw || true
+
+          echo "Deploying scrapalot-gw using master compose (no-deps to avoid recreating existing services)..."
+          docker compose -f /opt/scrapalot/scrapalot-chat/docker-scrapalot/docker-compose.yaml up -d --no-deps scrapalot-gw
+
+          echo "✓ Gateway deployed (without recreating dependencies)"
+          echo "Note: Dependencies (redis, pgvector, scrapalot-backend, scrapalot-chat) are assumed to be running"
+
+      - name: Wait for Gateway Startup
+        id: health_check
+        run: |
+          echo "Waiting for gateway to be ready..."
+          for i in {1..60}; do
+            if docker exec scrapalot-gw sh -c 'curl -f http://localhost:8080/actuator/health || wget -q -O- http://localhost:8080/actuator/health' 2>/dev/null | grep -q "UP"; then
+              echo "✓ Gateway is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/60: Gateway not ready yet..."
+            sleep 3
+          done
+          echo "❌ Gateway health check failed"
+          exit 1
+
+      - name: Verify Gateway Routes
+        run: |
+          echo "Testing gateway routing..."
+
+          # Test health endpoint
+          echo "Testing /actuator/health..."
+          docker exec scrapalot-gw curl -f http://localhost:8080/actuator/health || {
+            echo "❌ Health endpoint failed"
+            exit 1
+          }
+
+          echo "✓ Gateway routes verified"
+
+      - name: Auto-fix Deployment/Health Failure
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.health_check.outcome == 'failure')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔧 Deployment/Health check failed! Creating auto-fix PR for review..."
+          DEPLOY_ERROR=$(docker logs scrapalot-gw --tail 50 2>&1)
+          BRANCH_NAME="quickfix/deployment-failure-$(date +%s)"
+
+          # Trigger auto-fix PR workflow (if exists)
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/auto-fix-pr.yml/dispatches \
+            -d "{
+              \"ref\": \"main\",
+              \"inputs\": {
+                \"error_log\": $(echo "$DEPLOY_ERROR" | jq -R -s .),
+                \"error_context\": \"Container deployment/health failure in deploy-gateway.yml workflow\",
+                \"branch_name\": \"$BRANCH_NAME\"
+              }
+            }" || echo "Auto-fix workflow not found (skipped)"
+
+          echo "Auto-fix PR creation triggered for deployment/health issues (if workflow exists)"
+          echo "🔍 Check for new PR at: https://github.com/${{ github.repository }}/pulls"
+          echo "📂 Branch: $BRANCH_NAME"
+
+      - name: Display Service Status
+        working-directory: /opt/scrapalot/scrapalot-gw
+        run: |
+          echo "========================================="
+          echo "Deployed Services Status:"
+          echo "========================================="
+          docker compose -f /opt/scrapalot/scrapalot-chat/docker-scrapalot/docker-compose.yaml ps scrapalot-gw
+          echo ""
+          echo "========================================="
+          echo "Gateway Logs (last 20 lines):"
+          echo "========================================="
+          docker compose -f /opt/scrapalot/scrapalot-chat/docker-scrapalot/docker-compose.yaml logs --tail=20 scrapalot-gw
+
+      - name: Cleanup Docker Cache (Aggressive)
+        run: |
+          echo "========================================="
+          echo "Aggressive Docker Cleanup"
+          echo "========================================="
+
+          # Wait if another prune is running
+          for i in {1..30}; do
+            if ! pgrep -f "docker.*prune" > /dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for another prune operation to complete... ($i/30)"
+            sleep 2
+          done
+
+          # Remove ALL old scrapalot-gw images except latest
+          echo "Cleaning old scrapalot-gw images..."
+          docker images scrapalot-gw --format "{{.Repository}}:{{.Tag}}" | \
+            grep -v "scrapalot-gw:latest" | \
+            xargs -r docker rmi -f 2>/dev/null || true
+
+          # Clean ALL dangling images (with retry)
+          echo "Cleaning dangling images..."
+          docker image prune -af 2>/dev/null || echo "⚠️  Prune skipped (already running)"
+
+          # Clean builder cache unconditionally
+          echo "Cleaning builder cache..."
+          docker builder prune -af --filter "until=24h" 2>/dev/null || echo "⚠️  Builder prune skipped"
+
+          # Show disk usage
+          echo ""
+          echo "Disk usage after cleanup:"
+          df -h /mnt/volume-nbg1-1
+          docker system df
+
+          echo "Cleanup complete"
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo ""
+          echo "========================================="
+          echo "Deployment Summary"
+          echo "========================================="
+          echo "Public Access:"
+          echo "  - Frontend: https://scrapalot.app"
+          echo "  - API Gateway: https://api.scrapalot.app (port 8080)"
+          echo "  - Health Check: https://api.scrapalot.app/actuator/health"
+          echo "  - Metrics: https://api.scrapalot.app/actuator/prometheus"
+          echo ""
+          echo "Deployment Details:"
+          echo "  - Spring Profile: prod"
+          echo "  - Java Version: 21"
+          echo "  - Build Tool: Gradle"
+          echo "  - Gateway Port: 8080 (external)"
+          echo "  - Backend URL: http://scrapalot-backend:8091 (internal)"
+          echo "  - Chat URL: http://scrapalot-chat:8090 (internal)"
+          echo "  - gRPC Client: scrapalot-backend:9090 (internal)"
+          echo "  - Cache: Redis (rate limiting, session affinity)"
+          echo ""
+          echo "Architecture:"
+          echo "  Client → Gateway (8080) → Backend (8091) / Chat (8090)"
+          echo "  Gateway validates JWT → Adds X-User-ID headers → Routes"
+          echo "  Circuit breakers + Rate limiting enabled"
+          echo "========================================="

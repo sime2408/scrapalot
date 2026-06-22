@@ -1,0 +1,45 @@
+# Migration 125: invitation_tokens.role
+#
+# Role the invited user is registered with when they consume the token.
+# Lets an admin invite someone directly as an admin (or any role) from the
+# Users settings invite dialog, instead of every invitee defaulting to "user"
+# and needing a manual promotion afterwards. The role is set by the inviting
+# admin on the token (trusted), NOT supplied by the registrant, so it can't be
+# escalated by the person accepting the invite.
+# Default 'user' = a normal invited account, matching prior behaviour.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 125-add-invitation-tokens-role
+      author: scrapalot
+      labels: invitations,users,admin
+      comment: "Add role to invitation_tokens so admins can invite users directly as admin"
+      preConditions:
+        - onFail: MARK_RAN
+        - and:
+          - tableExists:
+              tableName: invitation_tokens
+              schemaName: scrapalot
+          - not:
+              - columnExists:
+                  tableName: invitation_tokens
+                  schemaName: scrapalot
+                  columnName: role
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: invitation_tokens
+            columns:
+              - column:
+                  name: role
+                  type: VARCHAR(20)
+                  defaultValue: "user"
+                  constraints:
+                    nullable: false
+                  remarks: "Role assigned to the user when they accept this invitation (set by the inviting admin; default 'user')."
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: invitation_tokens
+            columnName: role

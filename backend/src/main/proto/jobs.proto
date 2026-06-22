@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package scrapalot.jobs;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.jobs";
+option java_outer_classname = "JobsProto";
+
+// Job tracking service for document processing and background tasks.
+// Python owns the job state (in-memory + database), Kotlin queries via gRPC.
+service JobsService {
+  rpc GetActiveJobs(GetActiveJobsRequest) returns (GetActiveJobsResponse);
+  rpc GetJobStatus(GetJobStatusRequest) returns (JobStatusResponse);
+  rpc CancelJob(CancelJobRequest) returns (scrapalot.common.StatusResponse);
+}
+
+message GetActiveJobsRequest {
+  string user_id = 1;
+  bool include_details = 2;
+}
+
+message GetActiveJobsResponse {
+  int32 total_active_count = 1;
+  repeated JobInfo active_jobs = 2;
+  int32 total_document_count = 3;
+  int32 total_connector_count = 4;
+}
+
+message JobInfo {
+  string job_id = 1;
+  optional string document_id = 2;
+  optional string collection_id = 3;
+  string status = 4;
+  float progress = 5;
+  string message = 6;
+  optional string filename = 7;
+  optional string collection_name = 8;
+}
+
+message GetJobStatusRequest {
+  string job_id = 1;
+  string user_id = 2;
+}
+
+message JobStatusResponse {
+  string job_id = 1;
+  optional string document_id = 2;
+  optional string filename = 3;
+  optional string collection_id = 4;
+  optional string collection_name = 5;
+  string status = 6;
+  float progress = 7;
+  string message = 8;
+  optional string last_update_time = 9;
+  optional string estimated_completion_time = 10;
+}
+
+message CancelJobRequest {
+  string job_id = 1;
+  string user_id = 2;
+}

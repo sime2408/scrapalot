@@ -1,0 +1,93 @@
+databaseChangeLog:
+  - changeSet:
+      id: 096-create-session-shares
+      author: scrapalot
+      changes:
+        - createTable:
+            tableName: session_shares
+            schemaName: scrapalot
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: share_token
+                  type: varchar(36)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: message_snapshot_count
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: expires_at
+                  type: timestamptz
+              - column:
+                  name: revoked_at
+                  type: timestamptz
+
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: session_shares
+            baseColumnNames: session_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: sessions
+            referencedColumnNames: id
+            constraintName: fk_session_shares_session
+            onDelete: CASCADE
+
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: session_shares
+            baseColumnNames: user_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_session_shares_user
+            onDelete: CASCADE
+
+        - createIndex:
+            indexName: idx_session_shares_share_token
+            tableName: session_shares
+            schemaName: scrapalot
+            unique: true
+            columns:
+              - column:
+                  name: share_token
+
+        - createIndex:
+            indexName: idx_session_shares_session_id
+            tableName: session_shares
+            schemaName: scrapalot
+            columns:
+              - column:
+                  name: session_id
+
+        - createIndex:
+            indexName: idx_session_shares_user_id
+            tableName: session_shares
+            schemaName: scrapalot
+            columns:
+              - column:
+                  name: user_id

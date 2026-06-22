@@ -1,0 +1,149 @@
+# Migration 006: Messages and Chat Conversations
+# Based on: Alembic 00001_initial_schema.py (messages, chat_conversations tables)
+# Purpose: Chat history and legacy conversation tracking
+
+databaseChangeLog:
+  - changeSet:
+      id: 006-create-messages-table
+      author: liquibase-auto
+      labels: core,messages
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: messages
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: messages
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_messages
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_messages_session_id
+                    references: scrapalot.sessions(id)
+                    deleteCascade: true
+              - column:
+                  name: sender
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role
+                  type: VARCHAR(10)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: citations
+                  type: JSONB
+                  constraints:
+                    nullable: true
+              - column:
+                  name: metadata
+                  type: JSONB
+                  constraints:
+                    nullable: true
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: messages
+            indexName: idx_messages_session_id
+            columns:
+              - column:
+                  name: session_id
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: messages
+
+  - changeSet:
+      id: 006-create-chat-conversations-table
+      author: liquibase-auto
+      labels: core,legacy
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: chat_conversations
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: chat_conversations
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_chat_conversations
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: workspace_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_chat_conversations_workspace_id
+                    references: scrapalot.workspaces(id)
+                    deleteCascade: true
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: summary
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: is_archived
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: chat_conversations
+            indexName: idx_chat_conversations_workspace_id
+            columns:
+              - column:
+                  name: workspace_id
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: chat_conversations

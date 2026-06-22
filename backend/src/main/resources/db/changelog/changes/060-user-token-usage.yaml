@@ -1,0 +1,104 @@
+# Migration 060: User Token Usage
+# Tracks monthly token usage per user for subscription quota enforcement.
+# Migrated from Python Alembic (018_add_user_token_usage_table.py).
+
+databaseChangeLog:
+  - changeSet:
+      id: 060-create-user-token-usage
+      author: liquibase-auto
+      labels: billing,token-usage
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: user_token_usage
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: user_token_usage
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_user_token_usage
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_user_token_usage_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: billing_period_start
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: billing_period_end
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_input_tokens
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_output_tokens
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_tokens
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_cost_usd
+                  type: DECIMAL(10,6)
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: request_count
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            schemaName: scrapalot
+            tableName: user_token_usage
+            columnNames: user_id, billing_period_start
+            constraintName: uq_user_token_usage_user_period
+        - createIndex:
+            schemaName: scrapalot
+            tableName: user_token_usage
+            indexName: ix_user_token_usage_user_id_period
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: billing_period_start
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: user_token_usage

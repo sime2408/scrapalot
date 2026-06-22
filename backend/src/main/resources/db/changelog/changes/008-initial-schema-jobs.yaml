@@ -1,0 +1,157 @@
+# Migration 008: Jobs and Task Progress
+# Based on: Alembic 00001_initial_schema.py (jobs, task_progress tables)
+# Purpose: Background job tracking and progress monitoring
+
+databaseChangeLog:
+  - changeSet:
+      id: 008-create-jobs-table
+      author: liquibase-auto
+      labels: core,jobs
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: jobs
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: jobs
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: collection_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_jobs_collection_id
+                    references: scrapalot.collections(id)
+                    deleteCascade: true
+              - column:
+                  name: job_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: job_type
+                  type: VARCHAR(50)
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: pending
+              - column:
+                  name: progress
+                  type: FLOAT
+                  defaultValueNumeric: 0.0
+              - column:
+                  name: result
+                  type: JSONB
+              - column:
+                  name: error
+                  type: TEXT
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: jobs
+            indexName: idx_jobs_collection_id
+            columns:
+              - column:
+                  name: collection_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: jobs
+            indexName: idx_jobs_job_id
+            columns:
+              - column:
+                  name: job_id
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: jobs
+
+  - changeSet:
+      id: 008-create-task-progress-table
+      author: liquibase-auto
+      labels: core,jobs
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: task_progress
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: task_progress
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: task_id
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: task_type
+                  type: VARCHAR(100)
+              - column:
+                  name: status
+                  type: VARCHAR(50)
+              - column:
+                  name: progress_percentage
+                  type: FLOAT
+                  defaultValueNumeric: 0.0
+              - column:
+                  name: total_items
+                  type: INTEGER
+              - column:
+                  name: processed_items
+                  type: INTEGER
+                  defaultValueNumeric: 0
+              - column:
+                  name: current_item
+                  type: TEXT
+              - column:
+                  name: result_data
+                  type: JSONB
+              - column:
+                  name: error_message
+                  type: TEXT
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: task_progress
+            indexName: idx_task_progress_task_id
+            columns:
+              - column:
+                  name: task_id
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: task_progress

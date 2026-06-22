@@ -1,0 +1,184 @@
+name: CICD-Backend-Kotlin
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - dev
+          - rc
+          - prod
+
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - 'Dockerfile'
+      - '.github/workflows/deploy-backend.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+    environment: ${{ github.event.inputs.environment || 'prod' }}
+
+    steps:
+      - name: Configure git safe directory
+        run: |
+          git config --global --add safe.directory '*'
+          git config --global --add safe.directory /opt/scrapalot/scrapalot-backend
+          git config --global --add safe.directory /opt/scrapalot/actions-runner-backend/_work/scrapalot-backend/scrapalot-backend
+          git config --global --add safe.directory /opt/scrapalot/actions-runner-backend/_work/scrapalot-backend/scrapalot-backend/scrapalot-backend
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: scrapalot-backend
+
+      - name: Set up deployment directory
+        run: |
+          mkdir -p /opt/scrapalot
+          sudo rm -rf /opt/scrapalot/scrapalot-backend
+          cp -r scrapalot-backend /opt/scrapalot/
+
+          # Fix permissions for multi-user environment
+          sudo chgrp -R scrapalot /opt/scrapalot/scrapalot-backend
+          sudo chmod -R g+rw /opt/scrapalot/scrapalot-backend
+          sudo usermod -a -G scrapalot github-runner || true
+          find /opt/scrapalot/scrapalot-backend -type d -exec sudo chmod g+s {} \;
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Fix Gradle permissions
+        working-directory: /opt/scrapalot/scrapalot-backend
+        run: |
+          chmod +x gradlew
+          sudo rm -rf build/ 2>/dev/null || true
+          sudo chown -R github-runner:github-runner .gradle/ 2>/dev/null || true
+
+      - name: Cache Gradle user home
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'buildSrc/**') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Build Kotlin Backend (bootJar only)
+        working-directory: /opt/scrapalot/scrapalot-backend
+        env:
+          # Heap kept low + matched to org.gradle.jvmargs so the Gradle daemon and
+          # the separate Kotlin/kapt daemon don't reserve ~12 GB combined and get
+          # OOM-killed on the 16 GB host that also runs the prod containers.
+          GRADLE_OPTS: "-Xmx2560m -XX:MaxMetaspaceSize=512m -XX:+UseG1GC -XX:+UseStringDeduplication -XX:MaxGCPauseMillis=200 -XX:+ParallelRefProcEnabled"
+        run: |
+          echo "========================================="
+          echo "Building Kotlin Backend (bootJar)"
+          echo "========================================="
+          # bootJar skips test/check tasks (no test sources exist anyway)
+          # Daemon + build cache + parallel now enabled via gradle.properties
+          ./gradlew bootJar --build-cache --parallel -x test -x check
+          echo "✓ bootJar built"
+
+      - name: Build Docker image
+        working-directory: /opt/scrapalot/scrapalot-backend
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          echo "========================================="
+          echo "Building Docker image"
+          echo "========================================="
+          docker build -t scrapalot-backend:latest -t scrapalot-backend:${{ github.sha }} .
+          echo "✓ Docker image built"
+
+      - name: Deploy with Docker Compose
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_TEST_MODE: ${{ vars.STRIPE_TEST_MODE }}
+          STRIPE_SUCCESS_URL: ${{ vars.STRIPE_SUCCESS_URL }}
+          STRIPE_CANCEL_URL: ${{ vars.STRIPE_CANCEL_URL }}
+          STRIPE_PORTAL_RETURN_URL: ${{ vars.STRIPE_PORTAL_RETURN_URL }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED }}
+        run: |
+          echo "========================================="
+          echo "Deploying Backend with Docker Compose"
+          echo "========================================="
+
+          # Wait for active uploads to finish before restart
+          ACTIVE=$(docker exec pgvector psql -U scrapalot -d scrapalot -t -c \
+            "SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND job_type='document_processing' AND updated_at > NOW() - INTERVAL '30 minutes'" 2>/dev/null | tr -d ' \n' || echo "0")
+          if [ "$ACTIVE" -gt 0 ]; then
+            echo "⏳ $ACTIVE active upload(s) detected. Waiting up to 10 min..."
+            for i in $(seq 1 40); do
+              REMAINING=$(docker exec pgvector psql -U scrapalot -d scrapalot -t -c \
+                "SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND job_type='document_processing' AND updated_at > NOW() - INTERVAL '30 minutes'" 2>/dev/null | tr -d ' \n' || echo "0")
+              if [ "$REMAINING" = "0" ] || [ "$REMAINING" = "" ]; then
+                echo "✓ All uploads completed"
+                break
+              fi
+              echo "  $REMAINING upload(s) still active (attempt $i/40)..."
+              sleep 15
+            done
+          fi
+
+          # Stop and remove existing container
+          docker compose stop scrapalot-backend || true
+          docker compose rm -f scrapalot-backend || true
+
+          # Start new container with updated image
+          docker compose up -d scrapalot-backend
+
+          echo "✓ Container started via Docker Compose"
+
+          echo "Waiting for backend to be ready..."
+          for i in {1..30}; do
+            if curl -f http://localhost:8091/actuator/health > /dev/null 2>&1; then
+              echo "✓ Backend is healthy!"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+
+      - name: Cleanup old Docker images
+        run: |
+          echo "========================================="
+          echo "Cleaning up old Docker images"
+          echo "========================================="
+          docker image prune -f
+          docker images scrapalot-backend --format "{{.ID}} {{.CreatedAt}}" | \
+            sort -k 2 -r | \
+            tail -n +4 | \
+            awk '{print $1}' | \
+            xargs -r docker rmi -f || true
+          echo "✓ Cleanup completed"
+
+      - name: Deployment summary
+        run: |
+          echo "========================================="
+          echo "Deployment Summary"
+          echo "========================================="
+          echo "✓ Kotlin Backend deployed successfully!"
+          echo "✓ Version: ${{ github.sha }}"
+          echo "✓ Environment: ${{ github.event.inputs.environment || 'prod' }}"
+          echo "✓ Container: scrapalot-backend"
+          echo "✓ HTTP Port: 8091"
+          echo "✓ gRPC Port: 9090"
+          echo "========================================="

@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package scrapalot.workspace;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.workspace";
+option java_outer_classname = "WorkspaceServiceProto";
+
+// Workspace Service
+// Handles workspace CRUD, sharing, and team collaboration
+service WorkspaceService {
+  // Get workspace by ID
+  rpc GetWorkspace(GetWorkspaceRequest) returns (WorkspaceResponse);
+
+  // List user's workspaces
+  rpc ListWorkspaces(ListWorkspacesRequest) returns (WorkspaceListResponse);
+
+  // Create workspace
+  rpc CreateWorkspace(CreateWorkspaceRequest) returns (WorkspaceResponse);
+
+  // Update workspace
+  rpc UpdateWorkspace(UpdateWorkspaceRequest) returns (WorkspaceResponse);
+
+  // Delete workspace
+  rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (common.StatusResponse);
+
+  // Share workspace with user
+  rpc ShareWorkspace(ShareWorkspaceRequest) returns (common.StatusResponse);
+
+  // Remove user from workspace
+  rpc RemoveUserFromWorkspace(RemoveUserRequest) returns (common.StatusResponse);
+
+  // List workspace users
+  rpc ListWorkspaceUsers(ListWorkspaceUsersRequest) returns (WorkspaceUserListResponse);
+
+  // Get user's default workspace
+  rpc GetDefaultWorkspace(common.UUID) returns (WorkspaceResponse);
+}
+
+// Get workspace request
+message GetWorkspaceRequest {
+  common.UUID workspace_id = 1;
+  common.UUID user_id = 2;
+}
+
+// List workspaces request
+message ListWorkspacesRequest {
+  common.UUID user_id = 1;
+}
+
+// Create workspace request
+message CreateWorkspaceRequest {
+  common.UUID user_id = 1;
+  string name = 2;
+  optional string description = 3;
+  optional string settings = 4; // JSONB as string
+}
+
+// Update workspace request
+message UpdateWorkspaceRequest {
+  common.UUID workspace_id = 1;
+  common.UUID user_id = 2;
+  optional string name = 3;
+  optional string description = 4;
+  optional string settings = 5; // JSONB as string
+}
+
+// Delete workspace request
+message DeleteWorkspaceRequest {
+  common.UUID workspace_id = 1;
+  common.UUID user_id = 2;
+}
+
+// Share workspace request
+message ShareWorkspaceRequest {
+  common.UUID workspace_id = 1;
+  common.UUID owner_id = 2;
+  common.UUID shared_with_user_id = 3;
+  string permission = 4; // "read", "write", "admin"
+}
+
+// Remove user request
+message RemoveUserRequest {
+  common.UUID workspace_id = 1;
+  common.UUID owner_id = 2;
+  common.UUID user_id_to_remove = 3;
+}
+
+// List workspace users request
+message ListWorkspaceUsersRequest {
+  common.UUID workspace_id = 1;
+  common.UUID user_id = 2;
+}
+
+// Workspace response
+message WorkspaceResponse {
+  common.UUID id = 1;
+  string name = 2;
+  optional string description = 3;
+  bool is_default = 4;
+  common.UUID owner_id = 5;
+  optional string settings = 6; // JSONB as string
+  common.Timestamp created_at = 7;
+  common.Timestamp updated_at = 8;
+}
+
+// Workspace list response
+message WorkspaceListResponse {
+  repeated WorkspaceResponse workspaces = 1;
+}
+
+// Workspace user info
+message WorkspaceUserInfo {
+  common.UUID user_id = 1;
+  string username = 2;
+  string email = 3;
+  string permission = 4; // "read", "write", "admin"
+  common.Timestamp shared_at = 5;
+}
+
+// Workspace user list response
+message WorkspaceUserListResponse {
+  repeated WorkspaceUserInfo users = 1;
+}

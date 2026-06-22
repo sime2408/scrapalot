@@ -1,0 +1,89 @@
+# Migration 132: session_attachments — user-uploaded documents that stay
+# attached to a chat session for the whole conversation.
+#
+# Chat attachments used to be ephemeral: the extracted text was forwarded to
+# Python for a single response and then discarded, so follow-up questions lost
+# the document. This table persists the extracted text per session so the
+# backend can re-inject it into every subsequent message of the conversation
+# (capped, removable). Distinct from chat_message_attachments, which holds
+# assistant-GENERATED artifacts keyed to a single message.
+#
+# type discriminates the source: document | image | youtube. content holds the
+# already-extracted text / base64 / URL (capped server-side).
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 132-create-session-attachments
+      author: scrapalot
+      labels: chat,attachments,sessions
+      comment: "Persist user-uploaded attachments per chat session"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: session_attachments
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: session_attachments
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_session_attachments
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_session_attachments_session_id
+                    references: scrapalot.sessions(id)
+                    deleteCascade: true
+              - column:
+                  name: type
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: filename
+                  type: VARCHAR(500)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: mime_type
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: content
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: char_count
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: session_attachments
+            indexName: idx_session_attachments_session_id
+            columns:
+              - column:
+                  name: session_id
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: session_attachments

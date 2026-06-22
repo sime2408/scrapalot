@@ -1,0 +1,42 @@
+databaseChangeLog:
+  - changeSet:
+      id: 091-add-nested-collections
+      author: scrapalot
+      labels: collections,knowledge
+      comment: "Add parent_collection_id, depth, sort_order to collections for hierarchical nesting. Max 4 levels (depth 0-3)."
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: collections
+            columns:
+              - column:
+                  name: parent_collection_id
+                  type: UUID
+                  constraints:
+                    nullable: true
+                    foreignKeyName: fk_collections_parent_id
+                    references: scrapalot.collections(id)
+                    deleteCascade: true
+              - column:
+                  name: depth
+                  type: SMALLINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sort_order
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: collections
+            indexName: idx_collections_parent_id
+            columns:
+              - column:
+                  name: parent_collection_id
+
+        - sql:
+            sql: "ALTER TABLE scrapalot.collections ADD CONSTRAINT chk_collections_depth CHECK (depth >= 0 AND depth <= 3)"

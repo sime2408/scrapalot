@@ -1,0 +1,21 @@
+# Migration 082: Add unique constraint on session conversation_name per user
+# Purpose: Prevent duplicate session names for the same user
+# Context: Multiple sessions with identical names clutter the sidebar
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 082-unique-session-name-per-user
+      author: scrapalot
+      labels: sessions,constraints
+      comment: "Add partial unique index on (user_id, conversation_name) where conversation_name is not null"
+      changes:
+        - sql:
+            sql: |
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_user_conversation_name
+              ON scrapalot.sessions (user_id, conversation_name)
+              WHERE conversation_name IS NOT NULL;
+      rollback:
+        - sql:
+            sql: |
+              DROP INDEX IF EXISTS scrapalot.idx_sessions_user_conversation_name;

@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 097-add-message-feedback
+      author: scrapalot
+      labels: messages,feedback
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: messages
+            columns:
+              - column:
+                  name: feedback
+                  type: SMALLINT
+                  constraints:
+                    nullable: true
+                  remarks: "User feedback on AI response: 1=positive, -1=negative, null=no feedback"
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: messages
+            columnName: feedback

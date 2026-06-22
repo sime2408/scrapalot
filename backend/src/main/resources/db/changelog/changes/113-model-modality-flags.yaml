@@ -1,0 +1,110 @@
+# Migration 113: per-model modality capability flags. Mirrors Alembic 070 in
+# scrapalot-chat (Python is the SOT for model_provider_models; Kotlin replicates
+# via the model_providers Redis Streams SAGA). Lets the chat layer route to the
+# right model on a multi-model provider:
+#
+#   - supports_image_generation: dall-e-*, gpt-image-1, flux-*, stable-diffusion-*
+#   - supports_audio_input:      whisper-*, gpt-4o-audio-* (input modality)
+#   - supports_audio_output:     tts-*, gpt-4o-audio-* (output modality)
+#   - supports_realtime:         gpt-4o-realtime-* and equivalents
+#
+# Each addColumn is guarded by columnExists preCondition so re-runs are no-ops
+# if the column was added out-of-band.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 113-add-supports_image_generation
+      author: scrapalot
+      labels: ai,providers,modality
+      comment: "model_provider_models.supports_image_generation"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: model_provider_models
+                columnName: supports_image_generation
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            columns:
+              - column:
+                  name: supports_image_generation
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 113-add-supports_audio_input
+      author: scrapalot
+      labels: ai,providers,modality
+      comment: "model_provider_models.supports_audio_input"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: model_provider_models
+                columnName: supports_audio_input
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            columns:
+              - column:
+                  name: supports_audio_input
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 113-add-supports_audio_output
+      author: scrapalot
+      labels: ai,providers,modality
+      comment: "model_provider_models.supports_audio_output"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: model_provider_models
+                columnName: supports_audio_output
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            columns:
+              - column:
+                  name: supports_audio_output
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 113-add-supports_realtime
+      author: scrapalot
+      labels: ai,providers,modality
+      comment: "model_provider_models.supports_realtime"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: model_provider_models
+                columnName: supports_realtime
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            columns:
+              - column:
+                  name: supports_realtime
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false

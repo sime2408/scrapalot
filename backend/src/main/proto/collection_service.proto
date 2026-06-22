@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package scrapalot.collection;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.collection";
+option java_outer_classname = "CollectionServiceProto";
+
+// Collection Service
+// Handles collection CRUD and document organization
+service CollectionService {
+  // Get collection by ID
+  rpc GetCollection(GetCollectionRequest) returns (CollectionResponse);
+
+  // List collections (with pagination)
+  rpc ListCollections(ListCollectionsRequest) returns (CollectionListResponse);
+
+  // Create collection
+  rpc CreateCollection(CreateCollectionRequest) returns (CollectionResponse);
+
+  // Update collection
+  rpc UpdateCollection(UpdateCollectionRequest) returns (CollectionResponse);
+
+  // Delete collection
+  rpc DeleteCollection(DeleteCollectionRequest) returns (common.StatusResponse);
+
+  // Get collection summary
+  rpc GetCollectionSummary(GetCollectionRequest) returns (CollectionSummary);
+
+  // Notify document processing completion (called from Python)
+  rpc NotifyDocumentProcessed(DocumentProcessedNotification) returns (common.StatusResponse);
+}
+
+// Get collection request
+message GetCollectionRequest {
+  common.UUID collection_id = 1;
+  common.UUID user_id = 2;
+}
+
+// List collections request
+message ListCollectionsRequest {
+  common.UUID user_id = 1;
+  optional common.UUID workspace_id = 2;
+  common.PageRequest page = 3;
+}
+
+// Create collection request
+message CreateCollectionRequest {
+  common.UUID user_id = 1;
+  common.UUID workspace_id = 2;
+  string name = 3;
+  optional string description = 4;
+  optional string processing_settings = 5; // JSONB as string
+  optional string embedding_model = 6;
+  optional string chunking_strategy = 7;
+}
+
+// Update collection request
+message UpdateCollectionRequest {
+  common.UUID collection_id = 1;
+  common.UUID user_id = 2;
+  optional string name = 3;
+  optional string description = 4;
+  optional string processing_settings = 5; // JSONB as string
+  optional string embedding_model = 6;
+  optional string chunking_strategy = 7;
+}
+
+// Delete collection request
+message DeleteCollectionRequest {
+  common.UUID collection_id = 1;
+  common.UUID user_id = 2;
+}
+
+// Document processed notification (from Python)
+message DocumentProcessedNotification {
+  common.UUID collection_id = 1;
+  common.UUID document_id = 2;
+  string status = 3; // "completed", "failed"
+  optional string error_message = 4;
+}
+
+// Collection response
+message CollectionResponse {
+  common.UUID id = 1;
+  string name = 2;
+  optional string description = 3;
+  common.UUID workspace_id = 4;
+  common.UUID user_id = 5;
+  optional string processing_settings = 6; // JSONB as string
+  optional string embedding_model = 7;
+  optional string chunking_strategy = 8;
+  int32 document_count = 9;
+  common.Timestamp created_at = 10;
+  common.Timestamp updated_at = 11;
+}
+
+// Collection list response
+message CollectionListResponse {
+  repeated CollectionResponse collections = 1;
+  common.PageResponse page_info = 2;
+}
+
+// Collection summary
+message CollectionSummary {
+  common.UUID id = 1;
+  string name = 2;
+  int32 document_count = 3;
+  int64 total_chunks = 4;
+  int64 total_size_bytes = 5;
+  string status = 6; // "ready", "processing", "error"
+  optional string embedding_model = 7;
+  optional string chunking_strategy = 8;
+}

@@ -1,0 +1,31 @@
+# Build output (keep build/libs/ for Dockerfile.local)
+build/*
+!build/libs/
+.gradle/
+out/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Logs
+*.log
+
+# Local env
+.env
+.env.local

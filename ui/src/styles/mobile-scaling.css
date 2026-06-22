@@ -1,0 +1,237 @@
+/* Mobile Scaling Utilities - Responsive sizing for mobile devices */
+
+/* Hide elements below 1200px (updated for modern mobile devices) */
+@media (max-width: 1199px) {
+  .hidden-below-1200 {
+    display: none !important;
+  }
+}
+
+/* Hide elements below 1080px */
+@media (max-width: 1079px) {
+  .hidden-below-1080 {
+    display: none !important;
+  }
+}
+
+/* Hide elements below 992px - DEPRECATED - Use .hidden-below-1080 instead */
+@media (max-width: 991px) {
+  .hidden-below-992 {
+    display: none !important;
+  }
+}
+
+/* Apply responsive scaling only to specific utility classes on mobile and tablets */
+@media (max-width: 1399px) {
+  /* Optional scaling utilities - only apply when class is explicitly used */
+  .mobile-scale {
+    transform: scale(1.15);
+    transform-origin: center;
+  }
+
+  .mobile-scale-text {
+    font-size: 115% !important;
+  }
+
+  .mobile-scale-button {
+    font-size: 115% !important;
+    padding: calc(0.5rem * 1.15) calc(1rem * 1.15) !important;
+    min-height: 44px !important;
+  }
+
+  .mobile-scale-dropdown {
+    font-size: 115% !important;
+  }
+
+  .mobile-scale-dropdown .dropdown-item {
+    font-size: 115% !important;
+    padding: calc(0.5rem * 1.15) calc(0.75rem * 1.15) !important;
+    min-height: 44px !important;
+  }
+
+  .mobile-scale-icon {
+    width: calc(1rem * 1.15) !important;
+    height: calc(1rem * 1.15) !important;
+  }
+
+  .mobile-scale-input {
+    font-size: 115% !important;
+    padding: calc(0.75rem * 1.15) !important;
+    min-height: 44px !important;
+  }
+
+  /* Removed automatic scaling for chat components - use Tailwind responsive classes instead */
+  /* Components now control their own responsive sizing via text-xs sm:text-sm patterns */
+}
+
+/* ============================================
+   Chat Components Mobile Scaling (< 1080px)
+   Increases all sizes by 4px for better mobile readability on modern devices
+   Updated for modern mobile devices up to 1080px width
+   ============================================ */
+@media (max-width: 1079px) {
+  /* Exclude elements with no-mobile-scale class from all scaling rules */
+  .no-mobile-scale,
+  .no-mobile-scale * {
+    /* Preserve original sizes - no scaling */
+  }
+
+  /* Text size increases (+4px from Tailwind defaults for better visibility) */
+
+  /* text-xs: 12px → 16px */
+  .chat-container .text-xs:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .text-xs:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    font-size: 1rem !important; /* 16px */
+  }
+
+  /* text-sm: 14px → 18px */
+  .chat-container .text-sm:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .text-sm:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    font-size: 1.125rem !important; /* 18px */
+  }
+
+  /* text-base: 16px → 20px */
+  .chat-container .text-base:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .text-base:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    font-size: 1.25rem !important; /* 20px */
+  }
+
+  /* text-lg: 18px → 22px */
+  .chat-container .text-lg:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .text-lg:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    font-size: 1.375rem !important; /* 22px */
+  }
+
+  /* text-xl: 20px → 24px */
+  .chat-container .text-xl:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .text-xl:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    font-size: 1.5rem !important; /* 24px */
+  }
+
+  /* text-2xl: 24px → 28px */
+  .chat-container .text-2xl:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .text-2xl:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    font-size: 1.75rem !important; /* 28px */
+  }
+
+  /* Icon size increases (+4px for better touch targets) */
+
+  /* h-4 w-4: 16px → 20px */
+  .chat-container .h-4:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .h-4:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    height: 1.25rem !important; /* 20px */
+  }
+  .chat-container .w-4:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .w-4:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    width: 1.25rem !important; /* 20px */
+  }
+
+  /* h-5 w-5: 20px → 24px */
+  .chat-container .h-5:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .h-5:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    height: 1.5rem !important; /* 24px */
+  }
+  .chat-container .w-5:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .w-5:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    width: 1.5rem !important; /* 24px */
+  }
+
+  /* h-6 w-6: 24px → 28px */
+  .chat-container .h-6:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .h-6:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    height: 1.75rem !important; /* 28px */
+  }
+  .chat-container .w-6:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .w-6:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    width: 1.75rem !important; /* 28px */
+  }
+
+  /* h-7 w-7: 28px → 32px */
+  .chat-container .h-7:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .h-7:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    height: 2rem !important; /* 32px */
+  }
+  .chat-container .w-7:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .w-7:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    width: 2rem !important; /* 32px */
+  }
+
+  /* h-8 w-8: 32px → 36px */
+  .chat-container .h-8:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .h-8:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    height: 2.25rem !important; /* 36px */
+  }
+  .chat-container .w-8:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .w-8:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    width: 2.25rem !important; /* 36px */
+  }
+
+  /* Button and interactive element padding increases for better touch targets */
+  .chat-container .px-2:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .px-2:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    padding-left: 0.75rem !important; /* 12px instead of 8px */
+    padding-right: 0.75rem !important;
+  }
+
+  .chat-container .px-3:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .px-3:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    padding-left: 1rem !important; /* 16px instead of 12px */
+    padding-right: 1rem !important;
+  }
+
+  .chat-container .py-1:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .py-1:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    padding-top: 0.5rem !important; /* 8px instead of 4px */
+    padding-bottom: 0.5rem !important;
+  }
+
+  .chat-container .py-2:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .py-2:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    padding-top: 0.75rem !important; /* 12px instead of 8px */
+    padding-bottom: 0.75rem !important;
+  }
+
+  /* Gap increases for flex/grid layouts */
+  .chat-container .gap-1:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .gap-1:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    gap: 0.375rem !important; /* 6px instead of 4px */
+  }
+
+  .chat-container .gap-2:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .gap-2:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    gap: 0.625rem !important; /* 10px instead of 8px */
+  }
+
+  /* Space increases */
+  .chat-container .space-x-1:not(.no-mobile-scale):not(.no-mobile-scale *) > * + *,
+  [data-chat-container] .space-x-1:not(.no-mobile-scale):not(.no-mobile-scale *) > * + * {
+    margin-left: 0.375rem !important; /* 6px instead of 4px */
+  }
+
+  .chat-container .space-x-2:not(.no-mobile-scale):not(.no-mobile-scale *) > * + *,
+  [data-chat-container] .space-x-2:not(.no-mobile-scale):not(.no-mobile-scale *) > * + * {
+    margin-left: 0.625rem !important; /* 10px instead of 8px */
+  }
+
+  /* Prose content line height adjustment for readability */
+  .chat-container .prose:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] .prose:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    font-size: 1rem !important; /* 16px base for prose */
+    line-height: 1.75 !important;
+  }
+
+  /* Chat input text area - increased size for better mobile usability */
+  .chat-container textarea:not(.no-mobile-scale):not(.no-mobile-scale *),
+  [data-chat-container] textarea:not(.no-mobile-scale):not(.no-mobile-scale *) {
+    font-size: 1.125rem !important; /* 18px instead of 16px (text-base) */
+    min-height: 3.75rem !important; /* 60px instead of 56px (min-h-14) */
+    padding: 1.125rem !important; /* 18px instead of 16px (p-4) */
+    line-height: 1.6 !important;
+  }
+
+  /* Chat input placeholder text */
+  .chat-container textarea:not(.no-mobile-scale):not(.no-mobile-scale *)::placeholder,
+  [data-chat-container] textarea:not(.no-mobile-scale):not(.no-mobile-scale *)::placeholder {
+    font-size: 1rem !important; /* 16px instead of 14px (text-sm) */
+  }
+}

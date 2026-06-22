@@ -1,0 +1,43 @@
+# Migration 123: sessions.is_pinned
+#
+# Per-session "pin" — a boolean the user toggles from the session row's
+# three-dots menu to keep an important session at the top of its sidebar group
+# (folder or unfiled). Independent of the marker (priority label) and of folders:
+# a pinned session floats to the top of whatever group it lives in.
+# false by default = not pinned.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 123-add-sessions-is-pinned
+      author: scrapalot
+      labels: sessions,pinning,ux
+      comment: "Add is_pinned boolean to sessions for sidebar pin-to-top feature"
+      preConditions:
+        - onFail: MARK_RAN
+        - and:
+          - tableExists:
+              tableName: sessions
+              schemaName: scrapalot
+          - not:
+              - columnExists:
+                  tableName: sessions
+                  schemaName: scrapalot
+                  columnName: is_pinned
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: sessions
+            columns:
+              - column:
+                  name: is_pinned
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+                  remarks: "User-pinned session (true = pinned to top of its sidebar group); false by default."
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: sessions
+            columnName: is_pinned

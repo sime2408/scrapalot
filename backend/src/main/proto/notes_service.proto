@@ -1,0 +1,187 @@
+syntax = "proto3";
+
+// Scrapalot Bridge API - Notes Service
+// Version: 1.0.0
+// Last Updated: 2026-02-03
+//
+// Handles note CRUD operations, sharing, comments, and version management.
+// Both Python (scrapalot-chat) and Kotlin (scrapalot-backend) must use
+// matching versions of these proto files.
+
+package scrapalot.notes;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.notes";
+option java_outer_classname = "NotesServiceProto";
+
+// Notes Service
+// Handles note creation, retrieval, updates, sharing, and collaboration
+service NotesService {
+  // CRUD Operations
+  rpc CreateNote(CreateNoteRequest) returns (NoteInfo);
+  rpc GetNote(common.UUID) returns (NoteInfo);
+  rpc ListNotes(ListNotesRequest) returns (ListNotesResponse);
+  rpc UpdateNote(UpdateNoteRequest) returns (NoteInfo);
+  rpc DeleteNote(common.UUID) returns (common.StatusResponse);
+
+  // Sharing
+  rpc ShareNote(ShareNoteRequest) returns (NoteShareInfo);
+  rpc ListShares(common.UUID) returns (ListSharesResponse);
+  rpc RevokeShare(RevokeShareRequest) returns (common.StatusResponse);
+
+  // Comments
+  rpc CreateComment(CreateCommentRequest) returns (NoteCommentInfo);
+  rpc ListComments(common.UUID) returns (ListCommentsResponse);
+  rpc UpdateComment(UpdateCommentRequest) returns (NoteCommentInfo);
+  rpc DeleteComment(DeleteCommentRequest) returns (common.StatusResponse);
+  rpc ResolveComment(common.UUID) returns (NoteCommentInfo);
+
+  // Versions
+  rpc ListVersions(common.UUID) returns (ListVersionsResponse);
+  rpc GetVersion(GetVersionRequest) returns (NoteVersionInfo);
+  rpc RestoreVersion(GetVersionRequest) returns (NoteInfo);
+}
+
+// Note Info
+message NoteInfo {
+  common.UUID id = 1;
+  string title = 2;
+  string content = 3;
+  string note_type = 4;
+  repeated string tags = 5;
+  common.UUID workspace_id = 6;
+  common.UUID user_id = 7;
+  optional common.UUID session_id = 8;
+  bool is_public = 9;
+  bool is_pinned = 10;
+  common.Timestamp created_at = 11;
+  common.Timestamp updated_at = 12;
+}
+
+// Create Note Request
+message CreateNoteRequest {
+  string title = 1;
+  optional string content = 2;
+  string note_type = 3;
+  repeated string tags = 4;
+  common.UUID workspace_id = 5;
+  common.UUID user_id = 6;
+  optional common.UUID session_id = 7;
+  bool is_public = 8;
+  bool is_pinned = 9;
+}
+
+// List Notes Request
+message ListNotesRequest {
+  common.UUID user_id = 1;
+  optional common.UUID workspace_id = 2;
+  optional common.UUID session_id = 3;
+  int32 skip = 4;
+  int32 limit = 5;
+}
+
+// List Notes Response
+message ListNotesResponse {
+  repeated NoteInfo notes = 1;
+  int32 total = 2;
+}
+
+// Update Note Request
+message UpdateNoteRequest {
+  common.UUID note_id = 1;
+  optional string title = 2;
+  optional string content = 3;
+  optional string note_type = 4;
+  repeated string tags = 5;
+  optional bool is_public = 6;
+  optional bool is_pinned = 7;
+}
+
+// Share Note Request
+message ShareNoteRequest {
+  common.UUID note_id = 1;
+  common.UUID shared_by = 2;
+  common.UUID shared_with = 3;
+  string permission = 4; // "read", "write"
+}
+
+// Note Share Info
+message NoteShareInfo {
+  common.UUID id = 1;
+  common.UUID note_id = 2;
+  common.UUID shared_by = 3;
+  common.UUID shared_with = 4;
+  string permission = 5;
+  common.Timestamp shared_at = 6;
+}
+
+// List Shares Response
+message ListSharesResponse {
+  repeated NoteShareInfo shares = 1;
+}
+
+// Revoke Share Request
+message RevokeShareRequest {
+  common.UUID note_id = 1;
+  common.UUID share_id = 2;
+}
+
+// Create Comment Request
+message CreateCommentRequest {
+  common.UUID note_id = 1;
+  common.UUID user_id = 2;
+  string content = 3;
+  optional int32 position = 4;
+}
+
+// Note Comment Info
+message NoteCommentInfo {
+  common.UUID id = 1;
+  common.UUID note_id = 2;
+  common.UUID user_id = 3;
+  string content = 4;
+  optional int32 position = 5;
+  bool is_resolved = 6;
+  common.Timestamp created_at = 7;
+  common.Timestamp updated_at = 8;
+}
+
+// List Comments Response
+message ListCommentsResponse {
+  repeated NoteCommentInfo comments = 1;
+}
+
+// Update Comment Request
+message UpdateCommentRequest {
+  common.UUID comment_id = 1;
+  string content = 2;
+}
+
+// Delete Comment Request
+message DeleteCommentRequest {
+  common.UUID note_id = 1;
+  common.UUID comment_id = 2;
+}
+
+// Note Version Info
+message NoteVersionInfo {
+  common.UUID id = 1;
+  common.UUID note_id = 2;
+  int32 version_number = 3;
+  string title = 4;
+  string content = 5;
+  common.Timestamp created_at = 6;
+}
+
+// List Versions Response
+message ListVersionsResponse {
+  repeated NoteVersionInfo versions = 1;
+}
+
+// Get Version Request
+message GetVersionRequest {
+  common.UUID note_id = 1;
+  int32 version_id = 2;
+}

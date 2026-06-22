@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: "095-notes-session-cascade-delete"
+      author: "scrapalot"
+      comment: "Add ON DELETE CASCADE to fk_notes_session_id so deleting a session cascades to its notes"
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: notes
+            constraintName: fk_notes_session_id
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: notes
+            baseColumnNames: session_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: sessions
+            referencedColumnNames: id
+            constraintName: fk_notes_session_id
+            onDelete: CASCADE

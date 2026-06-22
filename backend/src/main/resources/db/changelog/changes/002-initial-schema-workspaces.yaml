@@ -1,0 +1,164 @@
+# Migration 002: Workspaces and Workspace Sharing
+# Based on: Alembic 00001_initial_schema.py (workspaces, workspace_users tables)
+# Purpose: Organizational containers and workspace sharing/permissions
+
+databaseChangeLog:
+  - changeSet:
+      id: 002-create-workspaces-table
+      author: liquibase-auto
+      labels: core,workspaces
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: workspaces
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: workspaces
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_workspaces
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_workspaces_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: false
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: is_public
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_shared
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: workspaces
+
+  - changeSet:
+      id: 002-create-workspaces-indexes
+      author: liquibase-auto
+      labels: core,workspaces,indexes
+      changes:
+        - createIndex:
+            schemaName: scrapalot
+            tableName: workspaces
+            indexName: idx_workspaces_user_id
+            columns:
+              - column:
+                  name: user_id
+
+      rollback:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: workspaces
+            indexName: idx_workspaces_user_id
+
+  - changeSet:
+      id: 002-create-workspace-users-table
+      author: liquibase-auto
+      labels: core,workspaces,sharing
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: workspace_users
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: workspace_users
+            columns:
+              - column:
+                  name: workspace_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_workspace_users_workspace_id
+                    references: scrapalot.workspaces(id)
+                    deleteCascade: true
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_workspace_users_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: permission
+                  type: VARCHAR(20)
+                  defaultValue: read
+                  constraints:
+                    nullable: false
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: workspace_users
+
+  - changeSet:
+      id: 002-create-workspace-users-pk
+      author: liquibase-auto
+      labels: core,workspaces,sharing
+      changes:
+        - addPrimaryKey:
+            schemaName: scrapalot
+            tableName: workspace_users
+            columnNames: workspace_id, user_id
+            constraintName: pk_workspace_users
+
+      rollback:
+        - dropPrimaryKey:
+            schemaName: scrapalot
+            tableName: workspace_users
+            constraintName: pk_workspace_users

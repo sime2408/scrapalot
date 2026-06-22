@@ -1,0 +1,26 @@
+<tr>
+  <td style="background:linear-gradient(135deg,#2563eb 0%,#3b82f6 100%);padding:48px 40px;text-align:center;">
+    <div style="display:inline-block;background:rgba(255,255,255,0.15);padding:6px 16px;border-radius:20px;margin:0 0 16px;">
+      <span style="color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;">v{{version}}</span>
+    </div>
+    <h1 style="color:#ffffff;margin:0;font-size:28px;font-weight:800;letter-spacing:-0.5px;">What's New</h1>
+    <p style="color:rgba(255,255,255,0.7);margin:8px 0 0;font-size:14px;">Released {{releaseDate}}</p>
+  </td>
+</tr>
+<tr>
+  <td style="padding:40px;">
+    <p style="color:#a1a1aa;font-size:15px;line-height:1.7;margin:0 0 24px;">Here's what we've been working on:</p>
+
+    <!-- Highlights -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      {{highlightsHtml}}
+    </table>
+
+    <!-- CTA -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:32px 0 0;">
+      <tr><td align="center">
+        <a href="{{changelogUrl}}" style="display:inline-block;background:#3b82f6;color:#ffffff;padding:14px 40px;text-decoration:none;font-weight:700;font-size:15px;">View Full Changelog →</a>
+      </td></tr>
+    </table>
+  </td>
+</tr>

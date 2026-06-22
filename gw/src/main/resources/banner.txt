@@ -1,0 +1,56 @@
+
+${AnsiColor.BRIGHT_CYAN}
+   ██████╗  ██████╗██████╗  █████╗ ██████╗  █████╗ ██╗      ██████╗ ████████╗
+  ██╔════╝ ██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔══██╗██║     ██╔═══██╗╚══██╔══╝
+  ╚█████╗  ██║     ██████╔╝███████║██████╔╝███████║██║     ██║   ██║   ██║
+   ╚═══██╗ ██║     ██╔══██╗██╔══██║██╔═══╝ ██╔══██║██║     ██║   ██║   ██║
+  ██████╔╝ ╚██████╗██║  ██║██║  ██║██║     ██║  ██║███████╗╚██████╔╝   ██║
+  ╚═════╝   ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝ ╚═════╝    ╚═╝
+${AnsiColor.DEFAULT}
+${AnsiColor.BRIGHT_MAGENTA}    :: Scrapalot API Gateway :: ${AnsiColor.BRIGHT_WHITE}Spring Cloud Gateway + Resilience4j${AnsiColor.DEFAULT}
+
+${AnsiColor.BRIGHT_BLUE}════════════════════════════════════════════════════════════════════════════════${AnsiColor.DEFAULT}
+${AnsiColor.BRIGHT_GREEN}  Version:${AnsiColor.DEFAULT}        ${spring-boot.formatted-version}
+${AnsiColor.BRIGHT_GREEN}  Gateway:${AnsiColor.DEFAULT}        Port ${server.port:8080} (11 consolidated routes)
+${AnsiColor.BRIGHT_GREEN}  gRPC Client:${AnsiColor.DEFAULT}    scrapalot-backend:${GRPC_CLIENT_PORT:9090} (API key validation)
+${AnsiColor.BRIGHT_GREEN}  Backend:${AnsiColor.DEFAULT}        ${BACKEND_URL:http://scrapalot-backend:8091}
+${AnsiColor.BRIGHT_GREEN}  Python AI:${AnsiColor.DEFAULT}      ${CHAT_URL:http://scrapalot-chat:8090}
+${AnsiColor.BRIGHT_GREEN}  Redis:${AnsiColor.DEFAULT}          ${REDIS_HOST:redis}:${REDIS_PORT:6379} DB ${REDIS_DB:2} (Rate limiting)
+${AnsiColor.BRIGHT_GREEN}  JWT Secret:${AnsiColor.DEFAULT}     ${JWT_SECRET:***CONFIGURED***}
+${AnsiColor.BRIGHT_BLUE}════════════════════════════════════════════════════════════════════════════════${AnsiColor.DEFAULT}
+
+${AnsiColor.BRIGHT_YELLOW}  🔐 Security & Routing:${AnsiColor.DEFAULT}
+     • JWT Token Validation (Authorization: Bearer <token>)
+     • API Key Authentication (X-API-Key: scp-xxxx) via gRPC
+     • User Context Propagation (X-User-ID, X-User-Role, X-Subscription-Tier)
+     • 11 Consolidated Routes (61% reduction from 28 routes)
+     • Circuit Breakers (Resilience4j) - 60% failure threshold
+     • Rate Limiting (Redis) - Per-user, per-tier enforcement
+     • CORS Configuration - Multi-origin support
+
+${AnsiColor.BRIGHT_MAGENTA}  🌐 Architecture Flow:${AnsiColor.DEFAULT}
+     Client (Browser/Desktop)
+            ↓ HTTPS (443)
+     Nginx Proxy (api.scrapalot.app)
+            ↓ HTTP (8080)
+     ┌──────────────────────────────────────┐
+     │      scrapalot-gw (Gateway)          │
+     │  1. JWT/API Key Validation           │
+     │  2. Extract User Context             │
+     │  3. Rate Limiting (Redis)            │
+     │  4. Route Selection (11 routes)      │
+     │  5. Circuit Breaker Check            │
+     │  6. Add Headers (X-User-ID, etc.)    │
+     └──────┬──────────────────┬────────────┘
+            ↓                  ↓
+     scrapalot-backend    scrapalot-chat
+        (8091)               (8090)
+        • CRUD               • AI/RAG
+        • Auth               • LLM
+        • gRPC Server        • Streaming
+
+${AnsiColor.BRIGHT_BLUE}════════════════════════════════════════════════════════════════════════════════${AnsiColor.DEFAULT}
+${AnsiColor.BRIGHT_WHITE}  Throughput: 10,000+ req/sec | Circuit Breakers: chatCB + backendCB${AnsiColor.DEFAULT}
+${AnsiColor.BRIGHT_WHITE}  Documentation: CLAUDE.md | README.md | application.yml${AnsiColor.DEFAULT}
+${AnsiColor.BRIGHT_BLUE}════════════════════════════════════════════════════════════════════════════════${AnsiColor.DEFAULT}
+

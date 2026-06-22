@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: 086-add-billing-exempt
+      author: scrapalot
+      comment: "Add billing_exempt column to users table for admin-exempt users"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: users
+                columnName: billing_exempt
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: users
+            columns:
+              - column:
+                  name: billing_exempt
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: users
+            columnName: billing_exempt

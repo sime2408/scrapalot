@@ -1,0 +1,355 @@
+# Migration 040: Python Backend Sync
+# Syncs Kotlin entities with Python backend (Alembic 003)
+# Includes: user updates, subscription plans, user subscriptions, API keys
+
+databaseChangeLog:
+  # ============================================
+  # USERS TABLE UPDATES
+  # ============================================
+  - changeSet:
+      id: 040-users-add-tour-completed
+      author: liquibase-auto
+      labels: core,users,sync
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: users
+                columnName: tour_completed
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: users
+            columns:
+              - column:
+                  name: tour_completed
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: users
+            columnName: tour_completed
+
+  # ============================================
+  # SUBSCRIPTION PLANS TABLE
+  # ============================================
+  - changeSet:
+      id: 040-create-subscription-plans
+      author: liquibase-auto
+      labels: billing,subscriptions
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: subscription_plans
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: subscription_plans
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_subscription_plans
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_subscription_plans_name
+              - column:
+                  name: display_name
+                  type: VARCHAR(100)
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: price_monthly
+                  type: DECIMAL(10,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: price_annual
+                  type: DECIMAL(10,2)
+              - column:
+                  name: storage_limit_bytes
+                  type: BIGINT
+              - column:
+                  name: documents_limit
+                  type: INTEGER
+              - column:
+                  name: tokens_limit
+                  type: BIGINT
+              - column:
+                  name: max_workspaces
+                  type: INTEGER
+              - column:
+                  name: max_collections_per_workspace
+                  type: INTEGER
+              - column:
+                  name: max_documents_per_collection
+                  type: INTEGER
+              - column:
+                  name: stripe_price_id_monthly
+                  type: VARCHAR(100)
+              - column:
+                  name: stripe_price_id_annual
+                  type: VARCHAR(100)
+              - column:
+                  name: features
+                  type: JSONB
+              - column:
+                  name: sort_order
+                  type: INTEGER
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: trial_days
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+        - createIndex:
+            schemaName: scrapalot
+            tableName: subscription_plans
+            indexName: idx_subscription_plans_is_active
+            columns:
+              - column:
+                  name: is_active
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: subscription_plans
+
+  # ============================================
+  # USER SUBSCRIPTIONS TABLE
+  # ============================================
+  - changeSet:
+      id: 040-create-user-subscriptions
+      author: liquibase-auto
+      labels: billing,subscriptions
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: user_subscriptions
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: user_subscriptions
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_user_subscriptions
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_user_subscriptions_user_id
+                    foreignKeyName: fk_user_subscriptions_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: subscription_plan_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_user_subscriptions_plan_id
+                    references: scrapalot.subscription_plans(id)
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: active
+                  constraints:
+                    nullable: false
+              - column:
+                  name: billing_cycle
+                  type: VARCHAR(20)
+                  defaultValue: monthly
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payment_method
+                  type: VARCHAR(50)
+              - column:
+                  name: stripe_customer_id
+                  type: VARCHAR(255)
+              - column:
+                  name: stripe_subscription_id
+                  type: VARCHAR(255)
+                  constraints:
+                    unique: true
+                    uniqueConstraintName: uq_user_subscriptions_stripe_id
+              - column:
+                  name: current_period_start
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: current_period_end
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: cancel_at_period_end
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: subscribed_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: cancelled_at
+                  type: TIMESTAMP WITH TIME ZONE
+        - createIndex:
+            schemaName: scrapalot
+            tableName: user_subscriptions
+            indexName: idx_user_subscriptions_status
+            columns:
+              - column:
+                  name: status
+        - createIndex:
+            schemaName: scrapalot
+            tableName: user_subscriptions
+            indexName: idx_user_subscriptions_stripe_customer
+            columns:
+              - column:
+                  name: stripe_customer_id
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: user_subscriptions
+
+  # ============================================
+  # API KEYS TABLE
+  # ============================================
+  - changeSet:
+      id: 040-create-api-keys
+      author: liquibase-auto
+      labels: auth,api-keys
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: api_keys
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: api_keys
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_api_keys
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_api_keys_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: key_hash
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_api_keys_key_hash
+              - column:
+                  name: key_prefix
+                  type: VARCHAR(10)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_used_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: expires_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: scopes
+                  type: JSONB
+        - createIndex:
+            schemaName: scrapalot
+            tableName: api_keys
+            indexName: idx_api_keys_user_id
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: api_keys
+            indexName: idx_api_keys_key_hash
+            columns:
+              - column:
+                  name: key_hash
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: api_keys

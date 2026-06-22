@@ -1,0 +1,46 @@
+# Migration 106: collections.custom_instructions
+# (Per-Collection Custom AI Instructions / Perplexity Spaces pattern).
+#
+# Adds an optional free-text slot on each collection. When a chat targets
+# this collection, the system-prompt builder injects the contents into
+# layer 3 of the priority chain (collection custom_instructions). UI caps
+# at 2000 chars; DB has no length cap (TEXT) so the column itself doesn't
+# refuse longer pastes — the bound is enforced at the API surface where
+# the validation message can be shown.
+#
+# Pre-existing rows: NULL → no contribution to the prompt.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 106-add-collections-custom-instructions
+      author: scrapalot
+      labels: collections,personalization,prompt-builder
+      comment: "Add custom_instructions TEXT slot for per-collection system-prompt customization"
+      preConditions:
+        - onFail: MARK_RAN
+        - and:
+          - tableExists:
+              tableName: collections
+              schemaName: scrapalot
+          - not:
+              - columnExists:
+                  tableName: collections
+                  schemaName: scrapalot
+                  columnName: custom_instructions
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: collections
+            columns:
+              - column:
+                  name: custom_instructions
+                  type: TEXT
+                  constraints:
+                    nullable: true
+                  remarks: "Per-collection system-prompt addendum (CATEGORY_08 §8.1). NULL = no contribution."
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: collections
+            columnName: custom_instructions

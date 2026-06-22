@@ -1,0 +1,37 @@
+/* Main content layout positioning for quick-tools and sidebar */
+
+/* Mobile (<1080px): No margin, both sidebars hidden */
+@media (max-width: 1079px) {
+  main[data-main-content] {
+    margin-left: 0 !important;
+  }
+}
+
+/* Tablet/Desktop (≥1080px): Account for quick-tools bar (70px) */
+@media (min-width: 1080px) {
+  /* Default: quick-tools visible (70px), sidebar collapsed */
+  main[data-main-content]:not(.shift-for-pdf):not(.shift-for-notes) {
+    margin-left: 70px !important;
+  }
+
+  /* When sidebar is open: quick-tools (70px) + sidebar width */
+  main[data-main-content][data-sidebar-open="true"]:not(.shift-for-pdf):not(.shift-for-notes) {
+    /* Use CSS variable for sidebar width, fallback to 335px */
+    margin-left: calc(70px + var(--sidebar-width, 335px)) !important;
+  }
+
+  /* PDF drawer open: only quick-tools margin */
+  main[data-main-content].shift-for-pdf {
+    margin-left: 70px !important;
+  }
+
+  /* Notes drawer open: only quick-tools margin */
+  main[data-main-content].shift-for-notes {
+    margin-left: 70px !important;
+  }
+}
+
+/* Ensure smooth transitions */
+main[data-main-content] {
+  transition: margin-left 300ms ease-in-out;
+}

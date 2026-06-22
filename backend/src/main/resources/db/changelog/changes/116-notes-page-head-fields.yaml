@@ -1,0 +1,67 @@
+# Migration 116: page-head metadata for the Notes editor
+# Adds four columns surfaced by the Confluence-style page-head toolbar that
+# appears above the H1 on hover:
+#   - emoji            optional single emoji rendered next to the H1 title
+#   - status           predefined Draft / In progress / In review / Done /
+#                      Blocked / On hold badge shown in the metadata row
+#   - header_image_url banner image displayed above the title (relative URL
+#                      served by StaticFileController)
+#   - font_scale       per-note typography scale: small | default | large | xlarge
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 116-add-notes-page-head-fields
+      author: scrapalot
+      labels: notes,editor,page-head
+      comment: "Add emoji, status, header_image_url, font_scale columns to notes"
+      preConditions:
+        - onFail: MARK_RAN
+        - and:
+            - not:
+                - columnExists:
+                    tableName: notes
+                    columnName: emoji
+                    schemaName: scrapalot
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: notes
+            columns:
+              - column:
+                  name: emoji
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: header_image_url
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: font_scale
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: notes
+            columnName: emoji
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: notes
+            columnName: status
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: notes
+            columnName: header_image_url
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: notes
+            columnName: font_scale

@@ -1,0 +1,36 @@
+# Migration 081: Seed subscription plan features
+# Purpose: Ensure all subscription plans have correct features JSONB data
+# Context: The 040 changeset created the table but never seeded it.
+#          Plans were inserted elsewhere with empty/wrong features.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 081-seed-subscription-plan-features
+      author: scrapalot
+      labels: billing,subscriptions
+      comment: "Update subscription plan features to correct JSONB values"
+      changes:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET features = '{"shared_workspaces": false, "priority_support": false, "api_access": false}'::jsonb,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'researcher'
+                AND (features IS NULL OR features = '{}'::jsonb OR NOT jsonb_exists(features, 'shared_workspaces'));
+
+              UPDATE scrapalot.subscription_plans
+              SET features = '{"shared_workspaces": true, "priority_support": true, "api_access": true, "advanced_analytics": true}'::jsonb,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'professional'
+                AND (features IS NULL OR features = '{}'::jsonb OR NOT jsonb_exists(features, 'shared_workspaces'));
+
+              UPDATE scrapalot.subscription_plans
+              SET features = '{"shared_workspaces": true, "priority_support": true, "api_access": true, "advanced_analytics": true, "custom_integrations": true, "dedicated_support": true, "sla": true, "on_premise": true}'::jsonb,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'enterprise'
+                AND (features IS NULL OR features = '{}'::jsonb OR NOT jsonb_exists(features, 'shared_workspaces'));
+      rollback:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans SET features = NULL WHERE name IN ('researcher', 'professional', 'enterprise');

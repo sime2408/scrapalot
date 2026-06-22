@@ -1,0 +1,39 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Environment — committed .env / .env.production hold PUBLIC build URLs only.
+# NEVER put secrets (API keys, tokens) in them. Secret overrides go in
+# .env.local / .env.*.local, which are git-ignored via the *.local rule above.
+.env.*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+/*.png
+
+# Playwright test artifacts
+test-results/
+test-results.json
+screenshots/
+playwright-report/
+
+# Claude Code local overrides (may contain API tokens) — never commit
+.claude/settings.local.json

@@ -1,0 +1,135 @@
+# Production Profile Configuration
+# Production-ready settings with security hardening
+
+server:
+  port: ${SERVER_PORT:8091}
+  compression:
+    enabled: true
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
+
+spring:
+  # Production Database Configuration
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_BACKEND_HOST}:${POSTGRES_BACKEND_PORT}/${POSTGRES_BACKEND_DB}
+    username: ${POSTGRES_BACKEND_USER}
+    password: ${POSTGRES_BACKEND_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+
+  # JPA Production Settings
+  jpa:
+    hibernate:
+      ddl-auto: ${HIBERNATE_DDL_AUTO:validate}  # Can be overridden via environment variable
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        use_sql_comments: false
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+        query:
+          plan_cache_max_size: 2048
+          in_clause_parameter_padding: true
+
+  # Jackson - No pretty printing in production
+  jackson:
+    serialization:
+      indent-output: false
+
+# JWT Production Configuration
+jwt:
+  secret: ${JWT_SECRET}  # MUST be set via environment variable
+  # 4 hours. A short access token means a silent refresh every 30 min, and
+  # every refresh is a chance for the session to break (rotation race, a stale
+  # cross-user cookie, transient network) → an unexpected logout. 4 h cuts the
+  # refresh frequency 8× while the rotating 90-day refresh token below still
+  # backs the long-lived session and reuse-detection still protects it.
+  expiration-ms: 14400000
+  # 90 days. Refresh tokens ROTATE on every use (RefreshTokenService.rotate),
+  # so for anyone who opens the app at least quarterly the session is
+  # effectively permanent — the mobile app expects this (login once,
+  # straight to dashboard on every launch).
+  refresh-expiration-ms: 7776000000
+  issuer: scrapalot-backend
+
+# CORS Production - Specific origins only
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:https://scrapalot.app,https://app.scrapalot.app}
+  allowed-methods: GET,POST,PUT,DELETE,PATCH,OPTIONS
+  allowed-headers: Authorization,Content-Type,Accept
+  allow-credentials: true
+  max-age: 3600
+
+# Redis Production Configuration
+redis:
+  enabled: ${REDIS_ENABLED:true}
+  host: ${REDIS_HOST}
+  port: ${REDIS_PORT:6379}
+  password: ${REDIS_PASSWORD}
+  database: ${REDIS_DB:0}
+  timeout: 3000
+  lettuce:
+    pool:
+      max-active: 20
+      max-idle: 10
+      min-idle: 5
+
+# Logging Production - Less verbose
+logging:
+  level:
+    root: WARN
+    com.scrapalot.backend: INFO
+    org.springframework.web: WARN
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+  file:
+    name: /app/logs/application.log
+    max-size: 100MB
+    max-history: 30
+    total-size-cap: 3GB
+
+# Actuator Production - Limited exposure
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Production Upload Configuration
+application:
+  upload:
+    path: ${UPLOAD_PATH:/app/data/upload}
+    max-size-mb: 10
+
+# WebSocket Production
+websocket:
+  enabled: ${WEBSOCKET_ENABLED:true}
+  message-size-limit: 131072  # 128KB
+  send-buffer-size-limit: 1048576  # 1MB
+
+# API Documentation - Disabled in production
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_UI_ENABLED:false}
+
+# Security Headers (handled by SecurityConfig)
+# Content Security Policy, X-Frame-Options, etc.

@@ -1,0 +1,820 @@
+# Migration 030: Seed Data
+# Purpose: Pre-seed admin + testuser with workspaces, collections, settings, and model providers
+# Context: dev,test — only applied in development/test environments
+
+databaseChangeLog:
+
+  # ============================================================
+  # CLEANUP: Remove existing test users with wrong UUIDs
+  # Ensures seed data can insert with deterministic UUIDs
+  # ============================================================
+  - changeSet:
+      id: 030-seed-cleanup
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.users WHERE username = 'admin' AND id = '11111111-1111-1111-1111-111111111111'::uuid"
+      comment: "Delete existing admin/testuser if they have wrong UUIDs, so seed can re-insert with fixed UUIDs"
+      changes:
+        - sql:
+            sql: |
+              DELETE FROM scrapalot.workspace_users WHERE user_id IN (SELECT id FROM scrapalot.users WHERE username IN ('admin', 'testuser') AND id NOT IN ('11111111-1111-1111-1111-111111111111'::uuid, '22222222-2222-2222-2222-222222222222'::uuid));
+              DELETE FROM scrapalot.user_settings WHERE user_id IN (SELECT id FROM scrapalot.users WHERE username IN ('admin', 'testuser') AND id NOT IN ('11111111-1111-1111-1111-111111111111'::uuid, '22222222-2222-2222-2222-222222222222'::uuid));
+              DELETE FROM scrapalot.collections WHERE workspace_id IN (SELECT id FROM scrapalot.workspaces WHERE user_id IN (SELECT id FROM scrapalot.users WHERE username IN ('admin', 'testuser') AND id NOT IN ('11111111-1111-1111-1111-111111111111'::uuid, '22222222-2222-2222-2222-222222222222'::uuid)));
+              DELETE FROM scrapalot.workspaces WHERE user_id IN (SELECT id FROM scrapalot.users WHERE username IN ('admin', 'testuser') AND id NOT IN ('11111111-1111-1111-1111-111111111111'::uuid, '22222222-2222-2222-2222-222222222222'::uuid));
+              DELETE FROM scrapalot.users WHERE username IN ('admin', 'testuser') AND id NOT IN ('11111111-1111-1111-1111-111111111111'::uuid, '22222222-2222-2222-2222-222222222222'::uuid);
+      rollback:
+        - sql:
+            sql: "SELECT 1"
+
+  # ============================================================
+  # ADMIN USER
+  # ============================================================
+  - changeSet:
+      id: 030-seed-admin-user
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.users WHERE username = 'admin'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: users
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "'11111111-1111-1111-1111-111111111111'::uuid"
+              - column:
+                  name: username
+                  value: "admin"
+              - column:
+                  name: email
+                  value: "admin@test.com"
+              - column:
+                  name: password
+                  value: "$2b$10$/tVHIg6KLHF7My/EbYb.I.d7SxAxogPOmJCts4/3M./epay1Q4NuW"
+              - column:
+                  name: first_name
+                  value: "Admin"
+              - column:
+                  name: last_name
+                  value: "User"
+              - column:
+                  name: role
+                  value: "admin"
+              - column:
+                  name: is_active
+                  valueBoolean: true
+              - column:
+                  name: is_external
+                  valueBoolean: false
+              - column:
+                  name: license_agreement_consent
+                  valueBoolean: true
+              - column:
+                  name: content_sharing_consent
+                  valueBoolean: true
+              - column:
+                  name: tour_completed
+                  valueBoolean: true
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: users
+            where: "id = '11111111-1111-1111-1111-111111111111'"
+
+  # ============================================================
+  # TEST USER
+  # ============================================================
+  - changeSet:
+      id: 030-seed-testuser
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.users WHERE username = 'testuser'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: users
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "'22222222-2222-2222-2222-222222222222'::uuid"
+              - column:
+                  name: username
+                  value: "testuser"
+              - column:
+                  name: email
+                  value: "test@test.com"
+              - column:
+                  name: password
+                  value: "$2b$10$/tVHIg6KLHF7My/EbYb.I.d7SxAxogPOmJCts4/3M./epay1Q4NuW"
+              - column:
+                  name: first_name
+                  value: "Test"
+              - column:
+                  name: last_name
+                  value: "User"
+              - column:
+                  name: role
+                  value: "user"
+              - column:
+                  name: is_active
+                  valueBoolean: true
+              - column:
+                  name: is_external
+                  valueBoolean: false
+              - column:
+                  name: license_agreement_consent
+                  valueBoolean: true
+              - column:
+                  name: content_sharing_consent
+                  valueBoolean: true
+              - column:
+                  name: tour_completed
+                  valueBoolean: true
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: users
+            where: "id = '22222222-2222-2222-2222-222222222222'"
+
+  # ============================================================
+  # ADMIN WORKSPACE
+  # ============================================================
+  - changeSet:
+      id: 030-seed-admin-workspace
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.workspaces WHERE user_id = '11111111-1111-1111-1111-111111111111'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: workspaces
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "'33333333-3333-3333-3333-333333333333'::uuid"
+              - column:
+                  name: user_id
+                  valueComputed: "'11111111-1111-1111-1111-111111111111'::uuid"
+              - column:
+                  name: name
+                  value: "My Workspace"
+              - column:
+                  name: is_public
+                  valueBoolean: false
+              - column:
+                  name: is_shared
+                  valueBoolean: false
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: workspaces
+            where: "id = '33333333-3333-3333-3333-333333333333'"
+
+  # ============================================================
+  # ADMIN WORKSPACE_USER LINK
+  # ============================================================
+  - changeSet:
+      id: 030-seed-admin-workspace-user
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.workspace_users WHERE workspace_id = '33333333-3333-3333-3333-333333333333' AND user_id = '11111111-1111-1111-1111-111111111111'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: workspace_users
+            columns:
+              - column:
+                  name: workspace_id
+                  valueComputed: "'33333333-3333-3333-3333-333333333333'::uuid"
+              - column:
+                  name: user_id
+                  valueComputed: "'11111111-1111-1111-1111-111111111111'::uuid"
+              - column:
+                  name: permission
+                  value: "admin"
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: workspace_users
+            where: "workspace_id = '33333333-3333-3333-3333-333333333333' AND user_id = '11111111-1111-1111-1111-111111111111'"
+
+  # ============================================================
+  # TESTUSER WORKSPACE
+  # ============================================================
+  - changeSet:
+      id: 030-seed-testuser-workspace
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.workspaces WHERE user_id = '22222222-2222-2222-2222-222222222222'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: workspaces
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "'44444444-4444-4444-4444-444444444444'::uuid"
+              - column:
+                  name: user_id
+                  valueComputed: "'22222222-2222-2222-2222-222222222222'::uuid"
+              - column:
+                  name: name
+                  value: "My Workspace"
+              - column:
+                  name: is_public
+                  valueBoolean: false
+              - column:
+                  name: is_shared
+                  valueBoolean: false
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: workspaces
+            where: "id = '44444444-4444-4444-4444-444444444444'"
+
+  # ============================================================
+  # TESTUSER WORKSPACE_USER LINK
+  # ============================================================
+  - changeSet:
+      id: 030-seed-testuser-workspace-user
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.workspace_users WHERE workspace_id = '44444444-4444-4444-4444-444444444444' AND user_id = '22222222-2222-2222-2222-222222222222'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: workspace_users
+            columns:
+              - column:
+                  name: workspace_id
+                  valueComputed: "'44444444-4444-4444-4444-444444444444'::uuid"
+              - column:
+                  name: user_id
+                  valueComputed: "'22222222-2222-2222-2222-222222222222'::uuid"
+              - column:
+                  name: permission
+                  value: "admin"
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: workspace_users
+            where: "workspace_id = '44444444-4444-4444-4444-444444444444' AND user_id = '22222222-2222-2222-2222-222222222222'"
+
+  # ============================================================
+  # ADMIN COLLECTION (Research Papers)
+  # ============================================================
+  - changeSet:
+      id: 030-seed-admin-collection
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.collections WHERE workspace_id = '33333333-3333-3333-3333-333333333333'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: collections
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "'55555555-5555-5555-5555-555555555555'::uuid"
+              - column:
+                  name: workspace_id
+                  valueComputed: "'33333333-3333-3333-3333-333333333333'::uuid"
+              - column:
+                  name: name
+                  value: "Research Papers"
+              - column:
+                  name: chunking_strategy
+                  value: "enhanced_markdown"
+              - column:
+                  name: chunk_size
+                  valueNumeric: 768
+              - column:
+                  name: chunk_overlap
+                  valueNumeric: 128
+              - column:
+                  name: is_processing
+                  valueBoolean: false
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: collections
+            where: "id = '55555555-5555-5555-5555-555555555555'"
+
+  # ============================================================
+  # TESTUSER COLLECTION (Research Papers)
+  # ============================================================
+  - changeSet:
+      id: 030-seed-testuser-collection
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.collections WHERE workspace_id = '44444444-4444-4444-4444-444444444444'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: collections
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "'66666666-6666-6666-6666-666666666666'::uuid"
+              - column:
+                  name: workspace_id
+                  valueComputed: "'44444444-4444-4444-4444-444444444444'::uuid"
+              - column:
+                  name: name
+                  value: "Research Papers"
+              - column:
+                  name: chunking_strategy
+                  value: "enhanced_markdown"
+              - column:
+                  name: chunk_size
+                  valueNumeric: 768
+              - column:
+                  name: chunk_overlap
+                  valueNumeric: 128
+              - column:
+                  name: is_processing
+                  valueBoolean: false
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: collections
+            where: "id = '66666666-6666-6666-6666-666666666666'"
+
+  # ============================================================
+  # ADMIN USER SETTINGS - General
+  # ============================================================
+  - changeSet:
+      id: 030-seed-admin-settings-general
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.user_settings WHERE user_id = '11111111-1111-1111-1111-111111111111' AND setting_key = 'settings_general'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: user_settings
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "gen_random_uuid()"
+              - column:
+                  name: user_id
+                  valueComputed: "'11111111-1111-1111-1111-111111111111'::uuid"
+              - column:
+                  name: setting_key
+                  value: "settings_general"
+              - column:
+                  name: setting_value
+                  value: '{"rag_strategy": "similarity_search", "rag_orchestrator": "EnhancedTriModalOrchestrator", "use_orchestrator": true, "use_agentic_routing": false, "theme": "system"}'
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: user_settings
+            where: "user_id = '11111111-1111-1111-1111-111111111111' AND setting_key = 'settings_general'"
+
+  # ============================================================
+  # ADMIN USER SETTINGS - Document Processing
+  # ============================================================
+  - changeSet:
+      id: 030-seed-admin-settings-docproc
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.user_settings WHERE user_id = '11111111-1111-1111-1111-111111111111' AND setting_key = 'document_processing'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: user_settings
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "gen_random_uuid()"
+              - column:
+                  name: user_id
+                  valueComputed: "'11111111-1111-1111-1111-111111111111'::uuid"
+              - column:
+                  name: setting_key
+                  value: "document_processing"
+              - column:
+                  name: setting_value
+                  value: '{"chunk_size": 768, "chunk_overlap": 128, "splitter_type": "enhanced_markdown", "chunk_sizes_to_ignore": 50, "ocr_enabled": false, "semantic_chunking": {"enabled": false, "method": "percentile", "threshold": 90}, "markdown_chunking": {"enabled": true, "return_each_line": false, "strip_headers": false}, "retriever_type": "ensemble"}'
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: user_settings
+            where: "user_id = '11111111-1111-1111-1111-111111111111' AND setting_key = 'document_processing'"
+
+  # ============================================================
+  # TESTUSER SETTINGS - General
+  # ============================================================
+  - changeSet:
+      id: 030-seed-testuser-settings-general
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.user_settings WHERE user_id = '22222222-2222-2222-2222-222222222222' AND setting_key = 'settings_general'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: user_settings
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "gen_random_uuid()"
+              - column:
+                  name: user_id
+                  valueComputed: "'22222222-2222-2222-2222-222222222222'::uuid"
+              - column:
+                  name: setting_key
+                  value: "settings_general"
+              - column:
+                  name: setting_value
+                  value: '{"rag_strategy": "similarity_search", "rag_orchestrator": "EnhancedTriModalOrchestrator", "use_orchestrator": true, "use_agentic_routing": false, "theme": "system"}'
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: user_settings
+            where: "user_id = '22222222-2222-2222-2222-222222222222' AND setting_key = 'settings_general'"
+
+  # ============================================================
+  # TESTUSER SETTINGS - Document Processing
+  # ============================================================
+  - changeSet:
+      id: 030-seed-testuser-settings-docproc
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.user_settings WHERE user_id = '22222222-2222-2222-2222-222222222222' AND setting_key = 'document_processing'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: user_settings
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "gen_random_uuid()"
+              - column:
+                  name: user_id
+                  valueComputed: "'22222222-2222-2222-2222-222222222222'::uuid"
+              - column:
+                  name: setting_key
+                  value: "document_processing"
+              - column:
+                  name: setting_value
+                  value: '{"chunk_size": 768, "chunk_overlap": 128, "splitter_type": "enhanced_markdown", "chunk_sizes_to_ignore": 50, "ocr_enabled": false, "semantic_chunking": {"enabled": false, "method": "percentile", "threshold": 90}, "markdown_chunking": {"enabled": true, "return_each_line": false, "strip_headers": false}, "retriever_type": "ensemble"}'
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: user_settings
+            where: "user_id = '22222222-2222-2222-2222-222222222222' AND setting_key = 'document_processing'"
+
+  # ============================================================
+  # SYSTEM OPENAI PROVIDER (user_id = NULL)
+  # ============================================================
+  - changeSet:
+      id: 030-seed-openai-provider
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.model_providers WHERE provider_type = 'openai' AND user_id IS NULL"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: model_providers
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "'77777777-7777-7777-7777-777777777777'::uuid"
+              - column:
+                  name: name
+                  value: "OpenAI"
+              - column:
+                  name: provider_type
+                  value: "openai"
+              - column:
+                  name: status
+                  value: "active"
+              - column:
+                  name: show_models
+                  valueBoolean: true
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: model_providers
+            where: "id = '77777777-7777-7777-7777-777777777777'"
+
+  # ============================================================
+  # GPT-4O-MINI MODEL
+  # ============================================================
+  - changeSet:
+      id: 030-seed-gpt4o-mini-model
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.model_provider_models WHERE model_name = 'gpt-4o-mini' AND provider_id = '77777777-7777-7777-7777-777777777777'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "'88888888-8888-8888-8888-888888888888'::uuid"
+              - column:
+                  name: provider_id
+                  valueComputed: "'77777777-7777-7777-7777-777777777777'::uuid"
+              - column:
+                  name: model_name
+                  value: "gpt-4o-mini"
+              - column:
+                  name: display_name
+                  value: "GPT-4o Mini"
+              - column:
+                  name: model_type
+                  value: "chat"
+              - column:
+                  name: context_window
+                  valueNumeric: 128000
+              - column:
+                  name: max_tokens
+                  valueNumeric: 16384
+              - column:
+                  name: supports_tools
+                  valueBoolean: true
+              - column:
+                  name: supports_streaming
+                  valueBoolean: true
+              - column:
+                  name: supports_function_calling
+                  valueBoolean: true
+              - column:
+                  name: supports_vision
+                  valueBoolean: true
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            where: "id = '88888888-8888-8888-8888-888888888888'"
+
+  # ============================================================
+  # SCRAPALOT AI SYSTEM PROVIDER (provider_type = 'system')
+  # This is the default model shown in the UI as "Scrapalot AI v1"
+  # It uses OpenAI gpt-4o-mini under the hood
+  # ============================================================
+  - changeSet:
+      id: 030-seed-scrapalot-ai-provider
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.model_providers WHERE provider_type = 'system' AND user_id IS NULL"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: model_providers
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "'99999999-9999-9999-9999-999999999999'::uuid"
+              - column:
+                  name: name
+                  value: "Scrapalot AI"
+              - column:
+                  name: provider_type
+                  value: "system"
+              - column:
+                  name: status
+                  value: "active"
+              - column:
+                  name: show_models
+                  valueBoolean: true
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: model_providers
+            where: "id = '99999999-9999-9999-9999-999999999999'"
+
+  # ============================================================
+  # SCRAPALOT AI v1 MODEL (gpt-4o-mini)
+  # ============================================================
+  - changeSet:
+      id: 030-seed-scrapalot-ai-model
+      author: scrapalot
+      labels: seed,data
+      context: dev,test
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT COUNT(*) FROM scrapalot.model_provider_models WHERE provider_id = '99999999-9999-9999-9999-999999999999'"
+      changes:
+        - insert:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            columns:
+              - column:
+                  name: id
+                  valueComputed: "'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid"
+              - column:
+                  name: provider_id
+                  valueComputed: "'99999999-9999-9999-9999-999999999999'::uuid"
+              - column:
+                  name: model_name
+                  value: "gpt-4o-mini"
+              - column:
+                  name: display_name
+                  value: "Scrapalot AI v1"
+              - column:
+                  name: model_type
+                  value: "chat"
+              - column:
+                  name: context_window
+                  valueNumeric: 128000
+              - column:
+                  name: max_tokens
+                  valueNumeric: 16384
+              - column:
+                  name: supports_tools
+                  valueBoolean: true
+              - column:
+                  name: supports_streaming
+                  valueBoolean: true
+              - column:
+                  name: supports_function_calling
+                  valueBoolean: true
+              - column:
+                  name: supports_vision
+                  valueBoolean: true
+              - column:
+                  name: created_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: updated_at
+                  valueComputed: "CURRENT_TIMESTAMP"
+      rollback:
+        - delete:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            where: "id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'"

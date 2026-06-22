@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 089-add-invitation-workspace-and-billing
+      author: scrapalot
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: invitation_tokens
+            columns:
+              - column:
+                  name: workspace_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+              - column:
+                  name: billing_exempt
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false

@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 071-add-locale-to-invitation-tokens
+      author: scrapalot
+      changes:
+        - addColumn:
+            tableName: invitation_tokens
+            schemaName: scrapalot
+            columns:
+              - column:
+                  name: locale
+                  type: varchar(10)
+                  constraints:
+                    nullable: true

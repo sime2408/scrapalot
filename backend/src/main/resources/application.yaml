@@ -1,0 +1,298 @@
+# Scrapalot Backend - Main Configuration
+# Base configuration with environment variable support
+# Matches Python config.yaml structure from scrapalot-chat
+
+server:
+  port: ${SERVER_PORT:8091}
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+  error:
+    include-message: always
+    include-binding-errors: always
+
+spring:
+  application:
+    name: scrapalot-backend
+
+  config:
+    import: classpath:prompts.yaml
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  # Logging Configuration (Logback with color formatting)
+  output:
+    ansi:
+      enabled: ${SPRING_OUTPUT_ANSI_ENABLED:ALWAYS}  # Force ANSI colors (matching Python Rich console)
+
+  # Database Configuration
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_BACKEND_HOST:localhost}:${POSTGRES_BACKEND_PORT:5432}/${POSTGRES_BACKEND_DB:scrapalot_backend}
+    username: ${POSTGRES_BACKEND_USER:scrapalot}
+    password: ${POSTGRES_BACKEND_PASSWORD:scrapalot}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:30000}
+      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
+      max-lifetime: ${DB_MAX_LIFETIME:1800000}
+      pool-name: ScrapalotBackendPool
+
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: ${HIBERNATE_DDL_AUTO:validate}  # Changed from 'update' to 'validate' - Liquibase manages schema
+    show-sql: ${HIBERNATE_SHOW_SQL:false}
+    properties:
+      hibernate:
+        # Note: PostgreSQLDialect is auto-detected, no need to specify explicitly
+        format_sql: ${HIBERNATE_FORMAT_SQL:false}
+        use_sql_comments: ${HIBERNATE_USE_SQL_COMMENTS:false}
+        jdbc:
+          batch_size: ${HIBERNATE_BATCH_SIZE:20}
+        order_inserts: true
+        order_updates: true
+    open-in-view: false
+
+  # Liquibase Configuration (Database Migration Management)
+  liquibase:
+    enabled: ${LIQUIBASE_ENABLED:true}
+    change-log: classpath:/db/changelog/db.changelog-master.yaml
+    default-schema: ${LIQUIBASE_DEFAULT_SCHEMA:scrapalot}
+    liquibase-schema: ${LIQUIBASE_SCHEMA:public}  # Schema where Liquibase tables live
+    drop-first: ${LIQUIBASE_DROP_FIRST:false}  # DANGER: Only for development
+    contexts: ${LIQUIBASE_CONTEXTS:dev,prod}
+
+  # File Upload Configuration
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${MAX_FILE_SIZE:500MB}
+      max-request-size: ${MAX_REQUEST_SIZE:500MB}
+      file-size-threshold: ${FILE_SIZE_THRESHOLD:2MB}
+
+  # Static Resources Configuration
+  web:
+    resources:
+      static-locations: file:${application.upload.path:/app/data/upload}/
+      add-mappings: true
+  mvc:
+    static-path-pattern: /upload/**
+    async:
+      request-timeout: ${MVC_ASYNC_TIMEOUT:600000}  # 10 min for deep research streaming
+
+  # Jackson Configuration
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      indent-output: ${JACKSON_INDENT_OUTPUT:false}
+    deserialization:
+      fail-on-unknown-properties: false
+    time-zone: UTC
+    default-property-inclusion: non_null
+    property-naming-strategy: SNAKE_CASE  # Convert camelCase to snake_case for Python backend compatibility
+
+# Email Configuration
+  mail:
+    host: ${SMTP_HOST:smtp.eu.mailgun.org}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+email:
+  from-address: ${EMAIL_FROM:noreply@scrapalot.app}
+  from-name: ${EMAIL_FROM_NAME:Scrapalot AI}
+  reply-to-address: ${EMAIL_REPLY_TO:hello@mail.scrapalot.app}
+  enabled: ${EMAIL_ENABLED:false}
+  base-url: ${EMAIL_BASE_URL:https://scrapalot.app}
+  contact-notify-address: ${EMAIL_CONTACT_NOTIFY:simun.sunjic@gmail.com}
+
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET:}
+  # 4 h access token — covers long-running flows (batch uploads of
+  # hundreds of files, streaming chat sessions, deep research runs)
+  # without forcing a refresh mid-operation. The refresh-token grace
+  # window in RefreshTokenService still protects against the stolen
+  # -token scenario.
+  expiration-ms: ${JWT_EXPIRATION_MS:14400000}     # 4 hours
+  refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:7776000000}  # 90 days (rotating — sliding window)
+  issuer: ${JWT_ISSUER:scrapalot-backend}
+
+# MCP integration secrets
+mcp:
+  # Base64-encoded 32-byte key shared with the Python AI service, used to
+  # encrypt MCP integration auth tokens at rest. When blank, tokens are stored
+  # as plaintext (a startup warning is logged) — set MCP_ENCRYPTION_KEY in prod.
+  encryption-key: ${MCP_ENCRYPTION_KEY:}
+
+# CORS Configuration
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001}
+  allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,PATCH,OPTIONS}
+  allowed-headers: ${CORS_ALLOWED_HEADERS:*}
+  allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
+  max-age: ${CORS_MAX_AGE:3600}
+
+# OAuth Configuration (Google)
+oauth:
+  google:
+    client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
+    client-secret: ${GOOGLE_OAUTH_CLIENT_SECRET:}
+    redirect-uri: ${GOOGLE_OAUTH_REDIRECT_URI:http://localhost:8091/api/v1/auth/google/callback}
+    frontend-url: ${FRONTEND_URL:http://localhost:3000}
+    enabled: ${GOOGLE_OAUTH_ENABLED:true}
+
+# Redis Configuration (Event-driven communication with Python)
+redis:
+  enabled: ${REDIS_ENABLED:true}
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
+  password: ${REDIS_PASSWORD:}
+  database: ${REDIS_DATABASE:0}
+  timeout: ${REDIS_TIMEOUT:2000}
+  lettuce:
+    pool:
+      max-active: ${REDIS_POOL_MAX_ACTIVE:8}
+      max-idle: ${REDIS_POOL_MAX_IDLE:8}
+      min-idle: ${REDIS_POOL_MIN_IDLE:0}
+      max-wait: -1ms
+
+# Python CHAT Service Configuration (AI/ML backend)
+python:
+  chat:
+    url: ${PYTHON_CHAT_URL:http://scrapalot-chat:8090}
+
+# Stripe Configuration (Payment Integration)
+stripe:
+  test-mode: ${STRIPE_TEST_MODE:true}  # Enable test mode by default
+  secret-key: ${STRIPE_SECRET_KEY:}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  success-url: ${STRIPE_SUCCESS_URL:https://scrapalot.app/dashboard?subscription=success}
+  cancel-url: ${STRIPE_CANCEL_URL:https://scrapalot.app/pricing}
+  portal-return-url: ${STRIPE_PORTAL_RETURN_URL:https://scrapalot.app/settings}
+
+# gRPC Configuration
+grpc:
+  # gRPC Server (Python and Gateway connect TO this)
+  server:
+    port: ${GRPC_SERVER_PORT:9090}
+    address: ${GRPC_SERVER_ADDRESS:0.0.0.0}
+    max-inbound-message-size: 10MB
+    enable-reflection: ${GRPC_REFLECTION_ENABLED:true}
+
+  # gRPC Client (Kotlin connects TO Python CHAT)
+  client:
+    python-chat:
+      address: ${GRPC_PYTHON_CHAT_ADDRESS:dns:///scrapalot-chat:9091}  # Python gRPC server (dns:/// re-resolves on connection failure; static:// caches forever and breaks when scrapalot-chat IP changes after restart)
+      negotiationType: PLAINTEXT
+      enableKeepAlive: true
+      keepAliveTime: 30s
+      keepAliveTimeout: 10s
+      keepAliveWithoutCalls: true  # Send keepalive pings even when no active RPCs
+      maxInboundMessageSize: 10MB
+      maxInboundMetadataSize: 8KB
+
+  # Circuit breaker + deadline for gRPC calls to scrapalot-chat
+  resilience:
+    failure-threshold: ${GRPC_CB_FAILURE_THRESHOLD:5}       # Consecutive failures before OPEN
+    reset-timeout-ms: ${GRPC_CB_RESET_TIMEOUT_MS:30000}     # Wait before HALF_OPEN probe (30s)
+    unary-deadline-ms: ${GRPC_UNARY_DEADLINE_MS:15000}      # Default deadline for unary RPCs (15s)
+
+# Logging Configuration
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.scrapalot.backend: ${LOG_LEVEL_APP:INFO}
+    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:INFO}
+    org.springframework.security: ${LOG_LEVEL_SPRING_SECURITY:INFO}
+    org.springframework.security.config.annotation.authentication.configuration.InitializeUserDetailsBeanManagerConfigurer: ERROR
+    org.hibernate.SQL: ${LOG_LEVEL_HIBERNATE_SQL:WARN}
+    org.hibernate.type.descriptor.sql.BasicBinder: ${LOG_LEVEL_HIBERNATE_BINDER:WARN}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${ACTUATOR_ENDPOINTS:health,info,metrics,prometheus}
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: ${ACTUATOR_HEALTH_DETAILS:when-authorized}
+      probes:
+        enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: ${PROMETHEUS_ENABLED:true}
+
+# Application-specific Configuration
+application:
+  name: Scrapalot Backend
+  version: 1.0.0
+  description: Spring Boot backend for Scrapalot RAG application
+
+  # Document Upload Configuration
+  upload:
+    path: ${UPLOAD_PATH:data/upload}
+    max-size-mb: ${UPLOAD_MAX_SIZE_MB:50}
+    allowed-extensions: ${UPLOAD_ALLOWED_EXTENSIONS:.pdf,.txt,.md,.docx,.html,.csv,.json,.jpg,.jpeg,.png,.webp}
+
+  # Subscription Plans
+  subscription:
+    plans:
+      researcher:
+        max-workspaces: 1
+        max-collections: 5
+        max-documents: 100
+        can-share: false
+      professional:
+        max-workspaces: 5
+        max-collections: 20
+        max-documents: 1000
+        can-share: true
+        max-team-members: 5
+      enterprise:
+        max-workspaces: -1  # unlimited
+        max-collections: -1
+        max-documents: -1
+        can-share: true
+        max-team-members: -1
+
+# WebSocket Configuration
+websocket:
+  enabled: ${WEBSOCKET_ENABLED:true}
+  broker:
+    relay-host: ${WEBSOCKET_BROKER_HOST:localhost}
+    relay-port: ${WEBSOCKET_BROKER_PORT:61613}
+  message-size-limit: ${WEBSOCKET_MESSAGE_SIZE:65536}
+  send-buffer-size-limit: ${WEBSOCKET_SEND_BUFFER:524288}
+  send-time-limit: ${WEBSOCKET_SEND_TIME:20000}
+
+# API Documentation (Swagger/OpenAPI)
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_UI_ENABLED:true}
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+

@@ -1,0 +1,60 @@
+# Migration 128: users.is_superadmin
+#
+# A superadmin is a normal admin (role stays "admin", so every existing
+# `role == "admin"` gate keeps working untouched) PLUS one extra power:
+# it is the only account allowed to impersonate other admin accounts.
+# Regular admins can still impersonate non-admin users, but never another
+# admin and never the superadmin. Defence-in-depth: even a superadmin
+# cannot impersonate another superadmin.
+#
+# Seeded true for admin@test.com (the owner's administration login).
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 128-users-is-superadmin
+      author: scrapalot
+      labels: auth,impersonation
+      comment: "Mark the single account allowed to impersonate admins"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: users
+                schemaName: scrapalot
+                columnName: is_superadmin
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: users
+            columns:
+              - column:
+                  name: is_superadmin
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+                  remarks: "Only this account may impersonate admin-role users."
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: users
+            columnName: is_superadmin
+
+  - changeSet:
+      id: 128-seed-superadmin
+      author: scrapalot
+      labels: auth,impersonation
+      comment: "Grant superadmin to the owner's admin login"
+      changes:
+        - sql:
+            sql: |
+              UPDATE scrapalot.users
+              SET is_superadmin = TRUE, updated_at = CURRENT_TIMESTAMP
+              WHERE email = 'admin@test.com';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE scrapalot.users
+              SET is_superadmin = FALSE, updated_at = CURRENT_TIMESTAMP
+              WHERE email = 'admin@test.com';

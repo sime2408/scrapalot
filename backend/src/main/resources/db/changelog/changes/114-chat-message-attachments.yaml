@@ -1,0 +1,137 @@
+# Migration 114: chat_message_attachments — generated images, audio clips and
+# (in the future) video / file attachments produced by the assistant or
+# uploaded by the user. Lives next to ``messages`` rather than embedded in the
+# message JSON because:
+#
+#   * binary blobs (image bytes, audio frames) are too large to keep inline;
+#     storage_path points at the on-disk artifact under scrapalot_data/
+#   * a single message may produce N images or audio segments
+#   * we want lifecycle policies (purge after 90 days) per attachment, not per
+#     message — so each attachment carries its own created_at
+#
+# kind discriminates which other columns matter:
+#   - image:    width, height, prompt, revised_prompt
+#   - audio:    duration_ms
+#   - video:    width, height, duration_ms
+#   - document: storage_path + mime_type only
+#
+# The model_name is the model that produced this artifact (DALL-E 3,
+# Edge-TTS, ...) and is what the cost-tracking layer keys on.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 114-create-chat-message-attachments
+      author: scrapalot
+      labels: chat,attachments,images,audio
+      comment: "Per-message attachments (images / audio / video / docs)"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: chat_message_attachments
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: chat_message_attachments
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_chat_message_attachments
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: message_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_chat_message_attachments_message_id
+                    references: scrapalot.messages(id)
+                    deleteCascade: true
+              - column:
+                  name: kind
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: storage_path
+                  type: VARCHAR(500)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: mime_type
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: width
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: height
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: duration_ms
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: prompt
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: revised_prompt
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: model_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: cost_cents
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: chat_message_attachments
+            indexName: idx_chat_message_attachments_message_id
+            columns:
+              - column:
+                  name: message_id
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: chat_message_attachments
+            indexName: idx_chat_message_attachments_kind_created
+            columns:
+              - column:
+                  name: kind
+              - column:
+                  name: created_at
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: chat_message_attachments

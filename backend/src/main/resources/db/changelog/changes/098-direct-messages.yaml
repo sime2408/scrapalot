@@ -1,0 +1,231 @@
+# Migration 098: Direct messages — private 1:1 chat between workspace members
+# Purpose: Enable private conversations between users who share a workspace (Pro/Enterprise only)
+# History capped at 100 messages per conversation (enforced at service layer)
+
+databaseChangeLog:
+
+  # ============================================
+  # CREATE direct_conversations table
+  # ============================================
+  - changeSet:
+      id: 098-create-direct-conversations
+      author: scrapalot
+      labels: chat,direct-messages
+      comment: "Create direct_conversations table for 1:1 private chat threads"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: direct_conversations
+                schemaName: scrapalot
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: direct_conversations
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: participant_one_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: participant_two_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: workspace_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: direct_conversations
+            baseColumnNames: participant_one_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_direct_conversations_participant_one
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: direct_conversations
+            baseColumnNames: participant_two_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_direct_conversations_participant_two
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: direct_conversations
+            baseColumnNames: workspace_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: workspaces
+            referencedColumnNames: id
+            constraintName: fk_direct_conversations_workspace
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            schemaName: scrapalot
+            tableName: direct_conversations
+            columnNames: participant_one_id, participant_two_id, workspace_id
+            constraintName: uq_direct_conversations_participants_workspace
+        - createIndex:
+            schemaName: scrapalot
+            tableName: direct_conversations
+            indexName: idx_direct_conversations_participant_one
+            columns:
+              - column:
+                  name: participant_one_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: direct_conversations
+            indexName: idx_direct_conversations_participant_two
+            columns:
+              - column:
+                  name: participant_two_id
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: direct_conversations
+
+  # ============================================
+  # CREATE direct_messages table
+  # ============================================
+  - changeSet:
+      id: 098-create-direct-messages
+      author: scrapalot
+      labels: chat,direct-messages
+      comment: "Create direct_messages table for private 1:1 messages"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: direct_messages
+                schemaName: scrapalot
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: direct_messages
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: conversation_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sender_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: read_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: direct_messages
+            baseColumnNames: conversation_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: direct_conversations
+            referencedColumnNames: id
+            constraintName: fk_direct_messages_conversation
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: direct_messages
+            baseColumnNames: sender_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_direct_messages_sender
+            onDelete: CASCADE
+        - createIndex:
+            schemaName: scrapalot
+            tableName: direct_messages
+            indexName: idx_direct_messages_conversation_created
+            columns:
+              - column:
+                  name: conversation_id
+              - column:
+                  name: created_at
+                  descending: true
+        - createIndex:
+            schemaName: scrapalot
+            tableName: direct_messages
+            indexName: idx_direct_messages_unread
+            columns:
+              - column:
+                  name: conversation_id
+              - column:
+                  name: sender_id
+              - column:
+                  name: read_at
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: direct_messages
+
+  # ============================================
+  # ADD direct_messages feature to subscription plans
+  # ============================================
+  - changeSet:
+      id: 098-add-direct-messages-feature-to-plans
+      author: scrapalot
+      labels: chat,billing
+      comment: "Add direct_messages feature flag to pro, team, and enterprise plans"
+      changes:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET features = features || '{"direct_messages": true}'::jsonb,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name IN ('pro', 'team', 'enterprise');
+
+              UPDATE scrapalot.subscription_plans
+              SET features = features || '{"direct_messages": false}'::jsonb,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'researcher';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET features = features - 'direct_messages',
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name IN ('pro', 'team', 'enterprise', 'researcher');

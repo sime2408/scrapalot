@@ -1,0 +1,33 @@
+databaseChangeLog:
+  - changeSet:
+      id: 088-invitation-subscription-plan
+      author: scrapalot
+      comment: "Add subscription_plan_id to invitation_tokens for admin-assigned plans"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: invitation_tokens
+                columnName: subscription_plan_id
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: invitation_tokens
+            columns:
+              - column:
+                  name: subscription_plan_id
+                  type: uuid
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: invitation_tokens
+            baseColumnNames: subscription_plan_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: subscription_plans
+            referencedColumnNames: id
+            constraintName: fk_invitation_tokens_subscription_plan
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: invitation_tokens
+            columnName: subscription_plan_id

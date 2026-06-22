@@ -1,0 +1,907 @@
+/* Notion-like Editor Theme Styles */
+
+/* ========================================
+   NOTION-LIKE BLOCK CONTROLS
+   Layout: [+] [⋮⋮] - Plus button LEFT, 6-dot grip RIGHT
+   ======================================== */
+
+/* No left gutter — block controls (+ / drag handle) removed to reclaim space */
+:root {
+  --editor-gutter-width: 16px;
+}
+
+/* Make all blocks position:relative for hover detection */
+.ProseMirror > * {
+  position: relative !important;
+}
+
+/* Add block button styling (Plus button - LEFT of drag handle) */
+.add-block-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.add-block-button:hover {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+/* Drag handle styling (6-dot - RIGHT of plus button) */
+.drag-handle-overlay {
+  width: 24px;
+  height: 24px;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+  cursor: grab;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--muted-foreground));
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.drag-handle-overlay:hover {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.drag-handle-overlay:active {
+  cursor: grabbing;
+}
+
+.drag-handle-overlay[draggable="true"]:active {
+  cursor: grabbing;
+  opacity: 0.5;
+}
+
+/* Dark mode - lighter colors for better visibility */
+.dark .drag-handle-overlay,
+.dark .add-block-button {
+  color: #9ca3af;
+}
+
+.dark .drag-handle-overlay:hover,
+.dark .add-block-button:hover {
+  color: #ffffff;
+}
+
+/* Ghost block during drag */
+.ProseMirror-draghandle-ghost {
+  opacity: 0.5;
+  background: hsl(var(--accent));
+  border-radius: 4px;
+}
+
+/* Drop zone indicator */
+.ProseMirror-draghandle-drop-marker {
+  height: 2px;
+  background: hsl(var(--primary));
+  margin: 4px 0;
+  border-radius: 1px;
+}
+
+/* ========================================
+   EDITOR CONTAINER
+   ======================================== */
+
+.ProseMirror {
+  padding: 16px 16px 16px var(--editor-gutter-width) !important;
+  min-height: 200px;
+  outline: none;
+  /* Content must never start before the gutter ends */
+  box-sizing: border-box;
+
+  /* Suppress browser's native selection UI while keeping text selection */
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
+}
+
+/* Hide browser selection handles on mobile */
+.ProseMirror *::selection {
+  background-color: rgba(180, 215, 255, 0.4);
+}
+
+.ProseMirror.dark *::selection {
+  background-color: rgba(100, 150, 255, 0.3);
+}
+
+.ProseMirror:focus {
+  outline: none;
+}
+
+/* ========================================
+   NOTION-LIKE TYPOGRAPHY
+   ======================================== */
+
+.ProseMirror h1 {
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.15;
+  margin-top: 2.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror h2 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  line-height: 1.23;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.32;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror p {
+  font-size: 1rem;
+  line-height: 1.5;
+  /* Paragraph spacing — 0.25rem felt cramped, 0.75rem felt double-
+     spaced. Settling at 0.5rem (8 px each side = 16 px total between
+     paragraphs) gives Confluence-like rhythm without making Enter
+     feel like a hard break. */
+  margin: 0.5rem 0;
+}
+
+/* ========================================
+   HEADING ANCHOR LINKS
+   ======================================== */
+
+/* Heading with anchor: show link icon on hover */
+.ProseMirror h1[data-heading-anchor],
+.ProseMirror h2[data-heading-anchor],
+.ProseMirror h3[data-heading-anchor],
+.ProseMirror h4[data-heading-anchor],
+.ProseMirror h5[data-heading-anchor],
+.ProseMirror h6[data-heading-anchor] {
+  cursor: text;
+}
+
+.ProseMirror h1[data-heading-anchor]::after,
+.ProseMirror h2[data-heading-anchor]::after,
+.ProseMirror h3[data-heading-anchor]::after,
+.ProseMirror h4[data-heading-anchor]::after,
+.ProseMirror h5[data-heading-anchor]::after,
+.ProseMirror h6[data-heading-anchor]::after {
+  content: '';
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  vertical-align: middle;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.ProseMirror h1[data-heading-anchor]:hover::after,
+.ProseMirror h2[data-heading-anchor]:hover::after,
+.ProseMirror h3[data-heading-anchor]:hover::after,
+.ProseMirror h4[data-heading-anchor]:hover::after,
+.ProseMirror h5[data-heading-anchor]:hover::after,
+.ProseMirror h6[data-heading-anchor]:hover::after {
+  opacity: 0.6;
+}
+
+.ProseMirror h1[data-heading-anchor]:hover::after:hover,
+.ProseMirror h2[data-heading-anchor]:hover::after:hover,
+.ProseMirror h3[data-heading-anchor]:hover::after:hover {
+  opacity: 1;
+}
+
+/* Dark mode: lighter icon */
+.dark .ProseMirror h1[data-heading-anchor]::after,
+.dark .ProseMirror h2[data-heading-anchor]::after,
+.dark .ProseMirror h3[data-heading-anchor]::after,
+.dark .ProseMirror h4[data-heading-anchor]::after,
+.dark .ProseMirror h5[data-heading-anchor]::after,
+.dark .ProseMirror h6[data-heading-anchor]::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E");
+}
+
+/* Copied feedback: brief green flash */
+.ProseMirror [data-heading-anchor].heading-anchor-copied::after {
+  opacity: 1 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2316a34a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") !important;
+}
+
+/* Scroll-to highlight: brief accent pulse when navigated via anchor */
+.ProseMirror [data-heading-anchor].heading-anchor-highlight {
+  background-color: hsl(var(--accent) / 0.3);
+  border-radius: 4px;
+  transition: background-color 0.3s ease;
+}
+
+/* ========================================
+   LISTS
+   ======================================== */
+
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-left: 1.5rem;
+  margin: 1rem 0;
+}
+
+.ProseMirror li {
+  margin: 0.25rem 0;
+}
+
+/* ========================================
+   BLOCK QUOTES
+   ======================================== */
+
+.ProseMirror blockquote {
+  border-left: 4px solid hsl(var(--primary));
+  padding-left: 1rem;
+  font-style: italic;
+  margin: 1rem 0;
+  color: hsl(var(--muted-foreground));
+}
+
+/* ========================================
+   CODE BLOCKS
+   ======================================== */
+
+/* Inline code (not in code blocks) */
+.ProseMirror code {
+  background: #e8e8e8;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 0.875rem;
+  color: #ef4444;
+}
+
+/* Dark mode inline code (not in code blocks) */
+.dark .ProseMirror code {
+  background: #1e1e1e;
+  color: #ef4444;
+}
+
+/* Code block wrapper with language selector */
+.code-block-wrapper {
+  margin: 1rem 0;
+  position: relative;
+}
+
+.code-block-wrapper pre {
+  margin: 0;
+}
+
+/* Light theme - darker gray (only for non-custom code blocks) */
+.ProseMirror pre:not(.code-block-wrapper pre) {
+  background: #e8e8e8;
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+/* Dark theme - very dark background (only for non-custom code blocks) */
+.dark .ProseMirror pre:not(.code-block-wrapper pre) {
+  background: #1e1e1e;
+  border-color: hsl(var(--border));
+}
+
+/* Code inside editable code blocks - override inline code red color */
+/* Only target the editable NodeViewContent, not SyntaxHighlighter */
+.ProseMirror .code-block-wrapper .editable-code-content {
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+/* Let SyntaxHighlighter handle all syntax highlighting colors */
+/* Don't override any code colors in the preview overlay */
+
+/* Custom code block wrapper - let component handle styling */
+.code-block-wrapper pre {
+  background: #e8e8e8 !important;
+}
+
+.dark .code-block-wrapper pre {
+  background: #1e1e1e !important;
+}
+
+/* ========================================
+   TABLES
+   ======================================== */
+
+.ProseMirror table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  table-layout: fixed !important;
+  width: 100% !important;
+  margin: 1rem 0 !important;
+  overflow: hidden !important;
+  border: 1px solid hsl(var(--border)) !important;
+  /* Sharp corners — design system rule (no rounded-md|lg|xl), matches
+     the Confluence reference and the rest of the editor chrome. */
+  border-radius: 0 !important;
+}
+
+/* Dark mode — much fainter outer border to match Confluence. The
+   previous rgba(...,0.3) read as a hard line; Confluence uses a near-
+   invisible outline and lets the cell separators do the gridding. */
+.dark .ProseMirror table {
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+}
+
+.ProseMirror table td,
+.ProseMirror table th {
+  min-width: 100px;
+  border: 1px solid hsl(var(--border)) !important;
+  /* Compact padding — previous 0.5/0.75 made rows feel oversized vs
+     the Confluence reference. Inner paragraphs get their margin reset
+     below to keep cells flat. */
+  padding: 0.25rem 0.5rem !important;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+  line-height: 1.4;
+}
+
+/* Strip the default paragraph margins inside cells so a single line of
+   text doesn't add ~1rem above and below the actual text. */
+.ProseMirror table td > p,
+.ProseMirror table th > p {
+  margin: 0 !important;
+}
+
+/* Dark mode — thinner cell borders. 0.20 was too loud; Confluence sits
+   at ~0.08–0.10. */
+.dark .ProseMirror table td,
+.dark .ProseMirror table th {
+  border-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+/* Header cell (<th>) styling — distinct background + slightly bolder
+   text, matches Confluence's slate-tinted top row. */
+.ProseMirror table th {
+  font-weight: 600;
+  text-align: left;
+  background-color: hsl(var(--muted));
+}
+.dark .ProseMirror table th {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Some tables in older notes were inserted without withHeaderRow:true,
+   so they have no <th> cells. Promote the visual first row of any
+   ProseMirror table to a header-style band so the grid still reads
+   correctly. Targets the first <tr> in either thead or tbody. */
+.ProseMirror table > thead > tr:first-child > td,
+.ProseMirror table > tbody > tr:first-child > td {
+  font-weight: 600;
+  background-color: hsl(var(--muted));
+}
+.dark .ProseMirror table > thead > tr:first-child > td,
+.dark .ProseMirror table > tbody > tr:first-child > td {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.ProseMirror table .selectedCell {
+  background-color: hsl(var(--accent));
+}
+
+/* Column resize handle */
+.ProseMirror table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: hsl(var(--primary));
+  cursor: col-resize;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.ProseMirror table td:hover .column-resize-handle,
+.ProseMirror table th:hover .column-resize-handle {
+  opacity: 1;
+}
+
+/* Confluence-style in-cell menu trigger. The plugin only emits it
+   for the cell that holds the cursor, so simply being present in the
+   DOM means "this is the active cell" — no extra visibility gating
+   is needed in CSS. */
+.ProseMirror table td,
+.ProseMirror table th {
+  position: relative;
+}
+.mobile-cell-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background) / 0.9);
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  z-index: 4;
+  user-select: none;
+  touch-action: manipulation;
+}
+.mobile-cell-menu-trigger:hover,
+.mobile-cell-menu-trigger:active {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+.dark .mobile-cell-menu-trigger {
+  background: hsl(var(--background) / 0.8);
+}
+
+/* Hide the external TableGripOverlay chevrons everywhere — the
+   in-cell ⋯ replaces them on every viewport, not just mobile.
+   They sit outside the table edge and clip on narrow widths AND
+   add visual noise on desktop where the chevron is redundant with
+   the in-cell trigger. */
+.table-grip-row,
+.table-grip-col {
+  display: none !important;
+}
+
+/* Mobile: hide the block-level [+] [⋮⋮] gutter entirely.
+   The handle lives ~24 px to the left of every block; on phones there
+   is no left margin to host it without colliding with the body text,
+   and touch devices don't have a hover state to gate the visibility.
+   The same actions are still available via NoteMenuBar overflow and
+   the slash-commands menu, so no functionality is lost. */
+@media (max-width: 1080px) {
+  .drag-handle-trigger,
+  .drag-handle-overlay {
+    display: none !important;
+  }
+}
+
+/* Mobile: collapse the top spacing on the page title.
+   Desktop reserves 2.25rem above the H1 so it sits visually below
+   the menu bar; on phones every pixel matters and the menu bar
+   already gives the H1 enough breathing room. Drop to 0 so the
+   title hugs the top of the editor body. */
+@media (max-width: 1080px) {
+  .ProseMirror > h1:first-of-type {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+  /* Desktop H1 is 2.25rem (36 px) — too large on phones where it
+     pushes the body text below the fold. 1.5rem (24 px) keeps the
+     hierarchy (H1 still visibly bigger than H2/body) while reclaiming
+     two rows worth of vertical space versus desktop. */
+  .ProseMirror h1 {
+    font-size: 1.5rem !important;
+    line-height: 1.2 !important;
+  }
+}
+
+/* Mobile: wider resize handle for touch + always visible */
+@media (max-width: 1080px) {
+  .ProseMirror table .column-resize-handle {
+    /* 18 px-wide invisible hit area extending past the cell edge, with
+       a 2 px visible stripe centred inside it. Apple HIG asks for 44 px
+       targets; we can't go that wide without overlapping neighbouring
+       cells, but 18 px gets us close on the side that matters (the
+       grab edge). */
+    width: 18px;
+    right: -9px;
+    opacity: 0.6;
+    background: hsl(var(--primary) / 0.4);
+  }
+
+  /* (Row / column grip styles were dropped — overlay no longer
+     renders those chevrons; the in-cell ⋮ trigger handles row /
+     column operations.) */
+
+  /* iOS Safari zooms in on any input/textarea/contenteditable that has
+     a computed font-size < 16 px when the user taps to focus. Our
+     compact `td/th` (line-height 1.4, font 0.875rem ≈ 14 px) triggers
+     it, which yanks the entire viewport scale and is the #1 mobile
+     table editing complaint. Bump cell text to exactly 16 px on
+     mobile — the zoom no longer fires. */
+  .ProseMirror table td,
+  .ProseMirror table th {
+    font-size: 16px;
+  }
+
+  /* When the mobile table toolbar (fixed bottom, ~48 px tall) is
+     mounted we want to keep the active cell scrollable above it.
+     Adding ProseMirror padding-bottom is too coarse — the toolbar only
+     exists while in a table — so we lift the editor's scroll padding
+     dynamically via JS; the rule here is the floor. */
+  .ProseMirror {
+    scroll-padding-bottom: 80px;
+  }
+}
+
+/* Utility: hide the horizontal scrollbar on the mobile table toolbar
+   while keeping wheel/touch scroll working. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Table grip handle buttons (Confluence-style) */
+.table-grip-row,
+.table-grip-col {
+  background: hsl(var(--muted));
+  border: 1px solid hsl(var(--border));
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.table-grip-row:hover,
+.table-grip-col:hover {
+  background: hsl(var(--accent));
+  opacity: 1 !important;
+}
+
+/* Row/column selection highlight (transparent blue) */
+.ProseMirror table .selectedCell {
+  background-color: hsl(var(--primary) / 0.12) !important;
+}
+
+.dark .ProseMirror table .selectedCell {
+  background-color: hsl(var(--primary) / 0.2) !important;
+}
+
+/* Grips hidden by default — visibility controlled by React hover state */
+
+/* Cell background color support */
+.ProseMirror table td[data-background],
+.ProseMirror table th[data-background] {
+  background-color: attr(data-background);
+}
+
+/* ========================================
+   IMAGES
+   ======================================== */
+
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+/* Dark mode image shadow - lighter for visibility */
+.dark .ProseMirror img {
+  box-shadow: 0 1px 3px 0 rgb(255 255 255 / 0.05), 0 1px 2px -1px rgb(255 255 255 / 0.03);
+}
+
+/* ========================================
+   HORIZONTAL RULE
+   ======================================== */
+
+.ProseMirror hr {
+  margin: 2rem 0;
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+}
+
+/* ========================================
+   CALLOUTS (Styled Alert Boxes)
+   ======================================== */
+
+.callout-wrapper {
+  margin: 1rem 0;
+  transition: all 0.2s ease;
+}
+
+.callout-wrapper:hover {
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+/* Dark mode callout shadow - lighter for visibility */
+.dark .callout-wrapper:hover {
+  box-shadow: 0 1px 3px 0 rgb(255 255 255 / 0.05), 0 1px 2px -1px rgb(255 255 255 / 0.03);
+}
+
+.callout-wrapper:hover button {
+  opacity: 1 !important;
+}
+
+/* ========================================
+   TOGGLE LISTS (Collapsible Sections)
+   ======================================== */
+
+.toggle-block {
+  margin: 0.5rem 0;
+}
+
+.toggle-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  cursor: pointer;
+  border-radius: 0.375rem;
+  transition: background-color 0.2s ease;
+  user-select: none;
+}
+
+.toggle-header:hover {
+  background-color: hsl(var(--accent));
+}
+
+.toggle-header:focus {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.toggle-summary {
+  font-weight: 500;
+  font-size: 0.875rem;
+  /* Editable label — keep caret-friendly spacing and don't let an
+     accidental block-level child squeeze the row. */
+  min-height: 1.25rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Placeholder shown via ::before when the summary is empty. Empty
+   state is signalled by data-empty='true' on the span (the React
+   NodeView sets it based on node.attrs.summary). content uses
+   attr(data-placeholder) so the localized label travels with the
+   node. */
+.toggle-summary[data-empty='true']::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  /* Make sure the placeholder doesn't intercept the caret — clicks
+     must land in the contentEditable span itself. */
+  pointer-events: none;
+  font-style: italic;
+}
+/* Once the user starts typing, hide the placeholder. The data-empty
+   flip from React handles this, but float-cleared :focus is a
+   belt-and-braces guard against stale state during fast typing. */
+.toggle-summary:focus[data-empty='true']::before {
+  opacity: 0.5;
+}
+
+.toggle-content {
+  padding-left: 1.5rem;
+  padding-top: 0.5rem;
+}
+
+/* Arrow rotation animation */
+.toggle-header svg {
+  transition: transform 0.2s ease;
+}
+
+/* ========================================
+   TASK LISTS
+   ======================================== */
+
+.ProseMirror ul[data-type="taskList"],
+.ProseMirror ul[data-type="taskList"] li {
+  /* Wipe browser + Tailwind `prose` defaults — both inject disc
+     markers that show up to the left of the checkbox and look like
+     a double bullet. !important is needed because `.prose ul` has
+     the same specificity bucket and ships in the same cascade
+     layer. */
+  list-style: none !important;
+  padding-left: 0 !important;
+}
+
+.ProseMirror ul[data-type="taskList"] li::marker,
+.ProseMirror ul[data-type="taskList"] li::before {
+  /* Belt-and-braces: some `prose` builds use ::before for the disc,
+     others use ::marker. Hide both so the only visible glyph is
+     the checkbox itself. */
+  content: none !important;
+  display: none !important;
+}
+
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  /* Slight negative margin pulls the checkbox a few px left so it
+     sits flush with the body text's left edge instead of sitting
+     inset like a nested item. */
+  margin-left: -0.25rem;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-right: 0.25rem;
+  user-select: none;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+}
+
+/* ========================================
+   PLACEHOLDER
+   ======================================== */
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  height: 0;
+}
+
+/* ========================================
+   DARK MODE OVERRIDES
+   ======================================== */
+
+.dark .ProseMirror {
+  color: hsl(var(--foreground));
+}
+
+.dark .ProseMirror pre {
+  background: #1e1e1e;
+  border-color: #3a3a3a;
+}
+
+/* ========================================
+   MERMAID DIAGRAMS - DARK MODE
+   ======================================== */
+
+/* Make all text white in dark mode by default */
+.dark .mermaid-preview svg text {
+  fill: #ffffff !important;
+}
+
+/* Keep text dark if it's in a group that contains a rect (text inside boxes) */
+.dark .mermaid-preview svg g:has(rect) > text {
+  fill: #000000 !important;
+}
+
+/* ========================================
+   COMMENT HIGHLIGHTS
+   ======================================== */
+
+/* Comment highlight mark */
+mark.comment-highlight {
+  background-color: rgba(251, 191, 36, 0.3); /* Amber/yellow highlight */
+  border-bottom: 2px solid rgba(251, 191, 36, 0.6);
+  color: #78350f; /* Dark amber text for contrast on yellow bg */
+  cursor: pointer;
+  padding: 2px 0;
+  border-radius: 2px;
+  transition: background-color 0.2s ease;
+}
+
+mark.comment-highlight:hover {
+  background-color: rgba(251, 191, 36, 0.5);
+  border-bottom-color: rgba(251, 191, 36, 0.8);
+  color: #78350f;
+}
+
+/* Resolved comment highlight - more subtle */
+mark.comment-highlight[data-resolved="true"] {
+  background-color: rgba(156, 163, 175, 0.2); /* Gray for resolved */
+  border-bottom: 2px solid rgba(156, 163, 175, 0.4);
+}
+
+mark.comment-highlight[data-resolved="true"]:hover {
+  background-color: rgba(156, 163, 175, 0.3);
+}
+
+/* Dark mode comment highlights */
+.dark mark.comment-highlight {
+  background-color: rgba(251, 191, 36, 0.25);
+  border-bottom-color: rgba(251, 191, 36, 0.5);
+}
+
+.dark mark.comment-highlight:hover {
+  background-color: rgba(251, 191, 36, 0.4);
+}
+
+.dark mark.comment-highlight[data-resolved="true"] {
+  background-color: rgba(156, 163, 175, 0.15);
+  border-bottom-color: rgba(156, 163, 175, 0.3);
+}
+
+/* General TipTap highlight mark — dark text on yellow/amber backgrounds for readability */
+.ProseMirror mark:not(.comment-highlight) {
+  color: #451a03 !important; /* amber-950 — always dark text on highlight backgrounds */
+}
+
+/* ========================================
+   CITATION MARK STYLES
+   ======================================== */
+
+cite.citation-mark {
+  font-style: italic;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+cite.citation-mark:hover {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+
+/* Small "open" indicator on hover */
+cite.citation-mark::after {
+  content: ' \2197'; /* ↗ arrow */
+  font-size: 0.75em;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+cite.citation-mark:hover::after {
+  opacity: 0.7;
+}
+
+/* Bibliography node */
+.bibliography-node {
+  margin-top: 2rem;
+}
+
+/* ========================================
+   CONFLUENCE-STYLE BLOCK FLOATING TOOLBAR
+   ======================================== */
+
+.block-floating-toolbar {
+  border-radius: 4px;
+  padding: 2px;
+  gap: 0;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+  max-width: calc(100vw - 16px);
+}
+
+/* Selected block highlight */
+.ProseMirror .block-selected {
+  background-color: hsl(var(--accent) / 0.3);
+  border-radius: 2px;
+}
+
+/* Responsive: stack AI buttons on small screens */
+@media (max-width: 640px) {
+  .block-floating-toolbar {
+    flex-wrap: wrap;
+    max-width: calc(100vw - 16px);
+  }
+}
+
+/* Mobile: tighter uniform padding */
+@media (max-width: 1080px) {
+  :root {
+    --editor-gutter-width: 12px;
+  }
+}

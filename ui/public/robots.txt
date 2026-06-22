@@ -1,0 +1,15 @@
+# Scrapalot — https://scrapalot.app
+# AI agents and crawlers are welcome. See /llms.txt for a structured summary.
+
+User-agent: *
+Allow: /
+
+# Private / authenticated app surfaces — not for indexing
+Disallow: /dashboard
+Disallow: /workspaces
+Disallow: /login
+Disallow: /invite
+Disallow: /delete-account
+Disallow: /shared/
+
+Sitemap: https://scrapalot.app/sitemap.xml

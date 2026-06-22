@@ -1,0 +1,78 @@
+# Migration 104: note_versions named-snapshot extension.
+#
+# Adds first-class support for user-saved "named" versions on top of the
+# auto-snapshots already produced on every updateNote() call. The new
+# columns are nullable / have safe defaults so existing rows keep their
+# meaning unchanged (kind='auto', label/message NULL).
+#
+#   kind               'auto' | 'named' | 'restore'
+#   label              short user-supplied tag, e.g. "Pre-revision draft"
+#   message            optional commit-message-style description
+#   parent_version_id  for kind='restore', the version we restored TO
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 104-note-versions-named-columns
+      author: scrapalot
+      labels: notes,versioning
+      comment: "Add kind/label/message/parent_version_id to note_versions"
+      preConditions:
+        - onFail: MARK_RAN
+        - and:
+          - tableExists:
+              tableName: note_versions
+              schemaName: scrapalot
+          - not:
+              - columnExists:
+                  tableName: note_versions
+                  schemaName: scrapalot
+                  columnName: kind
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: note_versions
+            columns:
+              - column:
+                  name: kind
+                  type: varchar(16)
+                  defaultValue: auto
+                  constraints:
+                    nullable: false
+              - column:
+                  name: label
+                  type: varchar(120)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: message
+                  type: text
+                  constraints:
+                    nullable: true
+              - column:
+                  name: parent_version_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+
+  - changeSet:
+      id: 104-note-versions-named-index
+      author: scrapalot
+      labels: notes,versioning
+      comment: "Composite index for filtering version list by kind"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - indexExists:
+                indexName: idx_note_versions_note_kind
+                schemaName: scrapalot
+      changes:
+        - createIndex:
+            schemaName: scrapalot
+            tableName: note_versions
+            indexName: idx_note_versions_note_kind
+            columns:
+              - column:
+                  name: note_id
+              - column:
+                  name: kind

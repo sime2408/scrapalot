@@ -1,0 +1,127 @@
+# Migration 107: user_document_ratings
+# (Document Quality Rating / ReadCube Papers pattern).
+#
+# One row per (user, document) — rated 1..5. Optional `notes` lets the
+# user record "why X stars" for their own future reference. The rating
+# is intentionally per-user, not per-document: each researcher rates
+# documents based on their own use, and a document a teammate dismissed
+# with 1 star may be 5-star for someone else.
+#
+# Documents themselves are owned by Python (Postgres + pgvector); ratings
+# sit Kotlin-side because they're user-facing data that mutates often.
+#
+# Future hook (not in v1): retrieval boost
+# multiplier `(1.0 + 0.05 * (rating - 3))` applied to chunk scores at
+# RAG time. v1 ships the schema + UI only; the retrieval-side boost
+# lands in a follow-up once we have signal on rating density.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 107-create-user-document-ratings
+      author: scrapalot
+      labels: documents,personalization,ratings
+      comment: "Per-user 1..5 rating on documents"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: user_document_ratings
+                schemaName: scrapalot
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: user_document_ratings
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_udr_user
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: document_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: workspace_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: rating
+                  type: SMALLINT
+                  constraints:
+                    nullable: false
+                  remarks: "1..5; CHECK constraint added separately"
+              - column:
+                  name: notes
+                  type: VARCHAR(500)
+                  constraints:
+                    nullable: true
+                  remarks: "Optional 'why X stars' note, user-private"
+              - column:
+                  name: rated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            schemaName: scrapalot
+            tableName: user_document_ratings
+            columnNames: user_id, document_id
+            constraintName: uq_udr_user_document
+        - createIndex:
+            schemaName: scrapalot
+            tableName: user_document_ratings
+            indexName: idx_udr_user_workspace
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: workspace_id
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: user_document_ratings
+
+  - changeSet:
+      id: 107-add-user-document-ratings-check
+      author: scrapalot
+      labels: documents,personalization,ratings
+      comment: "Constrain rating to 1..5"
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: 0
+            sql: |
+              SELECT COUNT(*) FROM information_schema.check_constraints
+              WHERE constraint_schema = 'scrapalot'
+                AND constraint_name = 'user_document_ratings_rating_check'
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE scrapalot.user_document_ratings
+              ADD CONSTRAINT user_document_ratings_rating_check
+              CHECK (rating BETWEEN 1 AND 5);
+      rollback:
+        - sql: |
+            ALTER TABLE scrapalot.user_document_ratings
+            DROP CONSTRAINT IF EXISTS user_document_ratings_rating_check;

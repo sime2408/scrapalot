@@ -1,0 +1,295 @@
+/* Scrapalot Swagger UI Custom Styles - Docs-inspired Design */
+
+/* Body background */
+body {
+  background: black !important;
+}
+
+:root {
+  /* Scrapalot Colors - Blue gradient palette */
+  --scrapalot-primary: #3B82F6;
+  --scrapalot-header-bg: #1F2937;          /* Dark grey header */
+  --scrapalot-bg-gradient-from: #EFF6FF;    /* Light blue */
+  --scrapalot-bg-gradient-to: #DBEAFE;      /* Slightly darker blue */
+  --scrapalot-card-bg: #41444e;             /* Grey cards */
+  --scrapalot-card-text: #B8BDC9;           /* Light grey text on cards */
+  --scrapalot-border: #E4E4E7;              /* Light borders */
+  --scrapalot-section-header: #262b32;      /* Dark section headers */
+}
+
+/* Black header with white logo */
+.swagger-ui .topbar {
+  background-color: var(--scrapalot-header-bg) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  padding: 10px 20px !important;
+}
+
+.swagger-ui .topbar .topbar-wrapper {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+/* Hide default OpenAPI logo */
+.swagger-ui .topbar .topbar-wrapper a {
+  display: none !important;
+}
+
+/* White logo on dark header */
+.swagger-ui .topbar .topbar-wrapper::before {
+  content: '' !important;
+  display: block !important;
+  width: 180px !important;
+  height: 40px !important;
+  background-image: url('https://scrapalot.app/logo-black.svg') !important;
+  background-size: contain !important;
+  background-repeat: no-repeat !important;
+  background-position: left center !important;
+  filter: invert(1) !important; /* White logo on dark background */
+}
+
+/* Blue gradient background for main content */
+.swagger-ui .wrapper {
+}
+
+/* Info section - grey card with light text */
+.swagger-ui .info {
+  margin: 30px 0 !important;
+  
+  padding: 20px !important;
+  border-radius: 4px !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+.swagger-ui .info .title {
+  color: #FFFFFF !important;
+  font-size: 32px !important;
+  font-weight: 700 !important;
+}
+
+.swagger-ui .info .description,
+.swagger-ui .info p,
+.swagger-ui .info li,
+.swagger-ui .info table {
+  color: var(--scrapalot-card-text) !important;
+}
+
+/* Operation blocks - grey cards */
+.swagger-ui .opblock {
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-radius: 4px !important;
+  margin-bottom: 10px !important;
+  background-color: var(--scrapalot-card-bg) !important;
+}
+
+.swagger-ui .opblock .opblock-summary {
+  border: none !important;
+}
+
+.swagger-ui .opblock-body {
+  background-color: var(--scrapalot-card-bg) !important;
+}
+
+/* Section headers - darker background */
+.swagger-ui .opblock .opblock-section-header {
+  background-color: var(--scrapalot-section-header) !important;
+  border: none !important;
+}
+
+.swagger-ui .opblock .opblock-section-header h4,
+.swagger-ui .opblock .opblock-section-header label {
+  color: var(--scrapalot-card-text) !important;
+}
+
+/* Scheme container - dark background */
+.swagger-ui .scheme-container {
+  background-color: var(--scrapalot-section-header) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  padding: 12px !important;
+  border-radius: 4px !important;
+}
+
+.swagger-ui .scheme-container .schemes > label {
+  color: var(--scrapalot-card-text) !important;
+}
+
+/* HTTP method colors with subtle backgrounds */
+.swagger-ui .opblock.opblock-post .opblock-summary {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  border-left: 4px solid var(--scrapalot-primary) !important;
+}
+
+.swagger-ui .opblock.opblock-get .opblock-summary {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  border-left: 4px solid #10B981 !important;
+}
+
+.swagger-ui .opblock.opblock-put .opblock-summary {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  border-left: 4px solid #F59E0B !important;
+}
+
+.swagger-ui .opblock.opblock-delete .opblock-summary {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  border-left: 4px solid #EF4444 !important;
+}
+
+/* Operation paths and descriptions - light text */
+.swagger-ui .opblock-summary-path,
+.swagger-ui .opblock-summary-description {
+  color: var(--scrapalot-card-text) !important;
+}
+
+/* Primary Button Colors */
+.swagger-ui .btn.authorize,
+.swagger-ui .btn.execute {
+  background-color: var(--scrapalot-primary) !important;
+  border-color: var(--scrapalot-primary) !important;
+  color: white !important;
+}
+
+.swagger-ui .btn.authorize:hover,
+.swagger-ui .btn.execute:hover {
+  background-color: #2563EB !important;
+  border-color: #2563EB !important;
+}
+
+/* Response/Request Body */
+.swagger-ui .responses-wrapper,
+.swagger-ui .request-url {
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-radius: 4px !important;
+  background-color: var(--scrapalot-card-bg) !important;
+}
+
+/* Model Box */
+.swagger-ui .model-box {
+  background-color: var(--scrapalot-section-header) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-radius: 4px !important;
+}
+
+.swagger-ui .model-box .model-title,
+.swagger-ui .model .property {
+  color: var(--scrapalot-card-text) !important;
+}
+
+/* Tables and parameters - light text */
+.swagger-ui table thead tr th,
+.swagger-ui table tbody tr td {
+  color: var(--scrapalot-card-text) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.swagger-ui table thead tr th {
+  background-color: var(--scrapalot-section-header) !important;
+}
+
+/* Select Dropdown */
+.swagger-ui select {
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+  border-radius: 4px !important;
+  color: var(--scrapalot-card-text) !important;
+  background-color: var(--scrapalot-section-header) !important;
+}
+
+/* Input fields */
+.swagger-ui input[type="text"],
+.swagger-ui input[type="password"],
+.swagger-ui textarea {
+  color: var(--scrapalot-card-text) !important;
+  background-color: var(--scrapalot-section-header) !important;
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Code blocks - dark background with light text */
+.swagger-ui pre,
+.swagger-ui code {
+  background-color: #1F2937 !important;
+  color: #E4E4E7 !important;
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Operation method badges */
+.swagger-ui .opblock-summary-method {
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+}
+
+/* Response codes */
+.swagger-ui .response-col_status {
+  color: var(--scrapalot-card-text) !important;
+}
+
+/* Authorize Modal */
+.swagger-ui .dialog-ux .modal-ux-content {
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+  border-radius: 4px !important;
+  background-color: var(--scrapalot-card-bg) !important;
+}
+
+.swagger-ui .dialog-ux .modal-ux-header {
+  background-color: var(--scrapalot-section-header) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.swagger-ui .dialog-ux .modal-ux-header h3 {
+  color: #FFFFFF !important;
+}
+
+/* Parameters and body description */
+.swagger-ui .parameter__name,
+.swagger-ui .parameter__type {
+  color: var(--scrapalot-card-text) !important;
+}
+
+/* Sharp corners (Scrapalot design system) */
+.swagger-ui .opblock,
+.swagger-ui .model-box,
+.swagger-ui select,
+.swagger-ui button,
+.swagger-ui input,
+.swagger-ui .dialog-ux .modal-ux-content {
+  border-radius: 4px !important;
+}
+
+/* Focus States */
+.swagger-ui button:focus,
+.swagger-ui select:focus,
+.swagger-ui input:focus {
+  outline: 2px solid var(--scrapalot-primary) !important;
+  outline-offset: 2px !important;
+}
+
+/* Dark Theme Support */
+@media (prefers-color-scheme: dark) {
+/* Body background */
+body {
+  background: black !important;
+}
+
+  :root {
+    --scrapalot-header-bg: #09090B;
+    --scrapalot-bg-gradient-from: #18181B;
+    --scrapalot-bg-gradient-to: #27272A;
+    --scrapalot-card-bg: #27272A;
+    --scrapalot-card-text: #A1A1AA;
+    --scrapalot-section-header: #18181B;
+  }
+
+  .swagger-ui .wrapper {
+  }
+}
+
+/* Override default Swagger UI text color #3b4151 with lighter #6a738d */
+.swagger-ui .parameters-col_description,
+.swagger-ui .response-col_description,
+.swagger-ui .model-box-control,
+.swagger-ui .prop-format,
+.swagger-ui .renderedMarkdown p,
+.swagger-ui .markdown p,
+.swagger-ui .parameter__name.required span,
+.swagger-ui .tab li,
+.swagger-ui label {
+  color: #6a738d !important;
+}

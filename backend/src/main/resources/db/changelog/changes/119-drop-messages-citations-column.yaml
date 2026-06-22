@@ -1,0 +1,34 @@
+# Migration 119: drop the vestigial messages.citations column
+#
+# `messages` has had a dedicated `citations` jsonb column since early on, but it
+# is dead: nothing writes it (ChatService.convertToNdjsonFlux collects citations
+# into metadata["citations"] and updateAssistantMessage saves them to the
+# `metadata` column), and nothing reads it for the live product — the frontend
+# renders from `message_metadata.citations` (chat-message.tsx), and the only
+# entity-field reference (MessageRepository.findBySessionIdWithCitations,
+# `WHERE m.citations IS NOT NULL`) has zero callers and always returned empty
+# because the column is always NULL.
+#
+# Removing the column (always NULL → no data loss) along with the orphaned
+# entity field + dead repository method. Citations continue to live in
+# metadata.citations exactly as before. Rollback re-adds the empty column.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 119-drop-messages-citations-column
+      author: scrapalot
+      labels: cleanup,messages
+      comment: "Drop the dead messages.citations column (always NULL; live citations live in metadata.citations)"
+      changes:
+        - sql:
+            dbms: postgresql
+            splitStatements: false
+            sql: |
+              ALTER TABLE scrapalot.messages DROP COLUMN IF EXISTS citations;
+      rollback:
+        - sql:
+            dbms: postgresql
+            splitStatements: false
+            sql: |
+              ALTER TABLE scrapalot.messages ADD COLUMN IF NOT EXISTS citations jsonb;

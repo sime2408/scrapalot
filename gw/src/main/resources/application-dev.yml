@@ -1,0 +1,22 @@
+# Development environment configuration
+# Overrides default Docker service names with localhost URLs
+
+# Environment variable defaults for development
+BACKEND_URL: http://localhost:8091
+CHAT_URL: http://localhost:8090
+WEBSOCKET_URL: ws://localhost:8090
+
+spring:
+  redis:
+    host: localhost
+    port: 6379
+
+# More verbose logging for development
+logging:
+  level:
+    root: INFO
+    com.scrapalot.gateway: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.security: DEBUG
+    reactor.netty: INFO
+    io.netty: INFO

@@ -1,0 +1,47 @@
+# Migration 110: GIN tsvector index on scrapalot.annotations.comment
+#
+# Adds a generated tsvector column over `comment` plus a GIN index so
+# the new SearchAnnotations endpoint can run `comment_tsv @@ to_tsquery(...)`
+# in O(log N). LIKE/ILIKE queries on a TEXT column scan the whole table
+# and quickly become unusable on collections with thousands of comments.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 110-annotation-comment-tsvector
+      author: scrapalot
+      labels: annotations,search,fulltext
+      comment: "tsvector + GIN index on annotations.comment for SearchAnnotations"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: annotations
+                schemaName: scrapalot
+                columnName: comment_tsv
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE scrapalot.annotations
+              ADD COLUMN comment_tsv tsvector
+              GENERATED ALWAYS AS (
+                to_tsvector('simple', coalesce(comment, ''))
+              ) STORED;
+            stripComments: true
+        - createIndex:
+            schemaName: scrapalot
+            tableName: annotations
+            indexName: idx_annotations_comment_tsv
+            using: gin
+            columns:
+              - column:
+                  name: comment_tsv
+      rollback:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: annotations
+            indexName: idx_annotations_comment_tsv
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: annotations
+            columnName: comment_tsv

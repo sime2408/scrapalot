@@ -1,0 +1,46 @@
+# Migration 120: collections.description_user_edited
+#
+# The collection description doubles as a continuously-refreshed "memory":
+# a Python background job synthesizes the per-book summaries into a bounded
+# digest and publishes it on the scrapalot:stream:collection_summary Redis
+# stream; the backend consumer writes it to collections.description.
+#
+# This flag protects a user-owned description: it flips to TRUE the moment a
+# user manually edits the description, and the auto digest is applied only
+# while it is FALSE. Pre-existing rows default to FALSE (auto-managed).
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 120-add-collections-description-user-edited
+      author: scrapalot
+      labels: collections,collection-memory,rag
+      comment: "Add description_user_edited flag so the auto collection-memory digest never overwrites a manually edited description"
+      preConditions:
+        - onFail: MARK_RAN
+        - and:
+          - tableExists:
+              tableName: collections
+              schemaName: scrapalot
+          - not:
+              - columnExists:
+                  tableName: collections
+                  schemaName: scrapalot
+                  columnName: description_user_edited
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: collections
+            columns:
+              - column:
+                  name: description_user_edited
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+                  remarks: "TRUE once a user manually edits the description; while FALSE the auto collection-memory digest may refresh it."
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: collections
+            columnName: description_user_edited

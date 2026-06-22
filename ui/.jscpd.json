@@ -1,0 +1,29 @@
+{
+  "threshold": 3,
+  "minLines": 3,
+  "minTokens": 30,
+  "ignore": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/*.d.ts",
+    "**/coverage/**"
+  ],
+  "reporters": [
+    "console",
+    "consoleFull"
+  ],
+  "format": [
+    "typescript",
+    "javascript",
+    "jsx",
+    "tsx",
+    "css",
+    "scss"
+  ],
+  "blame": false,
+  "absolute": true,
+  "verbose": true
+}

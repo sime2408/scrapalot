@@ -1,0 +1,43 @@
+# Production environment configuration
+
+spring:
+  cloud:
+    gateway:
+      # Production uses Docker service names (scrapalot-chat, scrapalot-backend)
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "https://scrapalot.app"
+              - "https://www.scrapalot.app"
+            allowedMethods:
+              - GET
+              - HEAD
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            exposedHeaders:
+              - Authorization
+              - X-Total-Count
+              - X-User-ID
+              - X-User-Role
+              - X-Subscription-Tier
+            allowCredentials: true
+            maxAge: 3600
+
+  redis:
+    host: redis
+    port: 6379
+    password: ${REDIS_PASSWORD}
+
+# Reduced logging for production
+logging:
+  level:
+    root: WARN
+    com.scrapalot.gateway: INFO
+    org.springframework.cloud.gateway: INFO
+    org.springframework.security: INFO

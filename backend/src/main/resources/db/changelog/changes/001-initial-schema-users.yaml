@@ -1,0 +1,159 @@
+# Migration 001: Users Table
+# Based on: Alembic 00001_initial_schema.py (users table)
+# Purpose: Authentication and user management
+
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-users-table
+      author: liquibase-auto
+      labels: core,users
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: users
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: users
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_users
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: username
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: true
+                    unique: true
+                    uniqueConstraintName: uq_users_username
+              - column:
+                  name: email
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: true
+                    unique: true
+                    uniqueConstraintName: uq_users_email
+              - column:
+                  name: password
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: first_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: last_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: profile_picture
+                  type: VARCHAR(500)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: role
+                  type: VARCHAR(20)
+                  defaultValue: user
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_external
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: license_agreement_consent
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content_sharing_consent
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: users
+
+  - changeSet:
+      id: 001-create-users-indexes
+      author: liquibase-auto
+      labels: core,users,indexes
+      changes:
+        - createIndex:
+            schemaName: scrapalot
+            tableName: users
+            indexName: idx_users_username
+            columns:
+              - column:
+                  name: username
+        - createIndex:
+            schemaName: scrapalot
+            tableName: users
+            indexName: idx_users_email
+            columns:
+              - column:
+                  name: email
+        - createIndex:
+            schemaName: scrapalot
+            tableName: users
+            indexName: idx_users_first_name
+            columns:
+              - column:
+                  name: first_name
+        - createIndex:
+            schemaName: scrapalot
+            tableName: users
+            indexName: idx_users_last_name
+            columns:
+              - column:
+                  name: last_name
+
+      rollback:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: users
+            indexName: idx_users_username
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: users
+            indexName: idx_users_email
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: users
+            indexName: idx_users_first_name
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: users
+            indexName: idx_users_last_name

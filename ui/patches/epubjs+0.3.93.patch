@@ -1,0 +1,12 @@
+diff --git a/node_modules/epubjs/src/section.js b/node_modules/epubjs/src/section.js
+index aa61310..5d2f599 100644
+--- a/node_modules/epubjs/src/section.js
++++ b/node_modules/epubjs/src/section.js
+@@ -260,6 +260,7 @@ class Section {
+ 
+ 		//-- Get the chapter's display type
+ 		this.properties.forEach(function(prop){
++			if (!prop) return; // Skip null/undefined properties
+ 			var rendition = prop.replace("rendition:", "");
+ 			var split = rendition.indexOf("-");
+ 			var property, value;

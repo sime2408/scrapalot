@@ -1,0 +1,188 @@
+syntax = "proto3";
+
+// Scrapalot Bridge API - Authentication Service
+// Version: 1.0.0
+// Last Updated: 2026-01-31
+//
+// Handles user authentication, registration, OAuth, JWT tokens, and API keys.
+// Both Python (scrapalot-chat) and Kotlin (scrapalot-backend) must use
+// matching versions of these proto files.
+
+package scrapalot.auth;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.auth";
+option java_outer_classname = "AuthServiceProto";
+
+// Authentication Service
+// Handles login, registration, OAuth, JWT tokens, and API keys
+service AuthService {
+  // User login with username/email and password
+  rpc Login(LoginRequest) returns (TokenResponse);
+
+  // User registration
+  rpc Register(RegisterRequest) returns (TokenResponse);
+
+  // OAuth authentication (Google)
+  rpc OAuthLogin(OAuthRequest) returns (TokenResponse);
+
+  // Refresh access token
+  rpc RefreshToken(RefreshTokenRequest) returns (TokenResponse);
+
+  // Validate JWT token
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+
+  // Get current authenticated user
+  rpc GetCurrentUser(common.UUID) returns (UserInfo);
+
+  // Get user by username or email
+  rpc GetUserByUsername(GetUserByUsernameRequest) returns (UserInfo);
+
+  // Subscription Management
+  rpc GetUserSubscriptionTier(GetUserSubscriptionTierRequest) returns (SubscriptionTierResponse);
+
+  // API Key Management
+  rpc CreateAPIKey(CreateAPIKeyRequest) returns (APIKeyResponse);
+  rpc ListAPIKeys(common.UUID) returns (APIKeyListResponse);
+  rpc ToggleAPIKey(ToggleAPIKeyRequest) returns (common.StatusResponse);
+  rpc DeleteAPIKey(DeleteAPIKeyRequest) returns (common.StatusResponse);
+  rpc ValidateAPIKey(ValidateAPIKeyRequest) returns (ValidateAPIKeyResponse);
+}
+
+// Login request
+message LoginRequest {
+  string username_or_email = 1;
+  string password = 2;
+}
+
+// Register request
+message RegisterRequest {
+  string username = 1;
+  string email = 2;
+  string password = 3;
+  bool license_agreement_consent = 4;
+}
+
+// OAuth request
+message OAuthRequest {
+  string provider = 1; // "google", "github", etc.
+  string code = 2;
+  string redirect_uri = 3;
+}
+
+// Refresh token request
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+// Validate token request
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+// Validate token response
+message ValidateTokenResponse {
+  bool valid = 1;
+  common.UUID user_id = 2;
+  string username = 3;
+  string email = 4;
+  string role = 5;
+  common.Timestamp expires_at = 6;
+}
+
+// Token response
+message TokenResponse {
+  common.UUID user_id = 1;
+  string username = 2;
+  string email = 3;
+  string role = 4;
+  string access_token = 5;
+  string refresh_token = 6;
+  int64 expires_in = 7; // seconds
+}
+
+// Get user by username request
+message GetUserByUsernameRequest {
+  string username = 1; // Can be username or email
+}
+
+// User info
+message UserInfo {
+  common.UUID id = 1;
+  string username = 2;
+  string email = 3;
+  string role = 4;
+  bool is_active = 5;
+  bool license_agreement_consent = 6;
+  common.Timestamp created_at = 7;
+  common.Timestamp updated_at = 8;
+}
+
+// API Key Management
+message CreateAPIKeyRequest {
+  common.UUID user_id = 1;
+  string name = 2;
+  optional common.Timestamp expires_at = 3;
+}
+
+message APIKeyResponse {
+  common.UUID id = 1;
+  string name = 2;
+  string key = 3; // Only returned on creation
+  string prefix = 4;
+  common.Timestamp created_at = 5;
+  optional common.Timestamp expires_at = 6;
+  optional common.Timestamp last_used_at = 7;
+  bool is_active = 8;
+}
+
+message APIKeyListResponse {
+  repeated APIKeyInfo keys = 1;
+}
+
+message APIKeyInfo {
+  common.UUID id = 1;
+  string name = 2;
+  string prefix = 3;
+  common.Timestamp created_at = 4;
+  optional common.Timestamp expires_at = 5;
+  optional common.Timestamp last_used_at = 6;
+  bool is_active = 7;
+}
+
+message ToggleAPIKeyRequest {
+  common.UUID user_id = 1;
+  common.UUID key_id = 2;
+}
+
+message DeleteAPIKeyRequest {
+  common.UUID user_id = 1;
+  common.UUID key_id = 2;
+}
+
+message ValidateAPIKeyRequest {
+  string api_key = 1;
+}
+
+message ValidateAPIKeyResponse {
+  bool valid = 1;
+  common.UUID user_id = 2;
+  common.UUID key_id = 3;
+}
+
+// Subscription Tier Request/Response
+message GetUserSubscriptionTierRequest {
+  oneof identifier {
+    common.UUID user_id = 1;
+    string username = 2;  // Can be username or email
+  }
+}
+
+message SubscriptionTierResponse {
+  string tier = 1;  // 'researcher', 'professional', 'enterprise'
+  bool is_active = 2;
+  optional common.Timestamp subscribed_at = 3;
+  optional common.Timestamp expires_at = 4;
+}

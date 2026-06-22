@@ -1,0 +1,41 @@
+# Migration 118: backfill settings_general rows for legacy users
+#
+# Production observed users in `users` with NO matching `settings_general`
+# row in `user_settings` (the maintainer himself — `simun.sunjic@gmail.com`).
+# Without the row, auth-context.tsx's applyLocaleFromGeneralSettings cannot
+# pin the UI locale on login, the i18next browser detector falls back to
+# "en", and Whisper force-decodes Croatian voice as English.
+#
+# Every current creation path (AuthService.register / registerOrLoginWithOAuth
+# / registerAdmin) already seeds the row via createDefaultSettings(); a
+# defensive ensureGeneralSettings() guard now also runs at login. This
+# migration closes the gap for accounts that predate both.
+#
+# Seed value matches config-new-users.yaml's general_settings block so the
+# backfilled row looks identical to a fresh signup.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 118-backfill-settings-general
+      author: scrapalot
+      labels: settings,backfill
+      comment: "Backfill missing settings_general rows for users created before the seed flow existed"
+      changes:
+        - sql:
+            dbms: postgresql
+            splitStatements: false
+            sql: |
+              INSERT INTO scrapalot.user_settings (id, user_id, setting_key, setting_value, created_at, updated_at)
+              SELECT
+                gen_random_uuid(),
+                u.id,
+                'settings_general',
+                '{"language": "en", "rag_strategy": "similarity_search", "rag_orchestrator": "EnhancedTriModalOrchestrator", "use_orchestrator": true, "use_agentic_routing": false, "theme": "system"}'::jsonb,
+                NOW(),
+                NOW()
+              FROM scrapalot.users u
+              WHERE NOT EXISTS (
+                SELECT 1 FROM scrapalot.user_settings s
+                WHERE s.user_id = u.id AND s.setting_key = 'settings_general'
+              );

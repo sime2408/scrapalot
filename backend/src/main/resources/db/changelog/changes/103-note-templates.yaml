@@ -1,0 +1,118 @@
+# Migration 103: note_templates — user-created templates saved via the
+# Notes editor's "Save as new template" menu item. System templates
+# (Academic IMRaD, Medium article, Peer review, etc.) stay in the
+# frontend catalog for now — we only persist templates the user
+# explicitly creates.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 103-create-note-templates
+      author: scrapalot
+      labels: notes,templates
+      comment: "Create note_templates table for user-created notes templates"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: note_templates
+                schemaName: scrapalot
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: note_templates
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              # Workspace scope — null means visible across all of the
+              # user's workspaces. Non-null restricts to one.
+              - column:
+                  name: workspace_id
+                  type: uuid
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: category
+                  type: VARCHAR(32)
+              - column:
+                  name: expected_word_count
+                  type: VARCHAR(32)
+              - column:
+                  name: icon
+                  type: VARCHAR(64)
+              # Full markdown skeleton body — no size cap on TEXT.
+              - column:
+                  name: skeleton
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              # Optional seed Research Context (webSearchEnabled,
+              # agenticRoutingEnabled). Kept loose JSONB so frontend
+              # NoteTemplate.defaultResearchContext shape can evolve.
+              - column:
+                  name: default_research_context
+                  type: JSONB
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: note_templates
+            baseColumnNames: user_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_note_templates_user
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: note_templates
+            baseColumnNames: workspace_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: workspaces
+            referencedColumnNames: id
+            constraintName: fk_note_templates_workspace
+            onDelete: CASCADE
+        - createIndex:
+            schemaName: scrapalot
+            tableName: note_templates
+            indexName: idx_note_templates_user
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: note_templates
+            indexName: idx_note_templates_workspace
+            columns:
+              - column:
+                  name: workspace_id
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: note_templates

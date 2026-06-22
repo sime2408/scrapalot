@@ -1,0 +1,35 @@
+<tr>
+  <td style="background:linear-gradient(135deg,#2563eb 0%,#3b82f6 100%);padding:48px 40px;text-align:center;">
+    <div style="width:64px;height:64px;margin:0 auto 20px;background:rgba(255,255,255,0.15);border-radius:50%;line-height:64px;font-size:28px;">📚</div>
+    <h1 style="color:#ffffff;margin:0;font-size:28px;font-weight:800;letter-spacing:-0.5px;">A workspace was shared with you</h1>
+    <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:15px;">You now have access to a shared library on Scrapalot AI</p>
+  </td>
+</tr>
+<tr>
+  <td style="padding:40px;">
+    <p style="color:#fafafa;font-size:15px;line-height:1.7;margin:0 0 16px;">{{greeting}}</p>
+    <p style="color:#a1a1aa;font-size:15px;line-height:1.7;margin:0 0 24px;">
+      <strong style="color:#fafafa;">{{sharerName}}</strong> shared the workspace
+      <strong style="color:#3b82f6;">{{workspaceName}}</strong> with you. Open Scrapalot AI and switch
+      to it to browse the shared documents, collections, and team chat.
+    </p>
+
+    <!-- Access level -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
+      <tr><td style="background:#172554;border:1px solid #2563eb;padding:16px 20px;">
+        <p style="color:#93c5fd;font-size:13px;margin:0;">🔑 Your access level: <strong style="color:#bfdbfe;">{{permissionLabel}}</strong></p>
+      </td></tr>
+    </table>
+
+    <!-- CTA -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td align="center" style="padding:0 0 24px;">
+        <a href="{{openUrl}}" style="display:inline-block;background:#3b82f6;color:#ffffff;padding:16px 48px;text-decoration:none;font-weight:700;font-size:16px;letter-spacing:0.3px;">Open Workspace →</a>
+      </td></tr>
+    </table>
+
+    <p style="color:#71717a;font-size:12px;text-align:center;margin:0;">
+      Or copy this link: <a href="{{openUrl}}" style="color:#3b82f6;word-break:break-all;">{{openUrl}}</a>
+    </p>
+  </td>
+</tr>

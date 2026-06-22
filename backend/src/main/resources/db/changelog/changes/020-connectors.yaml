@@ -1,0 +1,19 @@
+# Migration 020: External Connectors (Stub)
+# Real migration moved to: 050-connectors.yaml
+# This stub is kept for changelog history compatibility
+
+databaseChangeLog:
+  - changeSet:
+      id: 020-connectors-stub
+      author: liquibase-auto
+      labels: connectors,stub
+      changes:
+        - tagDatabase:
+            tag: connectors-placeholder
+
+      rollback:
+        - sql:
+            sql: "-- Stub only, no changes to rollback"
+
+# NOTE: Connector tables are now created in 050-connectors.yaml
+# This stub is preserved for migration history compatibility

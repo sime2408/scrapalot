@@ -1,0 +1,32 @@
+# Migration 051: Add is_resolved column to note_comments
+# Purpose: Support comment resolution feature in notes collaboration
+
+databaseChangeLog:
+  - changeSet:
+      id: 051-add-is-resolved-to-note-comments
+      author: liquibase-auto
+      labels: notes,collaboration
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: note_comments
+                columnName: is_resolved
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: note_comments
+            columns:
+              - column:
+                  name: is_resolved
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: note_comments
+            columnName: is_resolved

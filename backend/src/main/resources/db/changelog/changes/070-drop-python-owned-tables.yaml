@@ -1,0 +1,97 @@
+# Migration 070: Drop Python-owned connector tables
+# These tables are owned and managed by Python AI backend.
+# Kotlin was keeping schema-only copies for FK integrity, but this
+# is no longer needed — file sync listing now goes through gRPC proxy.
+
+databaseChangeLog:
+  # 1. Drop FK constraint from connectors → connector_credentials
+  - changeSet:
+      id: 070-drop-connector-credentials-fk
+      author: liquibase-auto
+      labels: cleanup,connectors
+      preConditions:
+        - onFail: MARK_RAN
+        - foreignKeyConstraintExists:
+            schemaName: scrapalot
+            foreignKeyName: fk_connectors_credential_id
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: connectors
+            constraintName: fk_connectors_credential_id
+
+  # 2. Drop index on credential_id (no longer FK)
+  - changeSet:
+      id: 070-drop-credential-id-index
+      author: liquibase-auto
+      labels: cleanup,connectors
+      preConditions:
+        - onFail: MARK_RAN
+        - indexExists:
+            schemaName: scrapalot
+            indexName: idx_connectors_credential_id
+      changes:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: connectors
+            indexName: idx_connectors_credential_id
+
+  # 3. Drop connector_file_syncs (Python-owned, now served via gRPC proxy)
+  - changeSet:
+      id: 070-drop-connector-file-syncs
+      author: liquibase-auto
+      labels: cleanup,connectors
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            schemaName: scrapalot
+            tableName: connector_file_syncs
+      changes:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: connector_file_syncs
+
+  # 4. Drop connector_oauth_states (Python-owned OAuth flow state)
+  - changeSet:
+      id: 070-drop-connector-oauth-states
+      author: liquibase-auto
+      labels: cleanup,connectors
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            schemaName: scrapalot
+            tableName: connector_oauth_states
+      changes:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: connector_oauth_states
+
+  # 5. Drop connector_sync_jobs (Python-owned job execution)
+  - changeSet:
+      id: 070-drop-connector-sync-jobs
+      author: liquibase-auto
+      labels: cleanup,connectors
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            schemaName: scrapalot
+            tableName: connector_sync_jobs
+      changes:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: connector_sync_jobs
+
+  # 6. Drop connector_credentials (Python-owned, after FK removed)
+  - changeSet:
+      id: 070-drop-connector-credentials
+      author: liquibase-auto
+      labels: cleanup,connectors
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            schemaName: scrapalot
+            tableName: connector_credentials
+      changes:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: connector_credentials

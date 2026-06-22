@@ -1,0 +1,63 @@
+# Migration 126: subscription_plans feature keys for the real product surface
+#
+# The pricing matrix only carried 7 feature keys while the product grew far
+# past them (notes AI assistant, voice mode, image generation, knowledge
+# graph, AI Scientist paper generation, MCP integrations, external
+# connectors). This migration adds one boolean key per gated capability so
+# SubscriptionService.hasFeature()/requireFeature() can enforce plans at the
+# API edge, and the pricing page can advertise what each plan actually
+# unlocks.
+#
+# Distribution: all new keys are TRUE for pro/team/enterprise and FALSE for
+# researcher (free) — the free tier is reading + core RAG chat; AI-heavy and
+# collaboration surfaces start at Pro. advanced_analytics (team+) and the
+# enterprise-only keys (sla, on_premise, …) are unchanged.
+#
+# Intentionally NO "local_ai" plan key: local model management operates on
+# the shared host (downloads, GPU deploys) and is an ADMIN-ROLE concern
+# enforced in LlmInferenceController, not something a subscription unlocks.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 126-add-plan-feature-keys
+      author: scrapalot
+      labels: billing,subscriptions
+      comment: "Add notes_assistant, voice_mode, image_generation, knowledge_graph, ai_scientist, mcp_integration, external_connectors feature flags to plans"
+      changes:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET features = features || '{
+                    "notes_assistant": true,
+                    "voice_mode": true,
+                    "image_generation": true,
+                    "knowledge_graph": true,
+                    "ai_scientist": true,
+                    "mcp_integration": true,
+                    "external_connectors": true
+                  }'::jsonb,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name IN ('pro', 'team', 'enterprise');
+
+              UPDATE scrapalot.subscription_plans
+              SET features = features || '{
+                    "notes_assistant": false,
+                    "voice_mode": false,
+                    "image_generation": false,
+                    "knowledge_graph": false,
+                    "ai_scientist": false,
+                    "mcp_integration": false,
+                    "external_connectors": false
+                  }'::jsonb,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'researcher';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET features = features - 'notes_assistant' - 'voice_mode'
+                    - 'image_generation' - 'knowledge_graph' - 'ai_scientist'
+                    - 'mcp_integration' - 'external_connectors',
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name IN ('pro', 'team', 'enterprise', 'researcher');

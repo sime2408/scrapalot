@@ -1,0 +1,768 @@
+/* ============================================
+   NOTES DRAWER - Notion-like Styling
+   ============================================ */
+
+/* ========== Z-Index Hierarchy ========== */
+/* Notes Drawer: z-index 60 (above chat, below dialogs) */
+
+/* ========== Theme Variables ========== */
+:root {
+  /* Notes Drawer Width */
+  --notes-drawer-width: 50%;
+}
+
+/* ========== Notion-like Editor Styling ========== */
+
+/* Clean placeholder like Notion */
+.ProseMirror p.is-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  opacity: 0.6;
+  pointer-events: none;
+  float: left;
+  height: 0;
+  font-weight: 400;
+}
+
+/* Notion uses a clean, minimal typography */
+.notes-editor-content .ProseMirror {
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
+  font-size: 16px;
+  line-height: 1.5;
+  color: hsl(var(--foreground));
+}
+
+/* ========== Animations ========== */
+@keyframes slideInNotesFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInNotesFromLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Animation class for notes drawer sliding in from right (when opening alone) */
+.animate-slide-in-from-right {
+  animation: slideInNotesFromRight 0.5s ease-in-out;
+}
+
+/* Animation class for notes drawer sliding in from left (when PDF is already on right) */
+.animate-slide-in-from-left {
+  animation: slideInNotesFromLeft 0.5s ease-in-out;
+}
+
+/* ========== Layout & Positioning ========== */
+
+/* Ensure enough space for SidebarQuickTools when notes drawer is open */
+.notes-drawer-open .slide-in-panel {
+  right: 0 !important;
+  left: auto !important;
+}
+
+/* Fix main content positioning when notes drawer is open on large screens */
+@media (min-width: 1080px) {
+  /* Base shift for notes - maintain left margin only */
+  main.shift-for-notes {
+    margin-left: 70px !important;
+  }
+
+  /* When sidebar is closed but notes drawer is open */
+  main.shift-for-notes.ml-14 {
+    margin-left: 70px !important;
+    /* SidebarQuickTools width */
+  }
+
+  /* Override any conflicting margin classes when notes drawer is open */
+  main.shift-for-notes[style*="marginLeft"] {
+    margin-left: 70px !important;
+  }
+
+  /* More specific selector to override inline styles */
+  body.notes-drawer-open main.shift-for-notes[data-main-content] {
+    margin-left: 70px !important;
+  }
+}
+
+/* On mobile/narrow screens, notes drawer takes full screen - no margin needed */
+@media (max-width: 1079px) {
+  main.shift-for-notes {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+}
+
+/* ========== Notes Drawer Specific Styles ========== */
+
+/* Notes drawer specific conversation content styles - DEPRECATED */
+/* These styles are no longer needed with the new drawer positioning system */
+/* Conversation content positioning is now handled by chat-messages.tsx inline styles */
+
+/* .notes-drawer-open .conversation-content {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: calc(100% - var(--notes-drawer-width, 50%));
+  z-index: 40;
+  background-color: var(--background);
+  border-right: 1px solid var(--border);
+  overflow: auto;
+  transition: width 0.5s ease-in-out;
+} */
+
+/* Make sure the conversation content is always visible */
+.conversation-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Ensure the conversation-view is visible when the drawer is open */
+.notes-drawer-open .conversation-view {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* ========== Notes Editor Specific Styles ========== */
+
+/* Notes editor container styling */
+.notes-editor-container {
+  height: 100%;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+/* Notes editor smooth scrolling */
+.notes-editor-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.notes-editor-container::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+.notes-editor-container::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+  border-radius: 4px;
+}
+
+.notes-editor-container::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground));
+}
+
+/* ========== Collaborative Notes Styling ========== */
+
+/* User presence indicators */
+.notes-user-presence {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  background-color: hsl(var(--accent));
+  font-size: 0.875rem;
+}
+
+.notes-user-avatar {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--primary-foreground));
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+/* ========== Responsive Adjustments ========== */
+
+/* Mobile: Full screen notes drawer */
+@media (max-width: 768px) {
+  .notes-drawer-open .conversation-content {
+    display: none !important;
+  }
+
+  .notes-editor-container {
+    padding: 0.75rem;
+  }
+}
+
+/* Tablet: Adjust drawer width for better readability */
+@media (min-width: 768px) and (max-width: 1024px) {
+  :root {
+    --notes-drawer-width: 60%;
+  }
+}
+
+/* ========== Both Drawers Open (Side-by-Side) ========== */
+
+/* When both PDF and Notes are open, hide chat completely */
+@media (min-width: 1080px) {
+  body.pdf-drawer-open.notes-drawer-open main[data-main-content] .conversation-content {
+    display: none !important;
+  }
+}
+
+/* ========== EPUB Viewer Touch Scrolling Support ========== */
+/* Override react-reader internal elements to enable touch scrolling */
+
+.epub-viewer-drawer,
+.EpubView,
+.epub-container,
+.epub-content,
+[class*="EpubView"],
+[class*="ReactReader"] {
+  touch-action: pan-x pan-y pinch-zoom !important;
+  -webkit-overflow-scrolling: touch !important;
+  pointer-events: auto !important;
+}
+
+/* Ensure epub content iframe and scroll areas work with touch */
+.EpubView iframe,
+.epub-container iframe,
+[class*="EpubView"] iframe {
+  touch-action: pan-x pan-y pinch-zoom !important;
+  pointer-events: auto !important;
+}
+
+/* ========== Page Break Decoration ========== */
+/* Subtle A4 page boundary markers in the TipTap editor.
+   Shows a thin dashed line with a "Page N" label on the right. */
+
+.page-break-decoration {
+  position: relative;
+  /* In-flow only reserves vertical space; the visual band is drawn by
+     ::before which extends horizontally far beyond the A4 container.
+     `.notes-container` has `overflow-x: hidden` so the band is clipped
+     at the notes-panel edges (true full width). */
+  width: 100%;
+  height: 5px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  /* Global dimmer so the whole decoration (band + borders + label)
+     reads as clearly secondary to the body text. */
+  opacity: 0.25;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Subtle gutter between two A4 pages — thin, low-contrast band. */
+.page-break-decoration::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -9999px;
+  right: -9999px;
+  background: hsl(var(--muted) / 0.2);
+  border-top: 1px solid hsl(var(--border) / 0.6);
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+  box-shadow:
+    inset 0 1px 1px hsl(var(--foreground) / 0.03),
+    inset 0 -1px 1px hsl(var(--foreground) / 0.03);
+}
+
+.dark .page-break-decoration::before {
+  background: hsl(0 0% 0% / 0.22);
+  box-shadow:
+    inset 0 1px 2px hsl(0 0% 0% / 0.25),
+    inset 0 -1px 2px hsl(0 0% 0% / 0.25);
+}
+
+.page-break-decoration::after {
+  content: 'str. ' attr(data-page);
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: hsl(var(--muted-foreground));
+  opacity: 0.5;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+/* ========================================================================
+   7.6 — Fullscreen + Focus mode for the notes drawer
+   ========================================================================
+   Body classes are toggled by notes-drawer.tsx (useEffect on
+   notesFullscreen / notesFocusMode). All selectors are scoped under the
+   body class so other parts of the app are untouched when the modes are
+   off. */
+
+/* Fullscreen: lift the drawer above everything and hide app chrome.
+   The drawer itself is still rendered inline via NotesDrawer, but its
+   outer container (data-testid="notes-drawer") gets pushed to fixed +
+   inset 0 + z-9999 so it covers the viewport. */
+body.notes-fullscreen [data-testid="notes-drawer"] {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  z-index: 9999 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Stop the rest of the app from scrolling underneath the fullscreen
+   drawer. Restored automatically once the class is removed. */
+body.notes-fullscreen {
+  overflow: hidden;
+}
+
+/* Hide the global app chrome — left icon sidebar, conversations sidebar,
+   chat panel header — to give the editor maximum room. */
+body.notes-fullscreen [data-testid="page-dashboard-container"] > div:not([data-testid="notes-drawer"]) [data-testid^="sidebar-"] {
+  display: none !important;
+}
+
+/* Focus mode = "writing zen".
+   Goal: get the writer into a single-paragraph headspace by
+   dimming everything outside the active block AND removing every
+   piece of UI chrome that competes for attention.  Toggled via the
+   Tools menu; Escape exits.
+
+   Layered effects, top to bottom:
+     1. Drawer goes to 100% viewport width (covers the chat sidebar
+        + workspace chrome the same way fullwidth does, no need for
+        separate buttons).
+     2. The notes menu bar (Datoteka / Alati / icon buttons) hides
+        — the whole point is to not have a toolbar staring at you.
+     3. Non-active blocks dim more aggressively (0.18) so the
+        active paragraph really does stand out.
+     4. The active block keeps full opacity. */
+
+body.notes-focus-mode [data-testid="notes-drawer"] {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+body.notes-focus-mode [data-testid="notes-menu-bar"] {
+  display: none !important;
+}
+body.notes-focus-mode .ProseMirror > *:not(.is-active-block) {
+  opacity: 0.18;
+  transition: opacity 200ms ease-out;
+}
+body.notes-focus-mode .ProseMirror > .is-active-block {
+  opacity: 1;
+}
+/* Tighter top padding inside the drawer once the menu bar is gone,
+   so the active paragraph doesn't sit against the very edge of the
+   viewport. */
+body.notes-focus-mode [data-testid="notes-drawer"] [data-notes-container] {
+  padding-top: 4rem;
+  padding-bottom: 8rem;
+}
+
+/* ========================================================================
+   7.1 — AI Autocomplete ghost-text
+   ========================================================================
+   Inline widget rendered by ai-autocomplete-extension.ts at the caret
+   when the user pauses typing and the model returned a suggestion. The
+   span is non-editable / non-selectable and does not enter the doc
+   until the user accepts with Tab. Visual is intentionally muted so it
+   can't be mistaken for actual content. */
+.ProseMirror .ai-autocomplete-ghost {
+  opacity: 0.4;
+  color: var(--muted-foreground);
+  font-style: normal;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre-wrap;
+}
+
+/* ========================================================================
+   7.10 — Reading mode preview
+   ========================================================================
+   Toggled by notes-drawer.tsx via body.notes-reading-mode. Caps the
+   editor line width to ~65 chars for comfortable reading, hides
+   slash-command hints + drag handles + the gutter, and gives headings
+   a slightly looser scale. The editor is also flipped to !editable
+   imperatively in TS so the user can still scroll + select text but
+   can't accidentally type. */
+
+body.notes-reading-mode .ProseMirror {
+  /* Reading mode now only:
+     - Locks editing (the caret is hidden; the editor itself is also
+       flipped to !editable imperatively in TS).
+     - Hides editor-only chrome (drag handles, ruler, slash-command
+       hints — handled by the rule block below).
+
+     The earlier 65ch column cap + auto margin-l/r centring was
+     removed because it directly contradicted the editor's
+     `prose max-w-none` className. The compound selector
+     `body.notes-reading-mode .ProseMirror` (3 classes) was beating
+     the utility's `.max-w-none` (1 class) and adding ~112 px of
+     left/right margin to the running text the moment Reading mode
+     was toggled on, even though the editor explicitly opted OUT of a
+     max-width constraint. Writers expected `max-w-none` to win and
+     read the unexpected margin as a layout bug. Width now stays
+     under the editor className's control regardless of Reading mode. */
+  caret-color: transparent;
+}
+
+/* Hide every editor-only affordance: drag handles, slash-command
+   ghost text, page-break decorations, the ruler, the floating
+   toolbars. Anything wrapped in `.notes-edit-only` from a node view
+   also goes away. */
+body.notes-reading-mode .drag-handle,
+body.notes-reading-mode [data-drag-handle],
+body.notes-reading-mode .editor-ruler,
+body.notes-reading-mode .page-break-decoration,
+body.notes-reading-mode .selection-toolbar,
+body.notes-reading-mode .block-floating-toolbar,
+body.notes-reading-mode .notes-edit-only {
+  display: none !important;
+}
+
+/* Compact heading scale gives reading-mode a more publishable feel. */
+body.notes-reading-mode .ProseMirror h1 {
+  font-size: 1.875rem;
+  line-height: 1.25;
+  margin-top: 1.5rem;
+}
+body.notes-reading-mode .ProseMirror h2 {
+  font-size: 1.5rem;
+  line-height: 1.3;
+  margin-top: 1.25rem;
+}
+body.notes-reading-mode .ProseMirror h3 {
+  font-size: 1.25rem;
+  line-height: 1.35;
+  margin-top: 1rem;
+}
+
+/* Subtle ribbon at the top of the drawer telling the user what mode
+   they're in. The drawer itself doesn't need a separate "Reading"
+   badge — the menu state already shows it — so this is just a small
+   stripe to match Lex's visual cue. */
+body.notes-reading-mode [data-testid="notes-drawer"]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: hsl(var(--primary) / 0.6);
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* ========================================================================
+   7.10 — Sepia / parchment theme
+   ========================================================================
+   Tri-state pairing with the global light/dark theme: when the user
+   toggles "Sepia" inside the notes drawer, the body gets
+   `notes-sepia-mode` and the drawer background flips to a parchment
+   palette (--bg #f4ecd8, --fg #5b4636).  The class is scoped
+   to the drawer so the rest of the app keeps its theme — we explicitly
+   do NOT touch `documentElement.classList.dark`.
+
+   Sepia + dark mode are mutually exclusive. The
+   toggle in the menu bar respects this — clicking "Sepia" while the
+   app is in dark mode forces the drawer back to light + sepia. */
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] {
+  background-color: #f4ecd8 !important;
+  color: #5b4636 !important;
+}
+/* The editor wrappers ship with `bg-white dark:bg-[#191919]` Tailwind
+   classes which paint OVER the drawer's sepia background and leave a
+   bright-white block under the page-shaped paper.  We override here
+   so the parchment palette covers the entire drawer surface, not
+   just the rectangle that holds typed paragraphs. */
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-testid="notes-editor"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .notes-container {
+  background-color: #f4ecd8 !important;
+}
+/* Force prose color on every descendant so individual Tailwind
+   `text-foreground` classes (which evaluate to white in dark mode)
+   don't leak through and render the body text invisible against the
+   parchment background. The same rule covers paragraphs, list items,
+   inline marks, and the body of node views. */
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .ProseMirror,
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .ProseMirror * {
+  color: #5b4636 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .notes-page-container {
+  background-color: #f4ecd8 !important;
+  /* No paper-edge shadow in sepia: the drawer surface is already the
+     same parchment color, so a 1 px ring just reads as a stray
+     border around the prose. Drop it; the underline-rule on the H1
+     already gives the page enough visual structure. */
+  box-shadow: none !important;
+  border: none !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .ProseMirror h1,
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .ProseMirror h2,
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .ProseMirror h3,
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .ProseMirror h4 {
+  color: #3e2f23;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .ProseMirror a {
+  color: #7a4f1d;
+  text-decoration-color: rgba(122, 79, 29, 0.4);
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .ProseMirror blockquote {
+  border-left-color: #b09574;
+  color: #6b5440;
+  background-color: rgba(176, 149, 116, 0.08);
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .ProseMirror code,
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .ProseMirror pre {
+  background-color: #ece2c9;
+  color: #4a3826;
+}
+/* Page-head meta row ("By <author>") sits OUTSIDE the ProseMirror tree so
+   it doesn't inherit the parchment-ink override above. The default
+   `text-muted-foreground` + `text-foreground/80` Tailwind utilities resolve
+   to washed-out colors against the #f4ecd8 paper background, making the
+   author name almost invisible. Pin the author label to the same near-black
+   sepia ink used by ProseMirror headings (#3e2f23) so it reads clearly. */
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-testid="notes-meta-author"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-testid="notes-meta-author"] * {
+  color: #3e2f23 !important;
+}
+/* Drawer chrome — header menu bar, the left border separating the
+   drawer from the chat pane, and the small zoom / paper-size select.
+   Without these overrides the user sees a dark frame around an
+   otherwise warm parchment page, which reads as a misaligned border. */
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] {
+  border-color: #b09574 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-testid="notes-menu-bar"] {
+  background-color: #ece2c9 !important;
+  border-color: #b09574 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-testid="notes-menu-bar"] * {
+  color: #5b4636 !important;
+  border-color: #b09574 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-testid="notes-width-select"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-testid="notes-paper-size-select"] {
+  background-color: #ece2c9 !important;
+  color: #5b4636 !important;
+  border-color: #b09574 !important;
+}
+/* The right-side dock rail (Spremljeno / Podijeli / icons strip) sits
+   inside the drawer and likewise needs to blend with the parchment. */
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-notes-dock],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-tool-dock] {
+  background-color: transparent !important;
+}
+/* Page ruler (sticky top:0 strip with the inch / cm marks).  Defaults
+   to bg-white dark:bg-[#1a1a1a] which leaves a hard charcoal band
+   sitting between the menu bar and the paper.
+   Also overrides the inner `bg-muted/30` and `bg-muted/50` translucent
+   bands the ruler uses to indicate margins — those evaluate to
+   `rgba(48, 53, 65, 0.x)` in dark mode and look like dirty smudges
+   on parchment. We replace them with a slightly darker sepia so the
+   margin band stays visible against the page color. */
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .notes-page-ruler {
+  background-color: #ece2c9 !important;
+  border-color: #b09574 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .notes-page-ruler [class*="bg-muted"] {
+  background-color: rgba(176, 149, 116, 0.35) !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .notes-page-ruler * {
+  border-color: #8a6f4d !important;
+  color: #5b4636 !important;
+}
+/* Tick marks live inside an inline SVG; stroke is the only thing that
+   draws the lines. Force a high-contrast brown so the cm/in
+   graduation actually reads on parchment. */
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .notes-page-ruler svg [stroke],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .notes-page-ruler svg line,
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .notes-page-ruler svg path {
+  stroke: #5b4636 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] .notes-page-ruler svg text {
+  fill: #5b4636 !important;
+}
+
+/* ----- Notes-only Menubar / dropdown popups -----
+   Radix portals all popover content to the document root, OUTSIDE
+   the [data-testid="notes-drawer"] subtree, so the descendant rules
+   above don't reach them. To keep sepia tightly scoped to the notes
+   surface (and NOT bleed into chat-panel popovers, settings dialogs,
+   etc.), every notes-owned MenubarContent / SubContent /
+   DropdownMenuContent renders with the `.notes-popover` class +
+   `data-notes-popover="true"` marker. We target only those portals
+   while sepia is on. */
+body.notes-sepia-mode.notes-drawer-open .notes-popover,
+body.notes-sepia-mode.notes-drawer-open .notes-popover [role="menu"],
+body.notes-sepia-mode.notes-drawer-open .notes-popover [role="menuitem"],
+body.notes-sepia-mode.notes-drawer-open .notes-popover [role="menuitemcheckbox"],
+body.notes-sepia-mode.notes-drawer-open .notes-popover [role="menuitemradio"] {
+  background-color: #ece2c9 !important;
+  color: #5b4636 !important;
+  border-color: #b09574 !important;
+}
+body.notes-sepia-mode.notes-drawer-open .notes-popover [role="menuitem"]:hover,
+body.notes-sepia-mode.notes-drawer-open .notes-popover [role="menuitem"][data-highlighted],
+body.notes-sepia-mode.notes-drawer-open .notes-popover [role="menuitemcheckbox"][data-highlighted],
+body.notes-sepia-mode.notes-drawer-open .notes-popover [role="menuitemradio"][data-highlighted] {
+  background-color: #d4c5a5 !important;
+  color: #3e2f23 !important;
+}
+body.notes-sepia-mode.notes-drawer-open .notes-popover * {
+  color: #5b4636 !important;
+  border-color: #b09574 !important;
+}
+/* Menubar trigger buttons in the in-drawer header (Datoteka, Alati).
+   Already inside [data-testid="notes-drawer"] so this is naturally
+   scoped to the notes surface — no risk of bleeding out. */
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-testid^="notes-menu-"][data-state="open"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-drawer"] [data-testid^="notes-menu-"]:hover {
+  background-color: #d4c5a5 !important;
+  color: #3e2f23 !important;
+}
+
+/* Notes-owned Radix dialogs only — outline-template-picker and
+   notes-version-history-dialog. We do NOT target [role="dialog"]
+   wholesale because that would catch chat-panel dialogs (settings,
+   confirm, etc.) too. */
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] {
+  background-color: #ece2c9 !important;
+  color: #5b4636 !important;
+  border-color: #b09574 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"] *,
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] * {
+  color: #5b4636 !important;
+  border-color: #b09574 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"] button[data-testid^="outline-template-"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"] button[type="button"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] button[type="button"] {
+  background-color: #ece2c9 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"] button[data-testid^="outline-template-"]:hover {
+  background-color: #d4c5a5 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"] [class*="bg-background"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"] [class*="bg-card"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"] [class*="bg-popover"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] [class*="bg-background"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] [class*="bg-card"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] [class*="bg-popover"] {
+  background-color: #f4ecd8 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"] [class*="bg-muted"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"] [class*="bg-secondary"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="outline-template-picker"] [class*="bg-accent"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] [class*="bg-muted"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] [class*="bg-secondary"],
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] [class*="bg-accent"] {
+  background-color: #d4c5a5 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] [class*="border-green"] {
+  background-color: rgba(34, 139, 34, 0.12) !important;
+  color: #2c5e2e !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-history-dialog"] [class*="border-red"] {
+  background-color: rgba(176, 36, 36, 0.12) !important;
+  color: #8a1d1d !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-diff"] [class*="bg-background"] {
+  background-color: #f4ecd8 !important;
+}
+body.notes-sepia-mode.notes-drawer-open [data-testid="notes-version-diff"] [class*="bg-muted"] {
+  background-color: #d4c5a5 !important;
+  color: #5b4636 !important;
+}
+
+/* ========================================================================
+   7.10 — Image styles (default / inline / side-by-side)
+   ========================================================================
+   The default style keeps the existing center-aligned, full-width image
+   with a caption below.  `inline` floats the image so body text wraps
+   around it (max-width 50% — leaves room for text on the other side).
+   `side-by-side` is a convenience: when two images sit next to each
+   other in the document, marking both with this style lets them share
+   one row at 48% width each. */
+.image-wrapper[data-image-style="inline"] {
+  float: left;
+  max-width: 50%;
+  margin: 0.5rem 1rem 0.5rem 0;
+  clear: none !important;
+}
+.image-wrapper[data-image-style="side-by-side"] {
+  display: inline-block;
+  width: 48%;
+  vertical-align: top;
+  margin-right: 1%;
+  margin-bottom: 0.5rem;
+}
+.image-wrapper[data-image-style="side-by-side"] + .image-wrapper[data-image-style="side-by-side"] {
+  margin-right: 0;
+}
+
+/* ========================================================================
+   Wide-screen page width + A4 print
+   ========================================================================
+   On big monitors the editor container grows past A4 (set inline in
+   collaborative-notes-editor.tsx via ResizeObserver). For print we
+   force the container — and the ruler track — back to 21 cm so the
+   resulting PDF is always A4 regardless of how wide the user dragged
+   their on-screen page. The ruler itself is also hidden in print
+   output (it's a UI affordance, not document content). */
+@media print {
+  /* Paper-size aware print fallbacks. The dedicated print iframe in
+     notes-drawer.tsx generally takes care of layout, but this kicks
+     in if the user Cmd+P's the live editor — preserves the chosen
+     paper-size + orientation pairing. */
+  .notes-page-container[data-paper-size="A5"][data-orientation="portrait"] {
+    width: 14.8cm !important;
+    max-width: 14.8cm !important;
+  }
+  .notes-page-container[data-paper-size="A5"][data-orientation="landscape"] {
+    width: 21cm !important;
+    max-width: 21cm !important;
+  }
+  .notes-page-container[data-paper-size="A4"][data-orientation="portrait"],
+  .notes-page-container:not([data-paper-size]) {
+    width: 21cm !important;
+    max-width: 21cm !important;
+  }
+  .notes-page-container[data-paper-size="A4"][data-orientation="landscape"] {
+    width: 29.7cm !important;
+    max-width: 29.7cm !important;
+  }
+  .notes-page-container[data-paper-size="A3"][data-orientation="portrait"] {
+    width: 29.7cm !important;
+    max-width: 29.7cm !important;
+  }
+  .notes-page-container[data-paper-size="A3"][data-orientation="landscape"] {
+    width: 42cm !important;
+    max-width: 42cm !important;
+  }
+  .notes-page-ruler {
+    display: none !important;
+  }
+}

@@ -1,0 +1,302 @@
+# Migration 013: AI/LLM Provider Configuration (Full Schema)
+# Replaces stub 010-ai-providers.yaml
+# Based on: Alembic 00002_ai_providers.py from Python backend
+# Purpose: AI provider configurations and model catalog managed by Kotlin
+
+databaseChangeLog:
+  - changeSet:
+      id: 013-create-model-providers-table
+      author: liquibase-auto
+      labels: ai,providers
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: model_providers
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: model_providers
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_model_providers
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: true
+                    foreignKeyName: fk_model_providers_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: provider_type
+                  type: VARCHAR(50)
+                  defaultValue: "local"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: api_key
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: api_base
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: description
+                  type: VARCHAR(500)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: show_models
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(50)
+                  defaultValue: "active"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: validation_status
+                  type: VARCHAR(50)
+                  defaultValue: "unknown"
+                  constraints:
+                    nullable: true
+              - column:
+                  name: validation_error
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: last_validation_at
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: last_successful_validation_at
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: settings
+                  type: JSONB
+                  constraints:
+                    nullable: true
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: model_providers
+
+  - changeSet:
+      id: 013-create-model-providers-indexes
+      author: liquibase-auto
+      labels: ai,providers,indexes
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            schemaName: scrapalot
+            tableName: model_providers
+      changes:
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_model_providers_name ON scrapalot.model_providers(name)
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_model_providers_user_id ON scrapalot.model_providers(user_id)
+
+      rollback:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: model_providers
+            indexName: idx_model_providers_name
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: model_providers
+            indexName: idx_model_providers_user_id
+
+  - changeSet:
+      id: 013-create-model-provider-models-table
+      author: liquibase-auto
+      labels: ai,providers,models
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: model_provider_models
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_model_provider_models
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: provider_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_model_provider_models_provider_id
+                    references: scrapalot.model_providers(id)
+                    deleteCascade: true
+              - column:
+                  name: model_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: model_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: model_namespace
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: context_window
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: max_tokens
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: dimensions
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: temperature_default
+                  type: FLOAT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: min_gpu_memory_mb
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: min_cpu_memory_mb
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: min_disk_space_mb
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: input_cost
+                  type: FLOAT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: output_cost
+                  type: FLOAT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: supports_tools
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: supports_streaming
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: supports_function_calling
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: supports_vision
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: model_provider_models
+
+  - changeSet:
+      id: 013-create-model-provider-models-indexes
+      author: liquibase-auto
+      labels: ai,providers,models,indexes
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            schemaName: scrapalot
+            tableName: model_provider_models
+      changes:
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_model_provider_models_model_name ON scrapalot.model_provider_models(model_name)
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_model_provider_models_provider_id ON scrapalot.model_provider_models(provider_id)
+
+      rollback:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            indexName: idx_model_provider_models_model_name
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: model_provider_models
+            indexName: idx_model_provider_models_provider_id

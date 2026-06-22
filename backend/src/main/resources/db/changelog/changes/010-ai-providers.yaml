@@ -1,0 +1,22 @@
+# Migration 010: AI/LLM Provider Configuration
+# Based on: Alembic 00002_ai_providers.py
+# Purpose: AI provider configurations and model catalog
+# Status: Stub - Expand as needed for Spring Boot integration
+
+databaseChangeLog:
+  - changeSet:
+      id: 010-ai-providers-stub
+      author: liquibase-auto
+      labels: ai,stub
+      changes:
+        - tagDatabase:
+            tag: ai-providers-placeholder
+
+      rollback:
+        - sql:
+            sql: "-- AI provider tables handled by Python backend"
+
+# TODO: Expand this migration if Spring Boot needs direct access to:
+# - model_providers table
+# - model_provider_models table
+# Currently managed by Python backend (Alembic 00002)

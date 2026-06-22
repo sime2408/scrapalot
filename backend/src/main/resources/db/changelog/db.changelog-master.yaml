@@ -1,0 +1,391 @@
+# Scrapalot Backend - Liquibase Master Changelog
+# Database: PostgreSQL (port 5432)
+# Schema: scrapalot
+#
+# Based on Alembic migrations from scrapalot-chat Python backend
+# Maintains schema compatibility for shared database tables
+#
+# Migration order matches Alembic version numbers:
+# - 00001: Initial schema (core tables)
+# - 00002: AI/LLM provider configuration
+# - 00003: Subscriptions and billing (Python-only, skipped)
+# - 00004: Connectors and notes/collaboration
+# - 00005: RAG vectors (Python-only, skipped)
+# - 00006: Indexes (Python-only, skipped)
+# - 00007: Seed data
+#
+# Spring Boot specific tables will use separate changesets with 900+ prefixes
+
+databaseChangeLog:
+  # Schema creation (PostgreSQL only)
+  - changeSet:
+      id: 000-create-schema
+      author: liquibase-auto
+      preConditions:
+        - onFail: MARK_RAN
+        - dbms:
+            type: postgresql
+      changes:
+        - sql:
+            sql: CREATE SCHEMA IF NOT EXISTS scrapalot
+      rollback:
+        - sql:
+            sql: DROP SCHEMA IF EXISTS scrapalot CASCADE
+
+  # Core schema migrations (matching Alembic 00001)
+  - include:
+      file: db/changelog/changes/001-initial-schema-users.yaml
+      context: dev,prod
+
+  - include:
+      file: db/changelog/changes/002-initial-schema-workspaces.yaml
+      context: dev,prod
+
+  - include:
+      file: db/changelog/changes/003-initial-schema-collections.yaml
+      context: dev,prod
+
+  - include:
+      file: db/changelog/changes/004-initial-schema-documents.yaml
+      context: dev,prod
+
+  - include:
+      file: db/changelog/changes/005-initial-schema-sessions.yaml
+      context: dev,prod
+
+  - include:
+      file: db/changelog/changes/006-initial-schema-messages.yaml
+      context: dev,prod
+
+  - include:
+      file: db/changelog/changes/007-initial-schema-settings.yaml
+      context: dev,prod
+
+  - include:
+      file: db/changelog/changes/008-initial-schema-jobs.yaml
+      context: dev,prod
+
+  # AI/LLM Provider configuration (matching Alembic 00002)
+  - include:
+      file: db/changelog/changes/010-ai-providers.yaml
+      context: dev,prod
+
+  # Connectors and notes/collaboration (matching Alembic 00004)
+  - include:
+      file: db/changelog/changes/020-connectors.yaml
+      context: dev,prod
+
+  - include:
+      file: db/changelog/changes/021-notes-collaboration.yaml
+      context: dev,prod
+
+  # AI/LLM Provider tables (full schema, replaces 010 stub)
+  # NOTE: Must run BEFORE seed data because seed data references model_providers table
+  - include:
+      file: db/changelog/changes/013-ai-providers.yaml
+      context: dev,prod
+
+  # Python sync migrations (matching Alembic 00003 - billing/subscriptions)
+  # Consolidated migration: users.tour_completed, subscription_plans, user_subscriptions, api_keys
+  # NOTE: Must run BEFORE seed data because seed data references tour_completed column
+  - include:
+      file: db/changelog/changes/040-python-sync.yaml
+      context: dev,prod
+
+  # Connector tables (matching Alembic connector models)
+  - include:
+      file: db/changelog/changes/050-connectors.yaml
+      context: dev,prod
+
+  # Bug fixes and enhancements
+  - include:
+      file: db/changelog/changes/051-add-is-resolved-column.yaml
+      context: dev,prod
+
+  # User token usage tracking (matching Alembic 018)
+  - include:
+      file: db/changelog/changes/060-user-token-usage.yaml
+      context: dev,prod
+
+  # Seed data (matching Alembic 00007)
+  # NOTE: Must run AFTER all schema migrations since it references columns from 013, 040, etc.
+  - include:
+      file: db/changelog/changes/030-seed-data.yaml
+      context: dev,prod
+
+  # Drop Python-owned connector tables (no longer needed in Kotlin DB)
+  - include:
+      file: db/changelog/changes/070-drop-python-owned-tables.yaml
+      context: dev,prod
+
+  # Drop documents/session_documents/reading_positions (Python is single owner via gRPC)
+  - include:
+      file: db/changelog/changes/080-drop-documents-tables.yaml
+      context: dev,prod
+
+  # Seed subscription plan features (fix empty JSONB data from initial insert)
+  - include:
+      file: db/changelog/changes/081-seed-subscription-plan-features.yaml
+      context: dev,prod
+
+  # Unique session name per user (prevent duplicate conversation names)
+  - include:
+      file: db/changelog/changes/082-unique-session-name-per-user.yaml
+      context: dev,prod
+
+  # Session folders (user-created conversation folders)
+  - include:
+      file: db/changelog/changes/083-session-folders.yaml
+      context: dev,prod
+
+  # Update subscription plans (revised limits, rename pro/team, new enterprise)
+  - include:
+      file: db/changelog/changes/084-update-subscription-plans.yaml
+      context: dev,prod
+
+  # Workspace live chat (messages + presence tracking)
+  - include:
+      file: db/changelog/changes/085-workspace-live-chat.yaml
+      context: dev,prod
+
+  # Billing exempt flag for admin-exempt users
+  - include:
+      file: db/changelog/changes/086-add-billing-exempt.yaml
+      context: dev,prod
+
+  # Invitation tokens (secure, time-limited, single-use)
+  - include:
+      file: db/changelog/changes/087-invitation-tokens.yaml
+      context: dev,prod
+
+  # Invitation subscription plan assignment
+  - include:
+      file: db/changelog/changes/088-invitation-subscription-plan.yaml
+      context: dev,prod
+  - include:
+      file: db/changelog/changes/089-invitation-workspace.yaml
+      context: dev,prod
+
+  # Document annotations (PDF/EPUB highlights, notes, underlines)
+  - include:
+      file: db/changelog/changes/090-annotations.yaml
+      context: dev,prod
+
+  # Nested collections / subcollections
+  - include:
+      file: db/changelog/changes/091-nested-collections.yaml
+      context: dev,prod
+
+  # Annotation tags
+  - include:
+      file: db/changelog/changes/092-annotation-tags.yaml
+      context: dev,prod
+
+  # Note-document linking
+  - include:
+      file: db/changelog/changes/093-note-document-link.yaml
+      context: dev,prod
+
+  # Imported annotation flag
+  - include:
+      file: db/changelog/changes/094-annotation-external-flag.yaml
+      context: dev,prod
+
+  # Notes session cascade delete
+  - include:
+      file: db/changelog/changes/095-notes-session-cascade-delete.yaml
+      context: dev,prod
+
+  # Session sharing (public share links)
+  - include:
+      file: db/changelog/changes/096-session-shares.yaml
+      context: dev,prod
+
+  # Message feedback scoring (thumbs up/down)
+  - include:
+      file: db/changelog/changes/097-message-feedback.yaml
+      context: dev,prod
+
+  # Add locale column to invitation_tokens
+  - include:
+      file: db/changelog/changes/071-add-locale-to-invitation-tokens.yaml
+      context: dev,prod
+
+  # Direct messages — private 1:1 chat between workspace members
+  - include:
+      file: db/changelog/changes/098-direct-messages.yaml
+      context: dev,prod
+
+  # notes.category for the Datoteka → Otvori dialog
+  - include:
+      file: db/changelog/changes/099-notes-category.yaml
+      context: dev,prod
+
+  # note_images tracking + scheduled orphan cleanup
+  - include:
+      file: db/changelog/changes/100-note-images.yaml
+      context: dev,prod
+
+  # Drop note_images — replaced by inline diff-delete in NoteService
+  - include:
+      file: db/changelog/changes/101-drop-note-images.yaml
+      context: dev,prod
+
+  # notes.research_context JSONB — persists G Layer 1 Research Context pill
+  - include:
+      file: db/changelog/changes/102-notes-research-context.yaml
+      context: dev,prod
+
+  # note_templates — user-created templates via "Save as new template"
+  - include:
+      file: db/changelog/changes/103-note-templates.yaml
+      context: dev,prod
+
+  # note_versions kind/label/message — named versions
+  - include:
+      file: db/changelog/changes/104-note-versions-named.yaml
+      context: dev,prod
+
+  # messages.feedback_detail + used_graph_element_ids — Memify
+  - include:
+      file: db/changelog/changes/105-message-feedback-graph-trace.yaml
+      context: dev,prod
+
+  # collections.custom_instructions — per-collection system-prompt slot
+  - include:
+      file: db/changelog/changes/106-collections-custom-instructions.yaml
+      context: dev,prod
+
+  # user_document_ratings — per-user 1..5 document rating
+  - include:
+      file: db/changelog/changes/107-user-document-ratings.yaml
+      context: dev,prod
+
+  # document_views — per-user document view log (Recent docs)
+  - include:
+      file: db/changelog/changes/108-document-views.yaml
+      context: dev,prod
+
+  # agent_profiles — Knowledge Agents UI (4 system profiles seeded)
+  - include:
+      file: db/changelog/changes/109-agent-profiles.yaml
+      context: dev,prod
+
+  # annotations.comment_tsv + GIN index for full-text annotation search
+  - include:
+      file: db/changelog/changes/110-annotation-comment-tsvector.yaml
+      context: dev,prod
+
+  # annotation_shares — multi-user PDF annotation sharing (mirrors note_shares)
+  - include:
+      file: db/changelog/changes/111-annotation-shares.yaml
+      context: dev,prod
+
+  # annotation_color_semantics — workspace-level color → label mapping
+  - include:
+      file: db/changelog/changes/112-annotation-color-semantics.yaml
+      context: dev,prod
+
+  # 113: per-model image / audio / realtime modality flags
+  - include:
+      file: db/changelog/changes/113-model-modality-flags.yaml
+      context: dev,prod
+
+  # 114: chat_message_attachments — generated images / audio / video / docs
+  - include:
+      file: db/changelog/changes/114-chat-message-attachments.yaml
+      context: dev,prod
+
+  # 115: workspace + collection slugs for OpenAI-compat API
+  - include:
+      file: db/changelog/changes/115-workspaces-collections-slug.yaml
+      context: dev,prod
+
+  # 116: page-head metadata on notes (emoji, status, header image, font scale)
+  - include:
+      file: db/changelog/changes/116-notes-page-head-fields.yaml
+      context: dev,prod
+
+  # 117: per-note emoji reactions (page-meta-row reaction picker)
+  - include:
+      file: db/changelog/changes/117-note-reactions.yaml
+      context: dev,prod
+
+  # 118: backfill settings_general for legacy users (i18n + Whisper hint)
+  - include:
+      file: db/changelog/changes/118-backfill-settings-general.yaml
+      context: dev,prod
+
+  # 119: drop the dead messages.citations column (citations live in metadata.citations)
+  - include:
+      file: db/changelog/changes/119-drop-messages-citations-column.yaml
+      context: dev,prod
+
+  # 120: collections.description_user_edited — guards a user-owned description
+  # from the auto collection-memory digest
+  - include:
+      file: db/changelog/changes/120-collections-description-user-edited.yaml
+      context: dev,prod
+
+  # 121: sessions.marker_icon + marker_color — per-session priority label
+  - include:
+      file: db/changelog/changes/121-session-marker.yaml
+      context: dev,prod
+
+  # 122: collections.graph_tier — per-collection knowledge-graph build tier
+  # (0=none / 1=light / 2=full, NULL=inherit from parent)
+  - include:
+      file: db/changelog/changes/122-collections-graph-tier.yaml
+      context: dev,prod
+
+  # 123: sessions.is_pinned — pin a session to the top of its sidebar group
+  - include:
+      file: db/changelog/changes/123-session-is-pinned.yaml
+      context: dev,prod
+
+  # 124: mcp_servers — per-user MCP client integrations (remote tool servers)
+  - include:
+      file: db/changelog/changes/124-mcp-servers.yaml
+      context: dev,prod
+
+  # 125: invitation_tokens.role — admins can invite users directly as admin
+  - include:
+      file: db/changelog/changes/125-invitation-token-role.yaml
+      context: dev,prod
+
+  # 126: plan feature keys for the real product surface (notes AI, voice, image gen, graph, AI scientist, MCP, connectors)
+  - include:
+      file: db/changelog/changes/126-plan-feature-keys.yaml
+      context: dev,prod
+
+  # 127: per-user free trial (users.trial_used_at, status=trialing) + BYOK pricing variants
+  - include:
+      file: db/changelog/changes/127-trial-and-byok.yaml
+      context: dev,prod
+
+  # 128: users.is_superadmin — the only account allowed to impersonate admins
+  - include:
+      file: db/changelog/changes/128-user-is-superadmin.yaml
+      context: dev,prod
+
+  # 129: promote the owner's personal account to admin + superadmin
+  - include:
+      file: db/changelog/changes/129-owner-superadmin.yaml
+      context: dev,prod
+
+  # 130: admin messaging overlay (kind discriminator + nullable workspace) on direct messages
+  - include:
+      file: db/changelog/changes/130-admin-messages.yaml
+      context: dev,prod
+
+  # 131: per-participant dismiss timestamps so admin notification threads can be cleared
+  - include:
+      file: db/changelog/changes/131-direct-conversations-dismissed.yaml
+      context: dev,prod
+
+  # 132: persist user-uploaded attachments per chat session (sticky across messages)
+  - include:
+      file: db/changelog/changes/132-session-attachments.yaml
+      context: dev,prod
+
+  # - 900+: Spring Boot specific tables (if needed)

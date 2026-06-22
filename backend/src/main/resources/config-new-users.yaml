@@ -1,0 +1,150 @@
+# Default Settings for New Users
+# This file contains all default settings that are applied when a new user registers.
+# These values are used as the initial configuration for user_settings entries.
+
+# =============================================================================
+# GENERAL SETTINGS
+# =============================================================================
+# These settings control the RAG (Retrieval Augmented Generation) behavior
+
+general_settings:
+  # UI language ISO 639-1 code. Read by auth-context.tsx's
+  # applyLocaleFromGeneralSettings() on every login and pushed to i18n
+  # via i18n.changeLanguage(), and forwarded to Whisper as the STT
+  # language hint. Without this seed, a new user without an explicit
+  # Settings → Language save lands on i18next-browser-languagedetector's
+  # fallback (usually "en"), which then breaks Croatian voice transcription
+  # ("dobar dan" → "ugodan", "Roswell" → "rozlomu") because Whisper
+  # force-decodes Croatian audio as English. "en" is a safe default for
+  # new users; everyone is expected to change it in Settings.
+  language: "en"
+  rag_strategy: "similarity_search"  # Default RAG strategy
+  rag_orchestrator: "EnhancedTriModalOrchestrator"  # Default RAG orchestrator
+  use_orchestrator: true             # Whether to use orchestrator mode by default
+  use_agentic_routing: false         # Whether to use AI-powered strategy selection (disabled by default)
+
+# =============================================================================
+# DOCUMENT PROCESSING SETTINGS
+# =============================================================================
+# These settings control how documents are chunked and processed
+# CRITICAL: chunk_size MUST be 512-1024 to preserve paragraph boundaries
+# chunk_sizes_to_ignore MUST be >= 50 to filter tiny fragments
+
+document_processing:
+  chunk_size: 768                    # Size of text chunks in tokens (optimal: 768, range: 512-1024)
+  chunk_overlap: 128                 # Overlap between chunks in tokens (~17% of chunk_size)
+  splitter_type: "enhanced_markdown" # Type of text splitter to use (preserves hierarchy)
+  chunk_sizes_to_ignore: 50          # Minimum chunk size to keep (minimum: 50 tokens)
+  ocr_enabled: false                 # Force Docling for OCR/scanned documents (true) or use PyMuPDF4LLM (false)
+
+  semantic_chunking:
+    enabled: false                   # Whether to use semantic chunking
+    method: "percentile"             # Semantic chunking method
+    threshold: 90                    # Threshold for semantic similarity
+
+  markdown_chunking:
+    enabled: true                    # Whether to use markdown-aware chunking
+    return_each_line: false          # Whether to return each line separately
+    strip_headers: false             # Whether to strip headers from chunks
+
+  retriever_type: "ensemble"         # Type of retriever to use
+
+# =============================================================================
+# RESEARCH TEMPLATES
+# =============================================================================
+# Default research templates available to all users for deep research feature
+# These templates define different research methodologies and quality standards
+
+research_templates:
+  - id: "default-quick"
+    name: "Quick Research"
+    description: "Fast research with moderate depth - ideal for time-sensitive queries"
+    methodology: "analytical"
+    quality_standards:
+      accuracy: 0.7
+      completeness: 0.6
+      citation: 0.5
+    citation_style: "APA"
+    is_default: true
+
+  - id: "default-scientific"
+    name: "Scientific Research"
+    description: "Rigorous empirical research following the scientific method with peer-reviewed sources"
+    methodology: "systematic"
+    quality_standards:
+      accuracy: 0.95
+      completeness: 0.9
+      citation: 0.95
+    citation_style: "APA"
+    is_default: true
+
+  - id: "default-consciousness"
+    name: "Consciousness & Spirituality"
+    description: "Exploration of consciousness studies, spiritual traditions, and contemplative practices with balanced scholarly and experiential perspectives"
+    methodology: "thematic"
+    quality_standards:
+      accuracy: 0.85
+      completeness: 0.9
+      citation: 0.8
+    citation_style: "Chicago"
+    is_default: true
+
+  - id: "default-metaphysical"
+    name: "Metaphysical Exploration"
+    description: "Deep inquiry into reality, existence, ontology, and non-mainstream scientific paradigms including quantum consciousness and holistic worldviews"
+    methodology: "narrative"
+    quality_standards:
+      accuracy: 0.8
+      completeness: 0.85
+      citation: 0.75
+    citation_style: "Chicago"
+    is_default: true
+
+  - id: "default-comparative"
+    name: "Comparative Philosophy"
+    description: "Cross-cultural philosophical analysis comparing Eastern and Western traditions, perennial philosophy, and wisdom teachings"
+    methodology: "comparative"
+    quality_standards:
+      accuracy: 0.85
+      completeness: 0.85
+      citation: 0.85
+    citation_style: "Chicago"
+    is_default: true
+
+  - id: "default-technical"
+    name: "Technical Deep Dive"
+    description: "In-depth technical analysis with comprehensive documentation for engineering and technology topics"
+    methodology: "analytical"
+    quality_standards:
+      accuracy: 0.9
+      completeness: 0.85
+      citation: 0.8
+    citation_style: "IEEE"
+    is_default: true
+
+  - id: "default-general"
+    name: "General Research"
+    description: "Balanced research approach suitable for most topics with good accuracy and comprehensive coverage"
+    methodology: "analytical"
+    quality_standards:
+      accuracy: 0.8
+      completeness: 0.8
+      citation: 0.75
+    citation_style: "APA"
+    is_default: true
+
+# =============================================================================
+# DEFAULT WORKSPACE
+# =============================================================================
+# Settings for the default workspace created for new users
+
+default_workspace:
+  name: "My Workspace"
+
+# =============================================================================
+# DEFAULT COLLECTION
+# =============================================================================
+# Settings for the default collection created for new users
+
+default_collection:
+  name: "Research Papers"

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrapalot API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="/webjars/swagger-ui/swagger-ui.css">
+    <link rel="stylesheet" type="text/css" href="/swagger-ui-custom.css">
+    <link rel="icon" type="image/png" href="/webjars/swagger-ui/favicon-32x32.png" sizes="32x32">
+    <link rel="icon" type="image/png" href="/webjars/swagger-ui/favicon-16x16.png" sizes="16x16">
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+
+        *,
+        *:before,
+        *:after {
+            box-sizing: inherit;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="swagger-ui"></div>
+    <script src="/webjars/swagger-ui/swagger-ui-bundle.js" charset="UTF-8"></script>
+    <script src="/webjars/swagger-ui/swagger-ui-standalone-preset.js" charset="UTF-8"></script>
+    <script>
+        window.onload = function() {
+            window.ui = SwaggerUIBundle({
+                urls: [
+                    {name: "Backend API (Kotlin)", url: "/api-docs/backend"},
+                    {name: "Chat API (Python - 177 endpoints)", url: "/api-docs/chat"},
+                    {name: "Gateway API", url: "/v3/api-docs"}
+                ],
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                operationsSorter: "alpha",
+                tagsSorter: "alpha",
+                displayRequestDuration: true,
+                onComplete: function() {
+                    // Replace OpenAPI logo with Scrapalot logo
+                    const topbarWrapper = document.querySelector('.topbar .topbar-wrapper');
+                    if (topbarWrapper) {
+                        const link = topbarWrapper.querySelector('a');
+                        if (link) {
+                            link.innerHTML = '';
+                            const logo = document.createElement('img');
+
+                            // Always use black logo, invert for dark mode
+                            logo.src = 'https://scrapalot.app/logo-black.svg';
+                            logo.alt = 'Scrapalot';
+                            logo.style.height = '40px';
+                            logo.style.width = 'auto';
+                            logo.style.maxWidth = '200px';
+
+                            // Apply invert filter for dark mode
+                            const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                            if (isDarkMode) {
+                                logo.style.filter = 'invert(1)';
+                            }
+
+                            link.appendChild(logo);
+                            link.href = 'https://scrapalot.app';
+                            link.target = '_blank';
+
+                            // Listen for theme changes and update filter
+                            if (window.matchMedia) {
+                                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                                    logo.style.filter = e.matches ? 'invert(1)' : 'none';
+                                });
+                            }
+                        }
+                    }
+
+                    // Add custom title
+                    const infoTitle = document.querySelector('.info .title');
+                    if (infoTitle) {
+                        infoTitle.textContent = 'Scrapalot API Documentation';
+                    }
+                }
+            });
+        };
+    </script>
+</body>
+</html>

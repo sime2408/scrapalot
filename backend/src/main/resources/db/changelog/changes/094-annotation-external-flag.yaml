@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 094-add-annotation-is-external
+      author: scrapalot
+      labels: annotations
+      comment: "Add is_external flag for imported PDF annotations"
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: annotations
+            columns:
+              - column:
+                  name: is_external
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false

@@ -1,0 +1,430 @@
+name: Auto-fix UI with PR Creation
+
+on:
+  workflow_dispatch:
+    inputs:
+      error_log:
+        description: 'Manual error log (optional - Docker logs will be auto-captured)'
+        required: false
+        type: string
+      error_context:
+        description: 'Additional error context (optional)'
+        required: false
+        type: string
+      branch_name:
+        description: 'Branch name for quickfix'
+        required: true
+        type: string
+      pr_body:
+        description: 'PR description body'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  create-quickfix-pr:
+    runs-on: self-hosted
+    environment: prod
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Claude Code
+        run: |
+          # Claude Code is installed in the scrapalot user's home (~/.local/bin/claude)
+          # along with the OAuth credentials (~/.claude/.credentials.json). The
+          # github-runner user has neither, and the legacy /usr/local/bin/claude
+          # symlink points at a stale version directory. Verify availability under
+          # scrapalot via a login shell so we pick up the right PATH.
+          echo "🔍 Verifying Claude Code is available for scrapalot user..."
+          if sudo -u scrapalot bash -lc 'command -v claude >/dev/null 2>&1'; then
+            CLAUDE_VERSION=$(sudo -u scrapalot bash -lc 'claude --version' 2>&1 || echo "unknown")
+            CLAUDE_BIN=$(sudo -u scrapalot bash -lc 'command -v claude')
+            echo "✅ Claude Code available as scrapalot at: $CLAUDE_BIN"
+            echo "   Version: $CLAUDE_VERSION"
+          else
+            echo "❌ Claude Code not found in scrapalot's login PATH"
+            echo "   scrapalot PATH: $(sudo -u scrapalot bash -lc 'echo $PATH')"
+            echo "   ~/.local/bin contents:"
+            sudo -u scrapalot bash -lc 'ls -la $HOME/.local/bin/' 2>&1 || echo "   (no ~/.local/bin)"
+            exit 1
+          fi
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "scrapalot-autofix-bot"
+          git config --global user.email "autofix-bot@scrapalot.ai"
+
+      - name: Create quickfix branch
+        run: |
+          cd /opt/scrapalot/scrapalot-ui
+          # Run git commands as scrapalot user (has SSH access)
+          sudo -u scrapalot git fetch origin
+
+          # Shared self-hosted-runner workspace at /opt/scrapalot/scrapalot-ui
+          # carries leftover edits and build artefacts (tsbuildinfo, compiled
+          # vite/playwright JS) between runs. Without a hard reset the later
+          # "Check for changes" step mis-reads that dirt as Claude's output
+          # and commits it into a junk PR.
+          sudo -u scrapalot git reset --hard HEAD || true
+          sudo -u scrapalot git clean -fd
+          sudo -u scrapalot git checkout main
+          sudo -u scrapalot git reset --hard origin/main
+
+          # Delete existing branch if it exists (local and remote)
+          BRANCH_NAME="${{ github.event.inputs.branch_name }}"
+          if sudo -u scrapalot git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
+            echo "⚠️  Branch $BRANCH_NAME already exists locally, deleting..."
+            sudo -u scrapalot git branch -D "$BRANCH_NAME"
+          fi
+          if sudo -u scrapalot git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
+            echo "⚠️  Branch $BRANCH_NAME already exists on remote, deleting..."
+            sudo -u scrapalot git push origin --delete "$BRANCH_NAME" || true
+          fi
+
+          echo "🌿 Creating quickfix branch: $BRANCH_NAME"
+          sudo -u scrapalot git checkout -b "$BRANCH_NAME"
+
+      - name: Capture Docker Logs
+        id: capture_logs
+        env:
+          MANUAL_ERROR_LOG: ${{ github.event.inputs.error_log }}
+          MANUAL_ERROR_CONTEXT: ${{ github.event.inputs.error_context }}
+        run: |
+          echo "📋 Capturing last 100 lines from scrapalot-ui Docker container..."
+
+          # Clear any stale claude output from a previous run on this self-hosted
+          # runner, so the fallback issue step can't pick up unrelated reasoning.
+          sudo rm -f /tmp/claude-output.txt 2>/dev/null || true
+
+          # Capture Docker logs
+          DOCKER_LOGS=$(docker logs scrapalot-ui --tail 100 2>&1 || echo "Failed to get Docker logs")
+
+          # Save to file for later use
+          echo "$DOCKER_LOGS" > /tmp/docker-logs.txt
+
+          # Extract recent errors (last 20 lines with context). `|| true` so an
+          # empty grep result doesn't trip `set -e` — we encode "no errors" as
+          # an empty string and let the has_meaningful_input gate decide.
+          RECENT_ERRORS=$(echo "$DOCKER_LOGS" | grep -i -E "error|exception|failed|warning|cannot" -A 5 -B 5 | tail -50 || true)
+
+          echo "recent_errors<<EOF" >> $GITHUB_OUTPUT
+          echo "$RECENT_ERRORS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Gate: only run Claude when at least one input source is non-empty.
+          # Otherwise Claude correctly refuses to invent a fix and the still-
+          # clean working tree fools the "Check for changes" step into thinking
+          # there were changes (this is exactly how junk PR #9 was created).
+          HAS_INPUT="false"
+          if [ -n "$RECENT_ERRORS" ] || [ -n "$MANUAL_ERROR_LOG" ] || [ -n "$MANUAL_ERROR_CONTEXT" ]; then
+            HAS_INPUT="true"
+          fi
+          echo "has_meaningful_input=$HAS_INPUT" >> $GITHUB_OUTPUT
+
+          echo "Docker logs captured (has_meaningful_input=$HAS_INPUT)"
+
+      - name: Analyze and Fix Error
+        if: steps.capture_logs.outputs.has_meaningful_input == 'true'
+        env:
+          ERROR_LOG: ${{ github.event.inputs.error_log }}
+          ERROR_CONTEXT: ${{ github.event.inputs.error_context }}
+          DOCKER_LOGS: ${{ steps.capture_logs.outputs.recent_errors }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          # Create error summary for Claude
+          cat > error-summary.md << 'EOF'
+          # Auto-detected Frontend Error - Quickfix Branch
+
+          ## Docker Logs (scrapalot-ui container)
+          ```
+          ${{ env.DOCKER_LOGS }}
+          ```
+
+          ## Manual Error Log (if provided)
+          ```
+          ${{ env.ERROR_LOG }}
+          ```
+
+          ## Error Context
+          ${{ env.ERROR_CONTEXT }}
+
+          ## Instructions for Claude Code
+          1. Analyze this FRONTEND error (React/TypeScript/Vite) and identify the root cause
+          2. Implement a targeted fix for the specific issue
+          3. Make minimal, focused changes - avoid refactoring unrelated code
+          4. Add comments explaining the fix if complex
+          5. DO NOT commit - just implement the fix
+
+          ## Project Context
+          This is a React 18 + TypeScript + Vite frontend with:
+          - Radix UI + Tailwind CSS (Shadcn/ui) components
+          - React Context API for state management (11 providers)
+          - STOMP over WebSocket for real-time communication
+          - i18next for internationalization (en, hr)
+          - Playwright for E2E testing
+
+          ## Key Files
+          - Components: src/components/
+          - Hooks: src/hooks/
+          - API clients: src/lib/api*.ts
+          - Contexts: src/contexts/
+          - Types: src/types/
+
+          Focus on fixing only the specific error, not optimizing the entire codebase.
+          EOF
+
+          # Copy error summary to the repository location and make it readable
+          # by the scrapalot user (it was written by github-runner).
+          cp error-summary.md /opt/scrapalot/scrapalot-ui/error-summary.md
+          sudo chown scrapalot:scrapalot-dev /opt/scrapalot/scrapalot-ui/error-summary.md
+          sudo chmod 0644 /opt/scrapalot/scrapalot-ui/error-summary.md
+
+          # Run Claude Code as the scrapalot user — that's where the binary
+          # and OAuth credentials live (~/.local/bin/claude, ~/.claude/).
+          # github-runner has neither. Tee stdout into a file so the
+          # fallback "open issue" path can include Claude's reasoning.
+          echo "🤖 Running Claude Code analysis and fix as scrapalot..."
+          sudo -u scrapalot bash -lc 'cd /opt/scrapalot/scrapalot-ui && claude --dangerously-skip-permissions --print "Analyze this frontend error and implement a focused fix. Do not commit the changes." < error-summary.md' \
+            2>&1 | tee /tmp/claude-output.txt || true
+          # Make /tmp/claude-output.txt readable by github-runner and pin to
+          # this workflow's $GITHUB_OUTPUT so later steps can include it.
+          sudo chmod 0644 /tmp/claude-output.txt 2>/dev/null || true
+          sudo rm -f /opt/scrapalot/scrapalot-ui/error-summary.md
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          # Check for changes in the actual repository location
+          cd /opt/scrapalot/scrapalot-ui
+
+          # Use git status to check for changes (more reliable than git diff --quiet)
+          if git status --porcelain | grep -q .; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "Claude Code made changes"
+            echo "Changed files:"
+            git status --porcelain | head -50
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No changes were made by Claude Code"
+          fi
+
+      - name: Commit changes
+        if: steps.check_changes.outputs.changes == 'true'
+        run: |
+          # Work in the actual repository location
+          cd /opt/scrapalot/scrapalot-ui
+
+          # Fix file permissions - files created by github-runner need to be readable by scrapalot
+          sudo chown -R scrapalot:scrapalot-dev .
+          sudo chmod -R g+rw .
+
+          # Add all changes
+          sudo -u scrapalot git add .
+
+          # Create descriptive commit message
+          cat > commit-msg.txt << 'EOF'
+          🤖 Auto-fix: Address detected frontend error
+
+          Error Context: ${{ github.event.inputs.error_context }}
+
+          Changes made by Claude Code to resolve the following error:
+          ```
+          ${{ github.event.inputs.error_log }}
+          ```
+
+          ⚠️ REVIEW REQUIRED: This is an automated fix. Please review carefully before merging.
+
+          🤖 Generated with [Claude Code](https://claude.ai/code)
+
+          Co-Authored-By: Claude <noreply@anthropic.com>
+          EOF
+
+          # Commit with the generated message (as scrapalot user)
+          sudo -u scrapalot git commit -F commit-msg.txt
+          rm commit-msg.txt
+
+      - name: Push quickfix branch
+        if: steps.check_changes.outputs.changes == 'true'
+        run: |
+          # Work in the actual repository location
+          cd /opt/scrapalot/scrapalot-ui
+          echo "📤 Pushing quickfix branch to remote..."
+          sudo -u scrapalot git push origin "${{ github.event.inputs.branch_name }}"
+
+      - name: Create Pull Request
+        if: steps.check_changes.outputs.changes == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          # Prepare PR body with error details and review checklist
+          cat > pr-body.md << 'EOF'
+          ## 🤖 Automated Frontend Error Fix - Review Required
+
+          **⚠️ This PR was created automatically by the error monitoring system**
+
+          ### Error Details
+          **Context**: ${{ github.event.inputs.error_context }}
+
+          **Error Log**:
+          ```
+          ${{ github.event.inputs.error_log }}
+          ```
+
+          ### Review Checklist
+          - [ ] **Verify the fix addresses the root cause**
+          - [ ] **Check that changes are minimal and focused**
+          - [ ] **Ensure no unrelated code was modified**
+          - [ ] **Test the fix locally if possible**
+          - [ ] **Verify no breaking changes introduced**
+          - [ ] **Check that React/TypeScript types are correct**
+          - [ ] **Verify translations are updated if needed**
+
+          ### Auto-Fix Process
+          1. Frontend error detected by monitoring system
+          2. Claude Code analyzed the React/TypeScript error
+          3. Targeted fix implemented automatically
+          4. PR created for human review
+
+          ### Next Steps
+          1. **Review the changes carefully**
+          2. **Test locally if needed**
+          3. **Merge if fix looks correct**
+          4. **Monitor for any new issues**
+
+          ---
+          🤖 **Generated with Claude Code** - [Error Monitoring Documentation](../scrapalot-chat/scripts/README_ERROR_MONITORING.md)
+          EOF
+
+          # Create the pull request
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/${{ github.repository }}/pulls \
+            -d "{
+              \"title\": \"🤖 Auto-fix UI: $(echo '${{ github.event.inputs.error_context }}' | head -c 50)...\",
+              \"head\": \"${{ github.event.inputs.branch_name }}\",
+              \"base\": \"main\",
+              \"body\": $(cat pr-body.md | jq -R -s .),
+              \"draft\": false
+            }" > pr-response.json
+
+          # Extract PR URL and number
+          PR_URL=$(cat pr-response.json | jq -r '.html_url // empty')
+          PR_NUMBER=$(cat pr-response.json | jq -r '.number // empty')
+
+          if [ -n "$PR_URL" ] && [ "$PR_URL" != "null" ]; then
+            echo "Pull Request created successfully!"
+            echo "🔗 PR URL: $PR_URL"
+            echo "📝 PR Number: #$PR_NUMBER"
+
+            # Add labels to the PR
+            curl -X POST \
+              -H "Accept: application/vnd.github.v3+json" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/labels \
+              -d '["🤖 auto-fix", "🔧 bug-fix", "⚠️ review-required", "frontend"]' || true
+
+            echo "🏷️ Labels added: auto-fix, bug-fix, review-required, frontend"
+
+            # Assign the repo admin so the PR shows up on their dashboard.
+            # GitHub silently forbids self-assignment when the PR author is the
+            # same user, so we tolerate a 422 response here.
+            curl -X POST \
+              -H "Accept: application/vnd.github.v3+json" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/assignees \
+              -d '{"assignees":["sime2408"]}' || true
+
+            # Request review from the repo admin. GitHub rejects review-request
+            # when the requested user is the PR author, so this may 422 — that
+            # is expected and not fatal.
+            curl -X POST \
+              -H "Accept: application/vnd.github.v3+json" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER/requested_reviewers \
+              -d '{"reviewers":["sime2408"]}' || true
+
+            echo "👤 Assigned admin reviewer: sime2408"
+          else
+            echo "❌ Failed to create Pull Request"
+            cat pr-response.json
+            exit 1
+          fi
+
+      - name: Open issue for manual investigation
+        if: steps.check_changes.outputs.changes == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          ERROR_CONTEXT: ${{ github.event.inputs.error_context }}
+          ERROR_LOG: ${{ github.event.inputs.error_log }}
+        run: |
+          echo "📋 No code changes were produced — opening a manual-investigation issue."
+
+          # Truncate Claude's output so the issue body fits well below
+          # GitHub's 65k limit. Fallback if file isn't there.
+          CLAUDE_OUTPUT="$(tail -c 8000 /tmp/claude-output.txt 2>/dev/null || true)"
+          [ -z "$CLAUDE_OUTPUT" ] && CLAUDE_OUTPUT="(no output captured)"
+
+          # Truncate inputs the same way so a 50-page log doesn't blow the body.
+          ERROR_LOG_SHORT="$(printf '%s' "$ERROR_LOG" | tail -c 4000)"
+          [ -z "$ERROR_LOG_SHORT" ] && ERROR_LOG_SHORT="(empty)"
+
+          # Build the issue body from parts via jq -- this avoids heredoc
+          # interpolation surprises and produces valid JSON regardless of
+          # what's inside the variables.
+          BODY=$(jq -n \
+            --arg ctx "$ERROR_CONTEXT" \
+            --arg log "$ERROR_LOG_SHORT" \
+            --arg out "$CLAUDE_OUTPUT" \
+            '"## 🐞 Bug report — Claude could not auto-fix\n\nA user submitted this bug via the in-app **Report Bug** dialog. The auto-fix workflow ran but Claude did not make any code changes. Manual investigation is required.\n\n### Error context\n" + $ctx + "\n\n### Browser / Docker error log\n```\n" + $log + "\n```\n\n### Claude's analysis output\n```\n" + $out + "\n```\n\n---\n🤖 Generated by autofix-manual-trigger.yml"')
+
+          TITLE="🐞 Bug report (UI): $(printf '%s' "$ERROR_CONTEXT" | head -c 60)"
+
+          PAYLOAD=$(jq -n \
+            --arg t "$TITLE" \
+            --argjson b "$BODY" \
+            --argjson labels '["🐞 bug-report","⚠️ needs-investigation","frontend"]' \
+            --argjson assignees '["sime2408"]' \
+            '{title:$t, body:$b, labels:$labels, assignees:$assignees}')
+
+          curl -fsS -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/${{ github.repository }}/issues \
+            -d "$PAYLOAD" \
+            > issue-response.json
+
+          ISSUE_URL=$(jq -r '.html_url // empty' issue-response.json)
+          if [ -n "$ISSUE_URL" ] && [ "$ISSUE_URL" != "null" ]; then
+            echo "📝 Issue opened: $ISSUE_URL"
+          else
+            echo "❌ Failed to open issue:"
+            cat issue-response.json
+            exit 1
+          fi
+
+      - name: Success Summary
+        if: steps.check_changes.outputs.changes == 'true'
+        run: |
+          echo ""
+          echo "🎉 Auto-Fix PR Creation Complete!"
+          echo "================================"
+          echo "📂 Branch: ${{ github.event.inputs.branch_name }}"
+          echo "🔗 Check PRs at: https://github.com/${{ github.repository }}/pulls"
+          echo "⚠️  Manual review required before merge"
+          echo "🔧 Changes ready for inspection"
+          echo "================================"

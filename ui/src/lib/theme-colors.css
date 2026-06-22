@@ -1,0 +1,223 @@
+/* Theme accent color definitions */
+
+/* Set the primary, accent, and ring colors based on selected accent color */
+/* Default accent color is blue */
+:root {
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 224.3 76.3% 48%;
+  --sidebar-primary: 217.2 91.2% 59.8%;
+  --sidebar-ring: 224.3 76.3% 48%;
+}
+
+[data-accent='gray'] {
+  --primary: 240 5.9% 50%;
+  --primary-foreground: 0 0% 98%;
+  --ring: 240 5.9% 50%;
+}
+
+[data-accent='blue'] {
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 224.3 76.3% 48%;
+}
+
+[data-accent='green'] {
+  --primary: 142.1 76.2% 36.3%;
+  --primary-foreground: 355.7 100% 97.3%;
+  --ring: 142.1 76.2% 36.3%;
+}
+
+[data-accent='red'] {
+  --primary: 0 72.2% 50.6%;
+  --primary-foreground: 0 0% 98%;
+  --ring: 0 72.2% 50.6%;
+}
+
+[data-accent='violet'] {
+  --primary: 262.1 83.3% 57.8%;
+  --primary-foreground: 210 20% 98%;
+  --ring: 262.1 83.3% 57.8%;
+}
+
+[data-accent='orange'] {
+  --primary: 24.6 95% 53.1%;
+  --primary-foreground: 60 9.1% 97.8%;
+  --ring: 24.6 95% 53.1%;
+}
+
+/* Update sidebar elements to use the accent color */
+[data-accent='gray'] {
+  --sidebar-primary: 240 5.9% 50%;
+  --sidebar-ring: 240 5.9% 50%;
+}
+
+[data-accent='blue'] {
+  --sidebar-primary: 217.2 91.2% 59.8%;
+  --sidebar-ring: 224.3 76.3% 48%;
+}
+
+[data-accent='green'] {
+  --sidebar-primary: 142.1 76.2% 36.3%;
+  --sidebar-ring: 142.1 76.2% 36.3%;
+}
+
+[data-accent='red'] {
+  --sidebar-primary: 0 72.2% 50.6%;
+  --sidebar-ring: 0 72.2% 50.6%;
+}
+
+[data-accent='violet'] {
+  --sidebar-primary: 262.1 83.3% 57.8%;
+  --sidebar-ring: 262.1 83.3% 57.8%;
+}
+
+[data-accent='orange'] {
+  --sidebar-primary: 24.6 95% 53.1%;
+  --sidebar-ring: 24.6 95% 53.1%;
+}
+
+/* Dark theme specific adjustments */
+.dark[data-accent='gray'] {
+  --primary: 240 3.7% 70%;
+}
+
+.dark[data-accent='blue'] {
+  --primary: 217.2 91.2% 59.8%;
+}
+
+.dark[data-accent='green'] {
+  --primary: 142.1 70.6% 45.3%;
+}
+
+.dark[data-accent='red'] {
+  --primary: 0 72.2% 50.6%;
+}
+
+.dark[data-accent='violet'] {
+  --primary: 263.4 70% 70.2%;
+}
+
+.dark[data-accent='orange'] {
+  --primary: 24.6 95% 53.1%;
+}
+
+/* Custom scrollbar colors based on accent */
+:root[data-accent] ::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary));
+}
+
+:root[data-accent] * {
+  scrollbar-color: hsl(var(--scrollbar-thumb)) hsl(var(--scrollbar-track));
+}
+
+/* Ensure scrollbar thumb gets primary color when hovered regardless of accent */
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--primary)) !important;
+}
+
+/* Ensure Tailwind utility classes work with accent colors */
+:root[data-accent='violet'] .bg-primary {
+  background-color: hsl(262.1 83.3% 57.8%);
+}
+
+:root[data-accent='violet'] .text-primary {
+  color: hsl(262.1 83.3% 57.8%);
+}
+
+:root[data-accent='violet'] .border-primary {
+  border-color: hsl(262.1 83.3% 57.8%);
+}
+
+/* Dark theme adjustments */
+.dark[data-accent='violet'] .bg-primary {
+  background-color: hsl(263.4 70% 70.2%);
+}
+
+.dark[data-accent='violet'] .text-primary {
+  color: hsl(263.4 70% 70.2%);
+}
+
+.dark[data-accent='violet'] .border-primary {
+  border-color: hsl(263.4 70% 70.2%);
+}
+
+/* Add hover variants */
+:root[data-accent='violet'] .hover\:bg-primary:hover {
+  background-color: hsl(262.1 83.3% 57.8%);
+}
+
+:root[data-accent='violet'] .hover\:text-primary:hover {
+  color: hsl(262.1 83.3% 57.8%);
+}
+
+:root[data-accent='violet'] .hover\:border-primary:hover {
+  border-color: hsl(262.1 83.3% 57.8%);
+}
+
+/* Button and UI element styling for purple accent */
+:root[data-accent='violet'] .bg-gradient-to-r.from-violet-600.to-purple-800 {
+  background-image: linear-gradient(
+    to right,
+    hsl(262.1 83.3% 57.8%),
+    hsl(270 75% 40%)
+  );
+}
+
+:root[data-accent='violet'] .hover\:from-violet-700:hover {
+  --tw-gradient-from: hsl(262.1 83.3% 47.8%);
+}
+
+:root[data-accent='violet'] .hover\:to-purple-900:hover {
+  --tw-gradient-to: hsl(270 75% 30%);
+}
+
+/* Custom styling for sessions list */
+/* Style the selected session with primary color background and border */
+.sessions-list li button.bg-violet-100 {
+  background-color: hsl(var(--primary) / 0.1);
+  border-left-color: hsl(var(--primary));
+}
+
+.dark .sessions-list li button.dark\:bg-chat-sidebar-button {
+  border-left-color: hsl(var(--primary));
+}
+
+/* Override hover border color for sessions list */
+.sessions-list li button:hover {
+  border-left-color: hsl(var(--primary));
+}
+
+/* Add more specific selectors for buttons with primary color classes */
+.bg-primary {
+  background-color: hsl(var(--primary));
+}
+
+.hover\:bg-primary\/90:hover {
+  background-color: hsl(var(--primary) / 0.9);
+}
+
+.border-primary {
+  border-color: hsl(var(--primary));
+}
+
+.hover\:border-primary:hover {
+  border-color: hsl(var(--primary));
+}
+
+.text-primary {
+  color: hsl(var(--primary));
+}
+
+.text-primary-foreground {
+  color: hsl(var(--primary-foreground));
+}
+
+/* Add accent highlight class for selected items */
+.bg-accent-highlight {
+  background-color: hsl(var(--primary) / 0.1);
+}
+
+.dark .bg-accent-highlight {
+  background-color: hsl(var(--primary) / 0.15);
+}

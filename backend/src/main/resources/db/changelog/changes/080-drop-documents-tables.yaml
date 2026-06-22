@@ -1,0 +1,129 @@
+# Migration 080: Drop documents, session_documents, reading_positions tables
+# Python is the single owner of document data. Kotlin proxies via gRPC.
+# All 3 tables have 0 rows (verified before migration).
+
+databaseChangeLog:
+  - changeSet:
+      id: 080-drop-session-documents
+      author: liquibase-auto
+      labels: cleanup
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            schemaName: scrapalot
+            tableName: session_documents
+      changes:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: session_documents
+      rollback:
+        - createTable:
+            schemaName: scrapalot
+            tableName: session_documents
+            columns:
+              - column:
+                  name: session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: document_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 080-drop-reading-positions
+      author: liquibase-auto
+      labels: cleanup
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            schemaName: scrapalot
+            tableName: reading_positions
+      changes:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: reading_positions
+      rollback:
+        - createTable:
+            schemaName: scrapalot
+            tableName: reading_positions
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: document_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: page_number
+                  type: INTEGER
+              - column:
+                  name: scroll_position
+                  type: DOUBLE
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+
+  - changeSet:
+      id: 080-drop-documents
+      author: liquibase-auto
+      labels: cleanup
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            schemaName: scrapalot
+            tableName: documents
+      changes:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: documents
+      rollback:
+        - createTable:
+            schemaName: scrapalot
+            tableName: documents
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: collection_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title
+                  type: VARCHAR(255)
+              - column:
+                  name: filename
+                  type: VARCHAR(255)
+              - column:
+                  name: file_path
+                  type: VARCHAR(500)
+              - column:
+                  name: file_size
+                  type: BIGINT
+              - column:
+                  name: processing_status
+                  type: VARCHAR(20)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE

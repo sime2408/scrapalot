@@ -1,0 +1,38 @@
+# Migration 102: notes.research_context — persists the Notes editor's
+# per-note Research Context (active collections, web search toggle,
+# agentic routing toggle) server-side so the pill state survives a
+# device change. Was localStorage-only before.
+#
+# Shape is intentionally loose JSONB — frontend's NoteResearchContext
+# TypeScript type evolves; we don't want a schema bump every time a
+# new toggle lands. Controller validates structure on write.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 102-add-notes-research-context
+      author: scrapalot
+      labels: notes,research-context
+      comment: "Add nullable research_context JSONB column to notes"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: notes
+                columnName: research_context
+                schemaName: scrapalot
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: notes
+            columns:
+              - column:
+                  name: research_context
+                  type: JSONB
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: notes
+            columnName: research_context

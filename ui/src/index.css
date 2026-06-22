@@ -1,0 +1,523 @@
+/* Import mobile scaling utilities */
+@import './styles/mobile-scaling.css';
+
+/* Import centralized drawer styles */
+@import './styles/pdf-drawer.css';
+@import './styles/notes-drawer.css';
+
+/* Import main content layout */
+@import './styles/main-content-layout.css';
+
+/* Landing / public marketing pages design system */
+@import './styles/landing.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tour: show Radix popovers/dropdowns above tour overlay, prevent interaction */
+body.tour-active [data-radix-popper-content-wrapper] {
+  z-index: 9999 !important;
+  pointer-events: none !important;
+}
+
+/* Hide Vite's default loading indicator */
+#vite-plugin-react-preamble-loaded,
+#vite-plugin-react-preamble,
+[id^="vite-plugin-react-preamble"] {
+  display: none !important;
+}
+
+@layer base {
+  /* Ensure full height for html, body, and root */
+  html,
+  body,
+  #root {
+    height: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* Mobile / tablet portrait: `100vh` on real mobile browsers includes
+     the URL bar, so `min-height: 100vh` makes <body> taller than the
+     visible viewport and produces a root-level scroll. The whole page
+     (including the chat header that sits as a sibling above the
+     `flex-1 overflow-y-auto` messages container) slides up with the
+     URL bar's reveal. Forcing `overflow: hidden` on html/body at this
+     width pins the root to the dynamic viewport and constrains scroll
+     to child containers only. */
+  @media (max-width: 1199px) {
+    html,
+    body {
+      overflow: hidden;
+      height: 100dvh;
+      min-height: 100dvh;
+    }
+  }
+
+  :root {
+    /* Dynamic viewport height variables for mobile browser URL bar handling */
+    --vh: 1vh;
+    --dynamic-vh: 1vh;
+    --safe-area-inset-top: 0px;
+    --safe-area-inset-bottom: 0px;
+
+    /* Light theme variables (clean cool paper — cards elevate above the canvas) */
+    --background: 220 18% 94%;
+    --foreground: 224 40% 10%;
+    --card: 220 30% 98.5%;
+    --card-foreground: 224 40% 10%;
+    --popover: 220 30% 98.5%;
+    --popover-foreground: 224 40% 10%;
+    --primary: 262.1 83.3% 57.8%;
+    --primary-foreground: 210 20% 98%;
+    --secondary: 220 14% 87%;
+    --secondary-foreground: 224 40% 10%;
+    --muted: 220 14% 89%;
+    --muted-foreground: 217 12% 38%;
+    --accent: 220 14% 86%;
+    --accent-foreground: 224 40% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 220 13% 82%;
+    --input: 220 13% 85%;
+    --ring: 262.1 83.3% 57.8%;
+
+    --radius: 0rem;
+
+    /* Light theme sidebar/chat variables */
+    --chat-sidebar: 220 16% 91%;
+    --chat-sidebar-foreground: 224 40% 10%;
+    --chat-sidebar-border: 220 13% 82%;
+    --chat-sidebar-button: 220 14% 86%;
+    --chat-sidebar-button-hover: 220 14% 82%;
+    --sidebar-background: 220 16% 90%;
+    --sidebar-foreground: 224 40% 10%;
+    --sidebar-border: 220 13% 82%;
+    --sidebar-primary: 262.1 83.3% 57.8%;
+    --sidebar-primary-foreground: 210 20% 98%;
+    --sidebar-accent: 220 14% 86%;
+    --sidebar-accent-foreground: 224 40% 10%;
+    --sidebar-ring: 262.1 83.3% 57.8%;
+
+    --scrollbar-thumb: 220 12% 62%;
+    --scrollbar-track: 220 14% 89%;
+
+    --animate-duration: 0.3s;
+
+    /* Dialog overlay z-index - above sidebar (30) and PDF/Notes drawers (40), below sidebar dropdown (100) */
+    --dialog-overlay-z-index: 50;
+    --popover-z-index: 75;
+  }
+
+  .dark {
+    /* Dark theme variables (deep ink — cards sit slightly above the canvas) */
+    --background: 222 22% 10%;
+    --foreground: 220 20% 96%;
+    --card: 222 20% 13%;
+    --card-foreground: 220 20% 96%;
+    --popover: 222 21% 12%;
+    --popover-foreground: 220 20% 96%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 220 16% 19%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 220 16% 18%;
+    --muted-foreground: 217 14% 68%;
+    --accent: 220 16% 20%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 220 15% 20%;
+    --input: 220 15% 20%;
+    --ring: 224.3 76.3% 48%;
+
+    /* Dark theme sidebar/chat variables */
+    --chat-sidebar: 224 26% 6%;
+    --chat-sidebar-foreground: 0 0% 100%;
+    --chat-sidebar-border: 220 16% 16%;
+    --chat-sidebar-button: 222 18% 11%;
+    --chat-sidebar-button-hover: 220 16% 18%;
+    --sidebar-background: 223 24% 8%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-border: 220 16% 16%;
+
+    --scrollbar-thumb: 220 12% 30%;
+    --scrollbar-track: 222 22% 10%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    /* Fallback background to prevent white page */
+    background-color: #0f172a;
+    /* Dark fallback */
+    color: #f8fafc;
+    /* Light text fallback */
+  }
+
+  /* Ensure light theme overrides fallback */
+  .light body {
+    background-color: #edeff4;
+    color: #111726;
+  }
+
+  /* Custom scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--scrollbar-track));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--scrollbar-thumb));
+    border-radius: 2px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary));
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--scrollbar-thumb)) hsl(var(--scrollbar-track));
+  }
+}
+
+/* Remove rounded corners on small screens (768px-1079px) */
+@media (min-width: 768px) and (max-width: 1079px) {
+
+  button,
+  [role="button"],
+  .btn {
+    border-radius: 0 !important;
+  }
+
+  /* Specifically target common UI components */
+  .rounded-md,
+  .rounded-sm,
+  .rounded-lg {
+    border-radius: 0 !important;
+  }
+}
+
+/* Animation utilities */
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease forwards;
+  }
+
+  .animate-fade-out {
+    animation: fadeOut 0.3s ease forwards;
+  }
+
+  /* Hide scrollbars utility */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    /* Internet Explorer 10+ */
+    scrollbar-width: none;
+    /* Firefox */
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+    /* Safari and Chrome */
+  }
+
+  /* Dynamic viewport height utilities for mobile browser URL bar handling */
+  .h-screen-dynamic {
+    height: calc(100 * var(--dynamic-vh, 1vh));
+  }
+
+  .min-h-screen-dynamic {
+    min-height: calc(100 * var(--dynamic-vh, 1vh));
+  }
+
+  .max-h-screen-dynamic {
+    max-height: calc(100 * var(--dynamic-vh, 1vh));
+  }
+
+  /* Safe area utilities */
+  .pt-safe {
+    padding-top: var(--safe-area-inset-top, 0px);
+  }
+
+  .pb-safe {
+    padding-bottom: var(--safe-area-inset-bottom, 0px);
+  }
+
+  .mt-safe {
+    margin-top: var(--safe-area-inset-top, 0px);
+  }
+
+  .mb-safe {
+    margin-bottom: var(--safe-area-inset-bottom, 0px);
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  0% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Skeleton loaders: instead of pulsing the whole block's opacity, a soft
+   highlight sweeps across the placeholder ("as if something is loading").
+   Keeps the element's own background colour (bg-muted / bg-zinc-* / …) and
+   just layers a moving gradient on top via ::after — drop-in replacement for
+   `animate-pulse` on any placeholder div. */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--foreground) / 0.08) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+/* Dark mode needs a stronger highlight: a light sweep over the near-black
+   zinc-800 placeholders is barely visible at the light-mode alpha. */
+.dark .skeleton-shimmer::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--foreground) / 0.14) 50%,
+    transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer::after {
+    animation: none;
+  }
+}
+
+/* Additional styles for the hexagon icon and sidebar */
+.hexagon {
+  clip-path: polygon(50% 0%, 95% 25%, 95% 75%, 50% 100%, 5% 75%, 5% 25%);
+}
+
+.circular-button {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.circular-button:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Style for the background of the sidebar buttons */
+.bg-chat-sidebar {
+  background-color: hsl(var(--chat-sidebar));
+}
+
+.bg-chat-sidebar-button {
+  background-color: hsl(var(--chat-sidebar-button));
+}
+
+.bg-chat-sidebar-button\/80 {
+  background-color: hsl(var(--chat-sidebar-button) / 0.8);
+}
+
+.hover\:bg-chat-sidebar-button:hover {
+  background-color: hsl(var(--chat-sidebar-button-hover));
+}
+
+.hover\:bg-chat-sidebar-button\/80:hover {
+  background-color: hsl(var(--chat-sidebar-button-hover) / 0.8);
+}
+
+.text-sidebar-foreground {
+  color: hsl(var(--sidebar-foreground));
+}
+
+/* For data-[state=active] */
+.data-\[state\=active\]\:bg-sidebar-primary[data-state='active'] {
+  background-color: hsl(var(--sidebar-primary));
+}
+
+.data-\[state\=active\]\:text-sidebar-primary-foreground[data-state='active'] {
+  color: hsl(var(--sidebar-primary-foreground));
+}
+
+/* Blur effect for popover background */
+.blur-background {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(170, 170, 170, 0.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 20;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Dark theme blur background */
+.dark .blur-background {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Style for popover */
+[role='dialog'][data-radix-popper-content-wrapper] {
+  z-index: 75 !important;
+  /* Above dialogs (70-72) */
+}
+
+/* PDF and Notes drawer animations and layouts are now in centralized files:
+   - src/styles/pdf-drawer.css
+   - src/notes/notes-drawer.css
+*/
+
+/* Browser Extension Compatibility */
+/* Ensure browser extensions remain clickable above dialog overlays */
+.toolbar-container,
+[class*="toolbar-container"],
+[data-extension],
+[data-testid*="extension"],
+div[id*="extension"],
+div[class*="extension-"] {
+  position: relative !important;
+  z-index: 9999 !important;
+  pointer-events: auto !important;
+}
+
+/* PDF and EPUB viewer drawers need pointer-events when shown above dialogs */
+.pdf-viewer-drawer,
+.epub-viewer-drawer {
+  pointer-events: auto !important;
+}
+
+/* epub.js container - ensure content starts from left and doesn't overflow */
+.epub-viewer-drawer .epub-container {
+  width: 100% !important;
+  overflow: hidden !important;
+}
+
+/* Ensure dialog content is interactive (for nested dialog scenarios) */
+[data-radix-dialog-content] {
+  pointer-events: auto;
+}
+
+/* Fix: Ensure inputs inside dialogs are interactive on mobile */
+[data-radix-dialog-content] input,
+[data-radix-dialog-content] textarea,
+[data-radix-dialog-content] select,
+[data-radix-dialog-content] button {
+  pointer-events: auto !important;
+  touch-action: auto !important;
+}
+
+/* Allow extension containers to be interactive even when overlays are present */
+body:has([data-radix-dialog-overlay]) .toolbar-container,
+body:has([data-radix-dialog-overlay]) [class*="toolbar-container"],
+body:has([data-radix-dialog-overlay]) [data-extension],
+body:has([data-radix-dialog-overlay]) [data-testid*="extension"],
+body:has([data-radix-dialog-overlay]) div[id*="extension"],
+body:has([data-radix-dialog-overlay]) div[class*="extension-"] {
+  z-index: 10000 !important;
+  pointer-events: auto !important;
+  position: relative !important;
+}
+
+/* Slow pulse animation for status indicators */
+@keyframes pulse-slow {
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
+/* While the fullscreen voice dialog is open the global tool-dock rail
+   (rendered at the maximum z-index, above the dialog) must be hidden so its
+   icons don't overlap the conversation surface. The dialog toggles the
+   `voice-mode-active` class on <body> for its lifetime. */
+body.voice-mode-active [data-tool-dock] {
+  display: none !important;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

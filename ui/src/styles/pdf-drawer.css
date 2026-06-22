@@ -1,0 +1,523 @@
+/* ============================================
+   PDF DRAWER - Centralized Styles
+   Consolidates: pdf-viewer.css, pdf-layout-fix.css, and index.css PDF sections
+   ============================================ */
+
+/* ========== Z-Index Hierarchy ========== */
+/* PDF Drawer: z-index 60 (above chat, below dialogs) */
+
+/* ========== Positioning Logic ========== */
+/* PDF Drawer positioning on large screens:
+   - When alone: RIGHT side, adjustable width (30-100%)
+   - When Notes is present: LEFT side, width calc(50vw - 70px)
+   - Pattern: PDF goes LEFT when Notes is open, Notes stays RIGHT */
+
+/* ========== Theme Variables ========== */
+:root {
+  /* PDF Viewer Width */
+  --pdf-viewer-width: 50%;
+
+  /* Dark theme variables */
+  --pdf-dark-background: #000000;
+  --pdf-dark-text: #f1f1f1;
+  --pdf-dark-toolbar: #000000;
+  --pdf-dark-border: #333333;
+  --pdf-dark-button: #333333;
+  --pdf-dark-button-hover: #444444;
+  --pdf-dark-input-bg: #111111;
+
+  /* Light theme variables */
+  --pdf-light-background: #ffffff;
+  --pdf-light-text: #333333;
+  --pdf-light-toolbar: #f5f5f5;
+  --pdf-light-border: #e0e0e0;
+  --pdf-light-button: #e8e8e8;
+  --pdf-light-button-hover: #d4d4d4;
+  --pdf-light-input-bg: #ffffff;
+}
+
+/* ========== Animations ========== */
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Slide-in panel classes */
+.slide-in-panel {
+  animation: slideInFromRight 0.5s ease-in-out forwards;
+  transition:
+    transform 0.5s ease-in-out,
+    width 0.5s ease-in-out;
+}
+
+.slide-in-panel-left {
+  animation: slideInFromLeft 0.5s ease-in-out forwards;
+  transition:
+    transform 0.5s ease-in-out,
+    width 0.5s ease-in-out;
+}
+
+/* Animation classes for PDF drawer sliding in from right (when opening alone) */
+.animate-slide-in-from-right {
+  animation: slideInFromRight 0.5s ease-in-out;
+}
+
+/* Animation classes for PDF drawer sliding in from left (when notes are already on right) */
+.animate-slide-in-from-left {
+  animation: slideInFromLeft 0.5s ease-in-out;
+}
+
+/* ========== Layout & Positioning ========== */
+
+/* Ensure enough space for SidebarQuickTools when PDF is open */
+.pdf-drawer-open .slide-in-panel {
+  right: 0 !important;
+  left: auto !important;
+}
+
+/* Fix main content positioning when PDF is open */
+main.shift-for-pdf {
+  margin-left: 70px !important;
+}
+
+/* When sidebar is open and PDF is open */
+main.shift-for-pdf.ml-\[376px\] {
+  margin-left: 70px !important;
+  /* SidebarQuickTools width */
+}
+
+/* When sidebar is closed but PDF is open */
+main.shift-for-pdf.ml-14 {
+  margin-left: 70px !important;
+  /* SidebarQuickTools width */
+}
+
+/* Allow conversation content to set its own width */
+.pdf-drawer-open .conversation-content {
+  /* Styles are applied directly via inline style */
+  padding-left: 0 !important;
+  max-width: none !important;
+}
+
+/* Ensure the body style for PDF drawer open applies correct spacing */
+body.pdf-drawer-open main {
+  margin-left: 70px !important;
+  /* Always preserve space for the SidebarQuickTools */
+}
+
+/* PDF drawer specific styles - DEPRECATED */
+/* These styles are no longer needed with the new drawer positioning system */
+/* Conversation content positioning is now handled by chat-messages.tsx inline styles */
+
+/* .pdf-drawer-open .conversation-content {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: calc(100% - var(--pdf-viewer-width, 50%));
+  z-index: 60;
+  background-color: var(--background);
+  border-right: 1px solid var(--border);
+  overflow: auto;
+  transition: width 0.5s ease-in-out;
+} */
+
+/* .conversations-sidebar-open.pdf-drawer-open .conversation-content {
+  width: calc(100% - var(--pdf-viewer-width, 50%) - 320px);
+  left: 320px;
+} */
+
+/* Make sure the conversation content is always visible */
+.conversation-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Ensure the conversation-view is visible when the drawer is open */
+.pdf-drawer-open .conversation-view {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Ensure chat text maintains proper alignment */
+.conversation-content .text-center,
+.conversation-content div[class*='text-center'] {
+  text-align: justify !important;
+}
+
+/* ========== PDF Viewer Container ========== */
+.pdf-viewer-container {
+  background-color: rgb(32, 32, 36);
+  /* Dark background to match the theme */
+}
+
+/* Highlight animation for the current page */
+.citation-highlight {
+  animation: highlight-pulse 2s ease-in-out;
+  box-shadow: 0 0 0 2px rgba(125, 106, 255, 0.5);
+}
+
+@keyframes highlight-pulse {
+  0% {
+    box-shadow: 0 0 0 2px rgba(125, 106, 255, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(125, 106, 255, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 0 2px rgba(125, 106, 255, 0.2);
+  }
+}
+
+/* ========== React PDF Viewer (RPV) Library Theming ========== */
+
+/* Light Theme Styles */
+.pdf-theme-light .rpv-default-layout__container {
+  border: 1px solid rgb(212 212 216) !important;
+}
+
+.pdf-theme-light .rpv-core__viewer {
+  background-color: var(--pdf-light-background);
+}
+
+.pdf-theme-light .rpv-core__page-layer {
+  background-color: var(--pdf-light-background);
+}
+
+.pdf-theme-light .rpv-default-layout__toolbar {
+  background-color: var(--pdf-light-toolbar);
+  border-bottom: 1px solid var(--pdf-light-border);
+}
+
+.pdf-theme-light .rpv-core__minimal-button,
+.pdf-theme-light .rpv-core__dropdown-button {
+  color: var(--pdf-light-text);
+}
+
+.pdf-theme-light .rpv-core__minimal-button:hover,
+.pdf-theme-light .rpv-core__dropdown-button:hover {
+  background-color: var(--pdf-light-button-hover);
+}
+
+.pdf-theme-light .rpv-core__textbox {
+  background-color: var(--pdf-light-input-bg);
+  color: var(--pdf-light-text);
+  border: 1px solid var(--pdf-light-border);
+}
+
+.pdf-theme-light .rpv-core__menu {
+  background-color: var(--pdf-light-toolbar);
+  color: var(--pdf-light-text);
+  border: 1px solid var(--pdf-light-border);
+}
+
+.pdf-theme-light .rpv-core__menu-item:hover {
+  background-color: var(--pdf-light-button-hover);
+}
+
+.pdf-theme-light .rpv-default-layout__toolbar-label {
+  color: var(--pdf-light-text);
+}
+
+/* Dark Theme Styles */
+.pdf-theme-dark .rpv-default-layout__container {
+  border: 1px solid black !important;
+}
+
+.pdf-theme-dark .rpv-core__viewer {
+  background-color: var(--pdf-dark-background);
+}
+
+.pdf-theme-dark .rpv-core__page-layer {
+  background-color: var(--pdf-dark-background);
+}
+
+.pdf-theme-dark .rpv-default-layout__toolbar {
+  background-color: var(--pdf-dark-toolbar);
+  border-bottom: 1px solid var(--pdf-dark-border);
+}
+
+/* Specific overrides for elements with hardcoded colors */
+.pdf-theme-dark .rpv-default-layout__sidebar {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .rpv-default-layout__sidebar-headers {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .rpv-default-layout__sidebar-content {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .bg-zinc-900,
+.pdf-theme-dark [class*='bg-zinc-900'] {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .bg-gray-900,
+.pdf-theme-dark [class*='bg-gray-900'] {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .bg-neutral-900,
+.pdf-theme-dark [class*='bg-neutral-900'] {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .rpv-core__minimal-button,
+.pdf-theme-dark .rpv-core__dropdown-button {
+  color: var(--pdf-dark-text);
+}
+
+.pdf-theme-dark .rpv-core__minimal-button:hover,
+.pdf-theme-dark .rpv-core__dropdown-button:hover {
+  background-color: var(--pdf-dark-button-hover);
+}
+
+.pdf-theme-dark .rpv-core__textbox {
+  background-color: var(--pdf-dark-input-bg);
+  color: var(--pdf-dark-text);
+  border: 1px solid var(--pdf-dark-border);
+}
+
+.pdf-theme-dark .rpv-core__menu {
+  background-color: var(--pdf-dark-toolbar);
+  color: var(--pdf-dark-text);
+  border: 1px solid var(--pdf-dark-border);
+}
+
+.pdf-theme-dark .rpv-core__menu-item:hover {
+  background-color: var(--pdf-dark-button-hover);
+}
+
+.pdf-theme-dark .rpv-core__scroll-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.pdf-theme-dark .rpv-core__scroll-container::-webkit-scrollbar-track {
+  background: var(--pdf-dark-background);
+}
+
+.pdf-theme-dark .rpv-core__scroll-container::-webkit-scrollbar-thumb {
+  background-color: var(--pdf-dark-button);
+  border-radius: 4px;
+}
+
+.pdf-theme-dark .rpv-core__scroll-container::-webkit-scrollbar-thumb:hover {
+  background-color: var(--pdf-dark-button-hover);
+}
+
+.pdf-theme-dark .rpv-core__canvas-layer canvas {
+  border: none;
+}
+
+.pdf-theme-dark .rpv-default-layout__toolbar-label {
+  color: var(--pdf-dark-text);
+}
+
+/* Additional overrides for other components with potential hardcoded colors */
+.pdf-theme-dark .rpv-default-layout__sidebar-header {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .rpv-thumbnail__container {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .rpv-thumbnail__item {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .rpv-thumbnail__item-selected {
+  background-color: #333333 !important;
+}
+
+.pdf-theme-dark .rpv-default-layout__sidebar-tab {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .rpv-default-layout__sidebar-tab-selected {
+  background-color: #000000 !important;
+  border-bottom-color: #ffffff !important;
+}
+
+/* Ensure all PDF content containers are properly themed */
+.pdf-theme-dark [data-testid='default-layout-slot-content'] {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark .rpv-default-layout__body {
+  background-color: #000000 !important;
+}
+
+/* For components with background-color: #222222 or similar dark gray tones */
+.pdf-theme-dark [style*='background-color: rgb(34, 34, 34)'],
+.pdf-theme-dark [style*='background-color: #222'] {
+  background-color: #000000 !important;
+}
+
+.pdf-theme-dark [style*='background-color: rgb(51, 51, 51)'],
+.pdf-theme-dark [style*='background-color: #333'] {
+  background-color: #000000 !important;
+}
+
+/* Custom container styling */
+.pdf-theme-dark .pdf-viewer-worker-container {
+  background-color: #000000 !important;
+}
+
+/* ========== Speech Highlight Styling ========== */
+.pdf-theme-light .speech-highlight {
+  background-color: rgba(255, 204, 0, 0.5) !important;
+  border-radius: 3px !important;
+  box-shadow: 0 0 0 2px rgba(255, 153, 0, 0.5) !important;
+  transition: background-color 0.2s ease-in-out;
+  position: relative;
+  z-index: 100;
+}
+
+.pdf-theme-dark .speech-highlight {
+  background-color: rgba(255, 204, 0, 0.4) !important;
+  border-radius: 3px !important;
+  box-shadow: 0 0 0 2px rgba(255, 204, 0, 0.5) !important;
+  transition: background-color 0.2s ease-in-out;
+  position: relative;
+  z-index: 100;
+}
+
+@keyframes pulse-highlight {
+  0% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.85;
+  }
+}
+
+.pdf-theme-light .speech-highlight,
+.pdf-theme-dark .speech-highlight {
+  animation: pulse-highlight 1.5s infinite ease-in-out;
+}
+
+/* Direct highlight styling for text spans */
+.rpv-core__text-layer-text.speech-highlight {
+  background-color: rgba(255, 204, 0, 0.4) !important;
+  border-radius: 3px !important;
+  box-shadow: 0 0 0 2px rgba(255, 204, 0, 0.5) !important;
+}
+
+/* Violet themed highlight for PDF text */
+.pdf-violet-highlight {
+  background-color: rgba(124, 58, 237, 0.2) !important;
+  /* violet-500 with opacity */
+  border-radius: 2px !important;
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.3) !important;
+}
+
+/* ========== Responsive Adjustments ========== */
+
+/* Mobile: Hide chat when PDF is open */
+@media (max-width: 768px) {
+  .pdf-drawer-open .conversation-content {
+    display: none !important;
+  }
+
+  main.shift-for-pdf {
+    display: none;
+  }
+
+  /* Hide PDF sidebar completely on mobile to prevent black area and content shifting */
+  .pdf-viewer-container .rpv-default-layout__sidebar {
+    display: none !important;
+  }
+
+  /* Adjust main content to take full width when sidebar is hidden */
+  .pdf-viewer-container .rpv-default-layout__body {
+    width: 100% !important;
+  }
+
+  .pdf-viewer-container .rpv-default-layout__main {
+    width: 100% !important;
+  }
+
+  .pdf-viewer-container .rpv-default-layout__toolbar {
+    padding: 2px !important;
+  }
+}
+
+/* Tablet/Medium screens */
+@media (max-width: 1280px) {
+  /* Let the library handle sidebar width naturally when toggled */
+  /* Removed fixed width to allow proper collapse/expand behavior */
+}
+
+/* ========== Touch Scrolling Support ========== */
+/* Override react-pdf-viewer internal elements to enable touch scrolling.
+ * pinch-zoom is intentionally omitted: PDFViewer owns the two-finger gesture
+ * and calls zoomPlugin.zoomTo() so pdf.js re-rasterizes at the new scale
+ * (native pinch-zoom only CSS-scales the layer and renders blurry text). */
+
+.pdf-viewer-drawer,
+.pdf-viewer-container,
+.pdf-viewer-worker-container,
+.rpv-core__viewer,
+.rpv-core__inner-container,
+.rpv-core__scroll-container,
+.rpv-core__inner-pages,
+.rpv-core__inner-page,
+.rpv-core__page-layer,
+.rpv-core__canvas-layer,
+.rpv-core__text-layer,
+.rpv-default-layout__container,
+.rpv-default-layout__main,
+.rpv-default-layout__body {
+  touch-action: pan-x pan-y !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* Ensure scroll containers allow scrolling via touch */
+.rpv-core__inner-container,
+.rpv-core__scroll-container,
+.rpv-core__inner-pages {
+  overflow: auto !important;
+  overscroll-behavior: contain !important;
+}
+
+.rpv-core__text-layer,
+.rpv-core__text-layer-text {
+  -webkit-touch-callout: none;
+}
+
+/* Enable pointer events on all PDF viewer elements */
+.pdf-viewer-drawer *,
+.rpv-core__viewer *,
+.rpv-default-layout__container * {
+  pointer-events: auto !important;
+}
+
+/* Ensure the inner pages container handles touch events properly */
+.rpv-core__inner-pages {
+  -webkit-overflow-scrolling: touch !important;
+  scroll-behavior: smooth;
+}

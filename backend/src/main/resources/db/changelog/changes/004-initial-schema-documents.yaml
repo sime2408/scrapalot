@@ -1,0 +1,175 @@
+# Migration 004: Documents Table
+# Based on: Alembic 00001_initial_schema.py (documents table)
+# Purpose: File metadata and processing status
+
+databaseChangeLog:
+  - changeSet:
+      id: 004-create-documents-table
+      author: liquibase-auto
+      labels: core,documents
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: documents
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: documents
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_documents
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: collection_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_documents_collection_id
+                    references: scrapalot.collections(id)
+                    deleteCascade: true
+              - column:
+                  name: title
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: filename
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_path
+                  type: VARCHAR(500)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_size
+                  type: BIGINT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: file_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: content
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: page_count
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: word_count
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: processing_status
+                  type: VARCHAR(20)
+                  defaultValue: pending
+                  constraints:
+                    nullable: false
+              - column:
+                  name: processing_error
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: processing_progress
+                  type: FLOAT
+                  defaultValueNumeric: 0.0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_metadata
+                  type: JSONB
+                  constraints:
+                    nullable: true
+              - column:
+                  name: extracted_metadata
+                  type: JSONB
+                  constraints:
+                    nullable: true
+              - column:
+                  name: celery_task_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: true
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: documents
+
+  - changeSet:
+      id: 004-create-documents-indexes
+      author: liquibase-auto
+      labels: core,documents,indexes
+      changes:
+        - createIndex:
+            schemaName: scrapalot
+            tableName: documents
+            indexName: idx_documents_collection_id
+            columns:
+              - column:
+                  name: collection_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: documents
+            indexName: idx_documents_title
+            columns:
+              - column:
+                  name: title
+        - createIndex:
+            schemaName: scrapalot
+            tableName: documents
+            indexName: idx_documents_filename
+            columns:
+              - column:
+                  name: filename
+        - createIndex:
+            schemaName: scrapalot
+            tableName: documents
+            indexName: idx_documents_file_type
+            columns:
+              - column:
+                  name: file_type
+
+      rollback:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: documents
+            indexName: idx_documents_collection_id
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: documents
+            indexName: idx_documents_title
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: documents
+            indexName: idx_documents_filename
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: documents
+            indexName: idx_documents_file_type

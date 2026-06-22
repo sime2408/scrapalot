@@ -1,0 +1,30 @@
+# Migration 129: grant the owner's personal account superadmin
+#
+# simun.sunjic@gmail.com is the product owner. Elevate that personal
+# account to a full admin AND mark it superadmin so it carries the same
+# impersonate-admins power as the admin@test.com login seeded in 128.
+# Two superadmins is intentional; a superadmin still cannot impersonate
+# another superadmin (defence-in-depth, enforced in AdminController).
+#
+# Idempotent UPDATE by email — affects 0 rows on a fresh DB where the
+# account does not exist yet, which is harmless.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 129-owner-superadmin
+      author: scrapalot
+      labels: auth,impersonation
+      comment: "Promote the owner's personal account to admin + superadmin"
+      changes:
+        - sql:
+            sql: |
+              UPDATE scrapalot.users
+              SET role = 'admin', is_superadmin = TRUE, updated_at = CURRENT_TIMESTAMP
+              WHERE email = 'simun.sunjic@gmail.com';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE scrapalot.users
+              SET role = 'user', is_superadmin = FALSE, updated_at = CURRENT_TIMESTAMP
+              WHERE email = 'simun.sunjic@gmail.com';

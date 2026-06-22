@@ -1,0 +1,87 @@
+# Development Profile Configuration
+# Overrides for local development environment
+
+server:
+  port: 8091
+  error:
+    include-stacktrace: always
+
+spring:
+  # Development Database (uses env vars for Docker, defaults to localhost for local dev)
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_BACKEND_HOST:localhost}:${POSTGRES_BACKEND_PORT:5432}/${POSTGRES_BACKEND_DB:scrapalot_backend}
+    username: ${POSTGRES_BACKEND_USER:scrapalot}
+    password: ${POSTGRES_BACKEND_PASSWORD:scrapalot123}
+    hikari:
+      maximum-pool-size: 5
+
+  # JPA Development Settings
+  jpa:
+    hibernate:
+      ddl-auto: update  # Auto-create/update schema
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+
+  # Jackson pretty printing for development
+  jackson:
+    serialization:
+      indent-output: true
+
+# JWT Development Configuration
+jwt:
+  secret: dev-secret-key-change-in-production-min-256-bits
+  expiration-ms: 3600000  # 1 hour for development
+
+# CORS Development - Allow localhost
+cors:
+  allowed-origins: http://localhost:3000,http://localhost:3001,http://localhost:8090
+  allow-credentials: true
+
+# OAuth Development Configuration
+oauth:
+  google:
+    redirect-uri: http://localhost:8091/api/v1/auth/google/callback
+    frontend-url: http://localhost:3000
+
+# Logging Development - Verbose
+logging:
+  level:
+    root: INFO
+    com.scrapalot.backend: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n%wEx"
+
+# Actuator Development - Expose all endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always
+
+# Development Upload Path
+application:
+  upload:
+    path: C:/temp/scrapalot-uploads  # Windows development path
+    max-size-mb: 10
+
+# WebSocket Development
+websocket:
+  enabled: true
+
+# API Documentation - Enabled in development
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html

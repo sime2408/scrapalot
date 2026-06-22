@@ -1,0 +1,73 @@
+# Migration 117: per-note emoji reactions surfaced by the page-meta row
+# Schema: one row per (note, user, emoji). UNIQUE on the triple lets a
+# single user attach multiple distinct emojis to the same note but
+# guarantees idempotency on the same emoji (toggle = delete).
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 117-create-note-reactions
+      author: scrapalot
+      labels: notes,reactions
+      comment: "Create note_reactions table for the page-meta reaction picker"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: note_reactions
+                schemaName: scrapalot
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: note_reactions
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: note_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_note_reactions_note
+                    references: scrapalot.notes(id)
+                    deleteCascade: true
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: emoji
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            schemaName: scrapalot
+            tableName: note_reactions
+            columnNames: note_id, user_id, emoji
+            constraintName: uq_note_reactions_note_user_emoji
+        - createIndex:
+            schemaName: scrapalot
+            tableName: note_reactions
+            indexName: idx_note_reactions_note
+            columns:
+              - column:
+                  name: note_id
+      rollback:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: note_reactions
+            indexName: idx_note_reactions_note
+        - dropTable:
+            schemaName: scrapalot
+            tableName: note_reactions

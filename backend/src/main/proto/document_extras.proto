@@ -1,0 +1,814 @@
+syntax = "proto3";
+
+package scrapalot.document;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.document";
+option java_outer_classname = "DocumentExtrasServiceProto";
+
+// Document extras service — file serving, thumbnails, previews, uploads
+// Supplements the existing DocumentProcessingService for non-processing operations
+service DocumentExtrasService {
+  // File upload (binary data over gRPC)
+  rpc UploadDocument(UploadDocumentRequest) returns (UploadDocumentResponse);
+
+  // Thumbnail operations
+  rpc GetThumbnail(GetThumbnailRequest) returns (ThumbnailResponse);
+  rpc UploadCustomThumbnail(UploadCustomThumbnailRequest) returns (scrapalot.common.StatusResponse);
+  rpc DeleteThumbnail(DeleteThumbnailRequest) returns (scrapalot.common.StatusResponse);
+
+  // Document preview
+  rpc GetDocxPreview(DocxPreviewRequest) returns (DocxPreviewResponse);
+  rpc GetDocxMammothPreview(DocxPreviewRequest) returns (DocxPreviewResponse);
+
+  // File serving
+  rpc GetDocumentFile(GetDocumentFileRequest) returns (DocumentFileResponse);
+
+  // Collection documents (Python DB query)
+  rpc ListCollectionDocuments(ListCollectionDocsRequest) returns (ListCollectionDocsResponse);
+
+  // Reading positions
+  rpc GetReadingPosition(ReadingPositionRequest) returns (ReadingPositionResponse);
+  rpc SetReadingPosition(SetReadingPositionRequest) returns (scrapalot.common.StatusResponse);
+
+  // Book summary
+  rpc GetBookSummary(GetBookSummaryRequest) returns (BookSummaryResponse);
+
+  // Generate book summary (chapter-by-chapter then full book)
+  rpc GenerateBookSummary(GenerateBookSummaryRequest) returns (stream SummaryProgressPacket);
+
+  // Book summary translation (streaming LLM translation with DB cache)
+  rpc TranslateBookSummary(TranslateBookSummaryRequest) returns (stream TranslationPacket);
+
+  // Document metadata (Python as single owner)
+  rpc GetDocument(GetDocumentByIdRequest) returns (DocumentDetailResponse);
+
+  // Delete document with full cleanup (embeddings, summaries, Neo4j, files)
+  rpc DeleteDocument(DeleteDocumentByIdRequest) returns (DeleteDocumentByIdResponse);
+  rpc PartialDeleteDocument(PartialDeleteRequest) returns (PartialDeleteResponse);
+
+  // Storage usage across collections
+  rpc GetStorageUsage(GetStorageUsageRequest) returns (StorageUsageResponse);
+
+  // Register document from markdown content (connector sync, web scraping)
+  rpc RegisterDocumentFromMarkdown(RegisterMarkdownRequest) returns (RegisterMarkdownResponse);
+
+  // Move documents to a different collection
+  rpc MoveDocuments(MoveDocumentsRequest) returns (MoveDocumentsResponse);
+
+  // Batch delete documents
+  rpc BatchDeleteDocuments(BatchDeleteDocumentsRequest) returns (BatchDeleteDocumentsResponse);
+
+  // Collection statistics (documents, embeddings, graph, summaries)
+  rpc GetCollectionStats(GetCollectionStatsRequest) returns (CollectionStatsResponse);
+
+  // Per-document processing step triggers
+  rpc BuildDocumentGraph(BuildDocumentGraphRequest) returns (scrapalot.common.StatusResponse);
+  rpc RebuildDocumentEmbeddings(RebuildDocumentEmbeddingsRequest) returns (scrapalot.common.StatusResponse);
+
+  // Download book cover from internet (Open Library) using ISBN from document metadata
+  rpc DownloadBookCover(DownloadBookCoverRequest) returns (DownloadBookCoverResponse);
+
+  // Tags
+  rpc ListTags(ListTagsRequest) returns (ListTagsResponse);
+  rpc TagDocument(TagDocumentRequest) returns (scrapalot.common.Empty);
+  rpc UntagDocument(UntagDocumentRequest) returns (scrapalot.common.Empty);
+  rpc GetDocumentTags(GetDocumentTagsRequest) returns (ListTagsResponse);
+
+  // Document Relations
+  rpc CreateDocumentRelation(CreateRelationRequest) returns (DocumentRelationResponse);
+  rpc ListDocumentRelations(ListRelationsRequest) returns (ListRelationsResponse);
+  rpc DeleteDocumentRelation(DeleteRelationRequest) returns (scrapalot.common.Empty);
+
+  // Saved Searches
+  rpc CreateSavedSearch(CreateSavedSearchRequest) returns (SavedSearchResponse);
+  rpc UpdateSavedSearch(UpdateSavedSearchRequest) returns (SavedSearchResponse);
+  rpc ListSavedSearches(ListSavedSearchesRequest) returns (ListSavedSearchesResponse);
+  rpc ExecuteSavedSearch(ExecuteSavedSearchRequest) returns (ExecuteSavedSearchResponse);
+  rpc PreviewSavedSearch(PreviewSavedSearchRequest) returns (PreviewSavedSearchResponse);
+  rpc DeleteSavedSearch(DeleteSavedSearchRequest) returns (scrapalot.common.Empty);
+
+  // Duplicate Detection
+  rpc FindDuplicates(FindDuplicatesRequest) returns (FindDuplicatesResponse);
+  rpc MergeDuplicates(MergeDuplicatesRequest) returns (MergeDuplicatesResponse);
+
+  // Metadata Enrichment
+  rpc EnrichDocumentMetadata(EnrichMetadataRequest) returns (EnrichMetadataResponse);
+  rpc LookupIdentifier(LookupIdentifierRequest) returns (LookupIdentifierResponse);
+
+  // Manual document type update
+  rpc UpdateDocumentType(UpdateDocumentTypeRequest) returns (UpdateDocumentTypeResponse);
+
+  // Document priority for retrieval weighting
+  rpc UpdateDocumentPriority(UpdateDocumentPriorityRequest) returns (UpdateDocumentPriorityResponse);
+
+  // Trash / Soft-Delete
+  rpc RestoreDocument(RestoreDocumentRequest) returns (UpdateDocumentTypeResponse);
+  rpc PurgeTrash(PurgeTrashRequest) returns (UpdateDocumentTypeResponse);
+
+  // Unpaywall open-access PDF lookup
+  rpc FindOpenAccessPdf(FindOpenAccessPdfRequest) returns (FindOpenAccessPdfResponse);
+
+  // Extract annotations from uploaded PDF
+  rpc ExtractPdfAnnotations(ExtractPdfAnnotationsRequest) returns (ExtractPdfAnnotationsResponse);
+
+  // List per-document multimodal elements (image / table / equation) so the
+  // UI can surface a "Visual entities" tab next to chunks.
+  rpc ListDocumentMultimodalElements(ListDocumentMultimodalElementsRequest) returns (ListDocumentMultimodalElementsResponse);
+
+  // RSS Feed subscriptions
+  rpc CreateFeed(CreateFeedRequest) returns (CreateFeedResponse);
+  rpc ListFeeds(ListFeedsRequest) returns (ListFeedsResponse);
+  rpc DeleteFeed(DeleteFeedRequest) returns (scrapalot.common.Empty);
+  rpc ListFeedItems(ListFeedItemsRequest) returns (ListFeedItemsResponse);
+  rpc MarkFeedItemRead(MarkFeedItemReadRequest) returns (scrapalot.common.Empty);
+  rpc FetchFeed(FetchFeedRequest) returns (FetchFeedResponse);
+}
+
+// Upload
+message UploadDocumentRequest {
+  string collection_id = 1;
+  string user_id = 2;
+  string filename = 3;
+  bytes file_data = 4;
+  bool auto_process = 5;
+  bool store_file = 6;  // false = process without saving to permanent storage (memory-only doc)
+  bool build_graph = 7;  // true = extract entities and build knowledge graph after upload
+  bool generate_summary = 8;  // true = generate AI book summary after upload
+}
+
+message UploadDocumentResponse {
+  bool success = 1;
+  string document_id = 2;
+  string job_id = 3;
+  string message = 4;
+  string error = 5;
+}
+
+// Thumbnails
+message GetThumbnailRequest {
+  string document_id = 1;
+  string size = 2; // small, medium, large
+  string user_id = 3;
+}
+
+message ThumbnailResponse {
+  bool found = 1;
+  bytes image_data = 2; // PNG bytes
+  string content_type = 3;
+  string file_path = 4; // Alternative: return path for Kotlin to serve
+}
+
+message UploadCustomThumbnailRequest {
+  string document_id = 1;
+  string user_id = 2;
+  bytes image_data = 3;
+  string filename = 4;
+}
+
+message DeleteThumbnailRequest {
+  string document_id = 1;
+  string user_id = 2;
+}
+
+// DOCX Preview
+message DocxPreviewRequest {
+  string document_id = 1;
+  string user_id = 2;
+}
+
+message DocxPreviewResponse {
+  bool success = 1;
+  string html = 2;
+  string metadata_json = 3;
+  string warnings_json = 4; // only for mammoth
+  string error = 5;
+}
+
+// File serving
+message GetDocumentFileRequest {
+  string document_id = 1;
+  string user_id = 2;
+}
+
+message DocumentFileResponse {
+  bool found = 1;
+  bytes file_data = 2;
+  string filename = 3;
+  string content_type = 4;
+  string file_path = 5; // Alternative: Kotlin serves from shared volume
+}
+
+// Collection documents
+message ListCollectionDocsRequest {
+  string collection_id = 1;
+  string user_id = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+  optional string search = 5;
+}
+
+message ListCollectionDocsResponse {
+  string documents_json = 1; // JSON array of documents
+  bool has_more = 2;
+  int32 total = 3;
+}
+
+// Reading positions
+message ReadingPositionRequest {
+  string document_id = 1;
+  string user_id = 2;
+}
+
+message ReadingPositionResponse {
+  bool found = 1;
+  string document_id = 2;
+  int32 page = 3;
+  string position_json = 4;
+}
+
+message SetReadingPositionRequest {
+  string document_id = 1;
+  string user_id = 2;
+  int32 page = 3;
+  string position_json = 4;
+}
+
+// Book summary
+message GetBookSummaryRequest {
+  string document_id = 1;
+  string user_id = 2;
+}
+
+message BookSummaryResponse {
+  bool found = 1;
+  string summary_text = 2;
+}
+
+message GenerateBookSummaryRequest {
+  string document_id = 1;
+  string user_id = 2;
+}
+
+message SummaryProgressPacket {
+  string type = 1;     // "progress", "chapter_done", "complete", "error"
+  string message = 2;  // Human-readable status
+  float progress = 3;  // 0.0-1.0
+  string summary_text = 4; // Final book summary text (on "complete")
+}
+
+// Document metadata (single-owner: Python)
+message GetDocumentByIdRequest {
+  string document_id = 1;
+}
+
+message DocumentDetailResponse {
+  bool found = 1;
+  string id = 2;
+  string title = 3;
+  string filename = 4;
+  string file_path = 5;
+  int64 file_size = 6;
+  string file_type = 7;
+  int32 page_count = 8;
+  int32 word_count = 9;
+  string processing_status = 10;
+  string processing_error = 11;
+  float processing_progress = 12;
+  string collection_id = 13;
+  string created_at = 14;
+  string updated_at = 15;
+  bool has_thumbnail = 16;
+}
+
+// Delete document with full cleanup
+message DeleteDocumentByIdRequest {
+  string document_id = 1;
+  string collection_id = 2;
+  string user_id = 3;
+}
+
+message DeleteDocumentByIdResponse {
+  bool success = 1;
+  string message = 2;
+  int32 deleted_embeddings_count = 3;
+}
+
+// Partial delete — selectively remove embeddings, graph, or file
+message PartialDeleteRequest {
+  string document_id = 1;
+  string collection_id = 2;
+  string user_id = 3;
+  string delete_scope = 4;  // "embeddings" | "graph" | "file"
+}
+
+message PartialDeleteResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Storage usage
+message GetStorageUsageRequest {
+  repeated string collection_ids = 1;
+}
+
+message StorageUsageResponse {
+  int64 document_count = 1;
+  int64 total_size_bytes = 2;
+  repeated DocumentStorageItem documents = 3;
+  int64 disk_bytes = 4;       // Physical files on disk (upload dir)
+  int64 db_content_bytes = 5; // documents.content column in PostgreSQL
+  int64 thumbnail_bytes = 6;  // Thumbnail images on disk
+}
+
+message DocumentStorageItem {
+  string id = 1;
+  string filename = 2;
+  int64 file_size = 3;
+}
+
+// Book summary translation
+message TranslateBookSummaryRequest {
+  string document_id = 1;
+  string target_language = 2;  // ISO 639-1: "hr", "de", "fr", etc.
+}
+
+message TranslationPacket {
+  string type = 1;     // "delta", "complete", "cached", "error"
+  string content = 2;  // text chunk or full translated text
+}
+
+// Register document from markdown
+message RegisterMarkdownRequest {
+  string collection_id = 1;
+  string user_id = 2;
+  string filename = 3;
+  string title = 4;
+  string markdown_content = 5;
+  string metadata_json = 6;
+}
+
+message RegisterMarkdownResponse {
+  bool success = 1;
+  string document_id = 2;
+  string error = 3;
+}
+
+// Move documents between collections
+message MoveDocumentsRequest {
+  repeated string document_ids = 1;
+  string target_collection_id = 2;
+  string user_id = 3;
+}
+
+message MoveDocumentsResponse {
+  bool success = 1;
+  int32 moved_count = 2;
+  int32 failed_count = 3;
+  repeated string failed_document_ids = 4;
+  string message = 5;
+}
+
+// Batch delete documents
+message BatchDeleteDocumentsRequest {
+  repeated string document_ids = 1;
+  string user_id = 2;
+}
+
+message BatchDeleteDocumentsResponse {
+  bool success = 1;
+  int32 deleted_count = 2;
+  int32 failed_count = 3;
+  repeated string failed_document_ids = 4;
+}
+
+// Collection statistics
+message GetCollectionStatsRequest {
+  string collection_id = 1;
+}
+
+message CollectionStatsResponse {
+  int32 total_documents = 1;
+  int32 docs_stored_on_disk = 2;
+  int32 docs_memory_only = 3;
+  int32 docs_with_embeddings = 4;
+  int64 total_embedding_chunks = 5;
+  int32 graph_completed = 6;
+  int32 graph_entity_running = 7;
+  int32 graph_hierarchy_done = 8;
+  int32 graph_failed = 9;
+  int32 graph_pending = 10;
+  int32 docs_with_summaries = 11;
+  int32 total_summary_records = 12;
+  int32 docs_with_thumbnails = 13;
+}
+
+// Per-document processing step triggers
+message BuildDocumentGraphRequest {
+  string document_id = 1;
+  string collection_id = 2;
+  string user_id = 3;
+}
+
+message RebuildDocumentEmbeddingsRequest {
+  string document_id = 1;
+  string collection_id = 2;
+  string user_id = 3;
+}
+
+// Download book cover from internet
+message DownloadBookCoverRequest {
+  string document_id = 1;
+}
+
+message DownloadBookCoverResponse {
+  bool success = 1;
+  string message = 2;
+  string isbn = 3;
+  string source = 4;
+}
+
+// Tags
+message ListTagsRequest {
+  string user_id = 1;
+  string workspace_id = 2;
+}
+
+message TagInfo {
+  string id = 1;
+  string name = 2;
+  string color = 3;
+  int32 position = 4;
+  int32 doc_count = 5;
+  int32 tag_type = 6;  // 0=manual, 1=automatic
+}
+
+message ListTagsResponse {
+  repeated TagInfo tags = 1;
+}
+
+message TagDocumentRequest {
+  string document_id = 1;
+  string tag_id = 2;
+  string user_id = 3;
+}
+
+message UntagDocumentRequest {
+  string document_id = 1;
+  string tag_id = 2;
+  string user_id = 3;
+}
+
+message GetDocumentTagsRequest {
+  string document_id = 1;
+}
+
+// Document Relations
+message CreateRelationRequest {
+  string source_document_id = 1;
+  string target_document_id = 2;
+  string relationship_type = 3;
+  string user_id = 4;
+  string workspace_id = 5;
+  optional string note = 6;
+}
+
+message DocumentRelationResponse {
+  bool success = 1;
+  string id = 2;
+  string relationship_type = 3;
+}
+
+message RelationEntry {
+  string id = 1;
+  string document_id = 2;
+  string relationship_type = 3;
+  string note = 4;
+  string created_at = 5;
+  string title = 6;
+}
+
+message ListRelationsRequest {
+  string document_id = 1;
+}
+
+message ListRelationsResponse {
+  repeated RelationEntry outgoing = 1;
+  repeated RelationEntry incoming = 2;
+}
+
+message DeleteRelationRequest {
+  string source_document_id = 1;
+  string target_document_id = 2;
+  string relationship_type = 3;
+  string user_id = 4;
+  optional string relation_id = 5;
+}
+
+// Saved Searches
+message CreateSavedSearchRequest {
+  string user_id = 1;
+  string workspace_id = 2;
+  string name = 3;
+  string criteria_json = 4;
+  optional string color = 5;
+}
+
+message SavedSearchInfo {
+  string id = 1;
+  string name = 2;
+  string criteria_json = 3;
+  string icon = 4;
+  string color = 5;
+  int32 sort_order = 6;
+  string created_at = 7;
+  string updated_at = 8;
+  int32 result_count = 9;
+  string last_evaluated_at = 10;
+  bool is_pinned = 11;
+}
+
+message SavedSearchResponse {
+  bool success = 1;
+  SavedSearchInfo search = 2;
+}
+
+message ListSavedSearchesRequest {
+  string user_id = 1;
+  string workspace_id = 2;
+}
+
+message ListSavedSearchesResponse {
+  repeated SavedSearchInfo searches = 1;
+}
+
+message ExecuteSavedSearchRequest {
+  string search_id = 1;
+  string user_id = 2;
+  int32 limit = 3;
+}
+
+message ExecuteSavedSearchResponse {
+  repeated string document_ids = 1;
+}
+
+message DeleteSavedSearchRequest {
+  string search_id = 1;
+  string user_id = 2;
+}
+
+message UpdateSavedSearchRequest {
+  string search_id = 1;
+  string user_id = 2;
+  optional string name = 3;
+  optional string criteria_json = 4;
+  optional string color = 5;
+  optional bool is_pinned = 6;
+}
+
+message PreviewSavedSearchRequest {
+  string user_id = 1;
+  string workspace_id = 2;
+  string criteria_json = 3;
+}
+
+message PreviewSavedSearchResponse {
+  int32 count = 1;
+}
+
+// Duplicate Detection
+message FindDuplicatesRequest {
+  string document_id = 1;
+}
+
+message DuplicateMatchEntry {
+  string document_id = 1;
+  string title = 2;
+  string filename = 3;
+  string match_type = 4;
+  float confidence = 5;
+  string doi = 6;
+  string isbn = 7;
+}
+
+message FindDuplicatesResponse {
+  repeated DuplicateMatchEntry matches = 1;
+}
+
+message MergeDuplicatesRequest {
+  string canonical_id = 1;
+  string duplicate_id = 2;
+  string user_id = 3;
+}
+
+message MergeDuplicatesResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Metadata Enrichment
+message EnrichMetadataRequest {
+  string document_id = 1;
+  string user_id = 2;
+  bool force_refresh = 3;
+}
+
+message EnrichMetadataResponse {
+  bool success = 1;
+  string enrichment_status = 2;  // "resolved", "no_identifiers", "resolution_failed"
+  string resolved_title = 3;
+  repeated string resolved_authors = 4;
+  int32 resolved_year = 5;
+  string resolved_journal = 6;
+  string resolved_doi = 7;
+}
+
+message LookupIdentifierRequest {
+  string document_id = 1;
+  string user_id = 2;
+  string identifier_type = 3;  // "doi", "isbn", "pmid", "arxiv"
+  string identifier_value = 4;
+}
+
+message LookupIdentifierResponse {
+  bool success = 1;
+  string message = 2;
+  EnrichMetadataResponse metadata = 3;
+}
+
+// Update document type
+message UpdateDocumentTypeRequest {
+  string document_id = 1;
+  string user_id = 2;
+  string document_type = 3;  // "journal_article", "book", "book_section", "conference_paper", "preprint", "thesis", "report", "patent"
+}
+
+message UpdateDocumentTypeResponse {
+  bool success = 1;
+  string document_type = 2;
+  string message = 3;
+}
+
+// Trash / Soft-Delete
+message RestoreDocumentRequest {
+  string document_id = 1;
+  string user_id = 2;
+}
+
+message PurgeTrashRequest {
+  string user_id = 1;
+}
+
+// Unpaywall open-access PDF finder
+message FindOpenAccessPdfRequest {
+  string document_id = 1;
+  string user_id = 2;
+}
+
+message FindOpenAccessPdfResponse {
+  bool success = 1;
+  bool is_oa = 2;
+  string pdf_url = 3;
+  string oa_status = 4;  // gold, green, hybrid, bronze
+  string message = 5;
+}
+
+// PDF annotation extraction
+message ExtractPdfAnnotationsRequest {
+  string document_id = 1;
+  string user_id = 2;
+}
+
+message ExtractedAnnotationEntry {
+  int32 page_index = 1;
+  int32 annotation_type = 2;
+  string selected_text = 3;
+  string comment = 4;
+  int32 color_index = 5;
+  string position_json = 6;
+}
+
+message ExtractPdfAnnotationsResponse {
+  bool success = 1;
+  repeated ExtractedAnnotationEntry annotations = 2;
+  int32 page_count = 3;
+  string message = 4;
+}
+
+// RSS Feeds
+message CreateFeedRequest {
+  string url = 1;
+  string workspace_id = 2;
+  string user_id = 3;
+  string collection_id = 4;
+}
+
+message CreateFeedResponse {
+  string id = 1;
+  string url = 2;
+  string title = 3;
+}
+
+message ListFeedsRequest {
+  string workspace_id = 1;
+  string user_id = 2;
+}
+
+message FeedEntry {
+  string id = 1;
+  string url = 2;
+  string title = 3;
+  string collection_id = 4;
+  string last_fetched = 5;
+  bool is_active = 6;
+  string created_at = 7;
+}
+
+message ListFeedsResponse {
+  repeated FeedEntry feeds = 1;
+}
+
+message DeleteFeedRequest {
+  string feed_id = 1;
+  string user_id = 2;
+}
+
+message ListFeedItemsRequest {
+  string feed_id = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message FeedItemEntry {
+  string id = 1;
+  string guid = 2;
+  string title = 3;
+  string link = 4;
+  string summary = 5;
+  string published_at = 6;
+  bool is_read = 7;
+  string saved_document_id = 8;
+  string image_url = 9;
+}
+
+message ListFeedItemsResponse {
+  repeated FeedItemEntry items = 1;
+}
+
+message MarkFeedItemReadRequest {
+  string item_id = 1;
+}
+
+message FetchFeedRequest {
+  string feed_id = 1;
+}
+
+message FetchFeedResponse {
+  int32 new_items_count = 1;
+}
+
+// Document Priority
+message UpdateDocumentPriorityRequest {
+  string document_id = 1;
+  string user_id = 2;
+  double priority = 3;
+}
+
+message UpdateDocumentPriorityResponse {
+  bool success = 1;
+  double priority = 2;
+  string message = 3;
+}
+
+// Per-document multimodal element listing. Filtering by element_type
+// happens client-side; backend returns the full set so the UI can render
+// counts in the filter chip row.
+message ListDocumentMultimodalElementsRequest {
+  string document_id = 1;
+  string user_id = 2;
+}
+
+message MultimodalElementInfo {
+  string id = 1;
+  string element_type = 2;       // 'image' | 'table' | 'equation'
+  string entity_subtype = 3;     // 'photograph' | 'chart' | 'data_table' | ...
+  int32 page_idx = 4;
+  string entity_name = 5;
+  string caption = 6;
+  string description = 7;        // LLM-generated summary
+  string content_text = 8;       // table markdown / equation latex
+  string storage_path = 9;       // image path on disk (server-relative)
+  string bbox_json = 10;         // JSON-serialized bbox payload
+  string symbol_map_json = 11;   // JSON-serialized symbol map (equations only)
+  string structured_data_json = 12;
+  string derived_stats_json = 13;
+  string processing_status = 14; // 'pending' | 'described' | 'failed'
+  string described_at = 15;
+}
+
+message ListDocumentMultimodalElementsResponse {
+  repeated MultimodalElementInfo elements = 1;
+  int32 total_count = 2;
+}

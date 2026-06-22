@@ -1,0 +1,109 @@
+databaseChangeLog:
+  - changeSet:
+      id: 083-create-session-folders-table
+      author: liquibase-auto
+      labels: core,session-folders
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: session_folders
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: session_folders
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_session_folders
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_session_folders_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: position
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+        - createIndex:
+            schemaName: scrapalot
+            tableName: session_folders
+            indexName: idx_session_folders_user_id
+            columns:
+              - column:
+                  name: user_id
+        - addUniqueConstraint:
+            schemaName: scrapalot
+            tableName: session_folders
+            constraintName: uq_session_folders_user_id_name
+            columnNames: user_id, name
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: session_folders
+
+  - changeSet:
+      id: 083-add-session-folder-id-to-sessions
+      author: liquibase-auto
+      labels: core,session-folders
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                schemaName: scrapalot
+                tableName: sessions
+                columnName: session_folder_id
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: sessions
+            columns:
+              - column:
+                  name: session_folder_id
+                  type: UUID
+                  constraints:
+                    nullable: true
+                    foreignKeyName: fk_sessions_session_folder_id
+                    references: scrapalot.session_folders(id)
+        - createIndex:
+            schemaName: scrapalot
+            tableName: sessions
+            indexName: idx_sessions_session_folder_id
+            columns:
+              - column:
+                  name: session_folder_id
+      rollback:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: sessions
+            indexName: idx_sessions_session_folder_id
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: sessions
+            columnName: session_folder_id

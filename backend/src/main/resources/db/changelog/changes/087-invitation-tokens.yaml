@@ -1,0 +1,88 @@
+databaseChangeLog:
+  - changeSet:
+      id: 087-invitation-tokens
+      author: scrapalot
+      comment: "Create invitation_tokens table for secure, time-limited, single-use invitation links"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: invitation_tokens
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: invitation_tokens
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: token
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: email
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: recipient_name
+                  type: varchar(255)
+              - column:
+                  name: invited_by
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: used
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: used_at
+                  type: timestamp with time zone
+              - column:
+                  name: expires_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: invitation_tokens
+            baseColumnNames: invited_by
+            referencedTableSchemaName: scrapalot
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_invitation_tokens_invited_by
+        - createIndex:
+            schemaName: scrapalot
+            tableName: invitation_tokens
+            indexName: idx_invitation_tokens_token
+            columns:
+              - column:
+                  name: token
+        - createIndex:
+            schemaName: scrapalot
+            tableName: invitation_tokens
+            indexName: idx_invitation_tokens_email
+            columns:
+              - column:
+                  name: email
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: invitation_tokens

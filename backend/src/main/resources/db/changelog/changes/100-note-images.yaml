@@ -1,0 +1,99 @@
+# Migration 100: note_images — track image files uploaded into notes so we can
+#   remove orphans from disk when users delete <img> nodes from note content.
+#
+# Workflow:
+#   1. POST /notes/upload-image inserts a row with note_id=NULL
+#   2. POST/PUT note-update parses HTML, extracts filenames from "/upload/notes/images/<uuid>.<ext>"
+#      and calls NoteImageService.reconcile(noteId, activeFilenames):
+#        - rows referenced by noteId whose filename is NOT in activeFilenames  → mark orphaned_at = now
+#        - rows with note_id=NULL whose filename IS in activeFilenames         → claim them (set note_id)
+#        - already-orphaned rows referenced again                              → clear orphaned_at
+#   3. A scheduled job deletes orphan files + rows older than the grace period
+#      (default 24 h) so undo / Y.js late replication doesn't break surviving notes.
+#   4. Note deletion (soft or hard) marks all note's images orphaned.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 100-create-note-images
+      author: scrapalot
+      labels: notes,cleanup
+      comment: "Create note_images tracking table for uploaded image lifecycle"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: note_images
+                schemaName: scrapalot
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: note_images
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_note_images_user
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: note_id
+                  type: UUID
+                  constraints:
+                    nullable: true
+                    foreignKeyName: fk_note_images_note
+                    references: scrapalot.notes(id)
+                    deleteCascade: true
+              - column:
+                  name: filename
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: size_bytes
+                  type: BIGINT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: content_type
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: orphaned_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: true
+        - createIndex:
+            schemaName: scrapalot
+            tableName: note_images
+            indexName: idx_note_images_note_id
+            columns:
+              - column:
+                  name: note_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: note_images
+            indexName: idx_note_images_orphaned_at
+            columns:
+              - column:
+                  name: orphaned_at
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: note_images

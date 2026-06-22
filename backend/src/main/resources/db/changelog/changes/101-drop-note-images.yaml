@@ -1,0 +1,27 @@
+# Migration 101: drop note_images tracking table introduced in 100.
+#
+# Rationale: reverted to simple synchronous cleanup — NoteService now
+# diffs the old vs new note HTML on every update and deletes files that
+# disappeared from the content, and on note deletion removes the files
+# referenced by the current HTML. No background table, no cron, no
+# grace period. Matches user's explicit preference.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 101-drop-note-images
+      author: scrapalot
+      labels: notes,cleanup
+      comment: "Remove note_images table — replaced by inline file diff on save/delete"
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: note_images
+            schemaName: scrapalot
+      changes:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: note_images
+      rollback:
+        - sqlFile:
+            path: db/changelog/changes/100-note-images.yaml

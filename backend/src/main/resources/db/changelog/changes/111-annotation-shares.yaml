@@ -1,0 +1,78 @@
+# Migration 111: annotation_shares table — multi-user PDF annotation sharing.
+#
+# Mirrors note_shares (migration 021): composite (annotation_id, user_id)
+# primary key, permission VARCHAR(20) defaulting to "read", FK cascade
+# from both annotation and user. The share recipient's `user_id` is the
+# user GRANTED access; the original annotation owner is identified
+# through `annotations.user_id`.
+#
+# Permissions:
+#   read   — recipient can list the annotation in shared-with-me feeds
+#   write  — recipient can also patch comment / color (selected_text +
+#            position remain owner-only)
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 111-create-annotation-shares-table
+      author: scrapalot
+      labels: annotations,sharing,collaboration
+      comment: "Multi-user annotation sharing — mirrors note_shares schema"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: annotation_shares
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: annotation_shares
+            columns:
+              - column:
+                  name: annotation_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_annotation_shares_annotation_id
+                    references: scrapalot.annotations(id)
+                    deleteCascade: true
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_annotation_shares_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: permission
+                  type: VARCHAR(20)
+                  defaultValue: read
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+
+        - addPrimaryKey:
+            schemaName: scrapalot
+            tableName: annotation_shares
+            columnNames: annotation_id, user_id
+            constraintName: pk_annotation_shares
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: annotation_shares
+            indexName: idx_annotation_shares_user
+            columns:
+              - column:
+                  name: user_id
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: annotation_shares

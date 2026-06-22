@@ -1,0 +1,26 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+indent_size = 4
+max_line_length = 200
+# Spring/JPA code uses wildcard imports heavily (112 files) — not worth the churn.
+ktlint_standard_no-wildcard-imports = disabled
+# Multiple DTOs per *DTOs.kt file is the established project convention.
+ktlint_standard_filename = disabled
+# Comment-wrapping and trailing-comma styles would touch hundreds of lines for no value.
+ktlint_standard_trailing-comma-on-call-site = disabled
+ktlint_standard_trailing-comma-on-declaration-site = disabled
+# Inline comments on DTO constructor params are idiomatic here; consecutive
+# comment blocks above declarations are deliberate documentation style.
+ktlint_standard_value-parameter-comment = disabled
+ktlint_standard_value-argument-comment = disabled
+ktlint_standard_no-consecutive-comments = disabled
+
+[*.{yaml,yml}]
+indent_size = 2

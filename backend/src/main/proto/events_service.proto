@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+package scrapalot.events;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.events";
+option java_outer_classname = "EventsServiceProto";
+
+// Events Service
+// Redis-based event-driven communication between Spring Boot and Python
+service EventsService {
+  // Publish event to Redis
+  rpc PublishEvent(EventMessage) returns (common.StatusResponse);
+
+  // Subscribe to events (server streaming)
+  rpc SubscribeToEvents(EventSubscription) returns (stream EventMessage);
+}
+
+// Event types
+enum EventType {
+  UNKNOWN = 0;
+
+  // Document events
+  DOCUMENT_UPLOADED = 1;
+  DOCUMENT_PROCESSING_STARTED = 2;
+  DOCUMENT_PROCESSING_PROGRESS = 3;
+  DOCUMENT_PROCESSING_COMPLETED = 4;
+  DOCUMENT_PROCESSING_FAILED = 5;
+  DOCUMENT_DELETED = 6;
+
+  // Collection events
+  COLLECTION_CREATED = 10;
+  COLLECTION_UPDATED = 11;
+  COLLECTION_DELETED = 12;
+
+  // Workspace events
+  WORKSPACE_CREATED = 20;
+  WORKSPACE_UPDATED = 21;
+  WORKSPACE_DELETED = 22;
+  WORKSPACE_SHARED = 23;
+
+  // Note events
+  NOTE_CREATED = 30;
+  NOTE_UPDATED = 31;
+  NOTE_DELETED = 32;
+  NOTE_SHARED = 33;
+  NOTE_SHARE_REMOVED = 34;
+  NOTE_COMMENT_ADDED = 35;
+  NOTE_COMMENT_UPDATED = 36;
+  NOTE_COMMENT_DELETED = 37;
+  NOTE_COMMENT_RESOLVED = 38;
+  NOTE_VERSION_RESTORED = 39;
+  NOTE_COLLABORATION_CLEARED = 70;
+
+  // User events
+  USER_REGISTERED = 40;
+  USER_UPDATED = 41;
+  USER_DELETED = 42;
+
+  // Settings events
+  SETTINGS_UPDATED = 50;
+
+  // Chat/RAG events (from Python)
+  CHAT_MESSAGE_RECEIVED = 60;
+  RAG_QUERY_STARTED = 61;
+  RAG_QUERY_COMPLETED = 62;
+}
+
+// Event message
+message EventMessage {
+  common.UUID event_id = 1;
+  EventType type = 2;
+  string source = 3; // "scrapalot-backend" or "scrapalot-chat"
+  common.Timestamp timestamp = 4;
+
+  // Entity identifiers
+  optional common.UUID user_id = 5;
+  optional common.UUID workspace_id = 6;
+  optional common.UUID collection_id = 7;
+  optional common.UUID document_id = 8;
+  optional common.UUID note_id = 9;
+
+  // Event payload (JSONB as string)
+  string payload = 10;
+
+  // Additional metadata
+  map<string, string> metadata = 11;
+}
+
+// Event subscription
+message EventSubscription {
+  repeated EventType event_types = 1;
+  optional common.UUID user_id = 2;
+  optional common.UUID workspace_id = 3;
+}
+
+// Specialized event payloads
+
+// Document processing event
+message DocumentProcessingEvent {
+  common.UUID document_id = 1;
+  common.UUID collection_id = 2;
+  string filename = 3;
+  string status = 4; // "pending", "processing", "completed", "failed"
+  int32 progress = 5; // 0-100
+  optional string error_message = 6;
+  optional int64 chunks_processed = 7;
+  optional int64 total_chunks = 8;
+}
+
+// Collection event
+message CollectionEvent {
+  common.UUID collection_id = 1;
+  common.UUID workspace_id = 2;
+  string name = 3;
+  string action = 4; // "created", "updated", "deleted"
+  optional int32 document_count = 5;
+}
+
+// Workspace event
+message WorkspaceEvent {
+  common.UUID workspace_id = 1;
+  string name = 2;
+  string action = 3; // "created", "updated", "deleted", "shared"
+  optional common.UUID shared_with_user_id = 4;
+  optional string role = 5;
+}
+
+// Note event
+message NoteEvent {
+  common.UUID note_id = 1;
+  common.UUID collection_id = 2;
+  string title = 3;
+  string action = 4; // "created", "updated", "deleted", "shared"
+  optional common.UUID shared_with_user_id = 5;
+}
+
+// RAG query event
+message RAGQueryEvent {
+  common.UUID query_id = 1;
+  common.UUID user_id = 2;
+  common.UUID collection_id = 3;
+  string query = 4;
+  string status = 5; // "started", "completed", "failed"
+  optional string strategy = 6;
+  optional int32 chunks_retrieved = 7;
+  optional double retrieval_time_ms = 8;
+}

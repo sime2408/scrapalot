@@ -1,0 +1,160 @@
+# Migration 109: agent_profiles
+# (Knowledge Agents UI / Guru pattern).
+#
+# Pre-configured RAG agent profiles bundled by domain. Each profile
+# carries a system-prompt addendum + recommended RAG strategy + citation
+# style + tool allowlist. The chat layer reads `default_agent_profile_slug`
+# from user_settings and applies the matching profile to layer 2 of the
+# system-prompt chain.
+#
+# Seed profiles ship in changeset 109-seed (separate file so re-running
+# the seed is idempotent via slug collisions). System profiles are
+# read-only for non-admins; workspace_id IS NULL for them.
+#
+# Per CLAUDE.md rule #13: system seed rows MUST set is_system=TRUE.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 109-create-agent-profiles
+      author: scrapalot
+      labels: agent-profiles,personalization
+      comment: "Per-workspace + system agent profiles"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: agent_profiles
+                schemaName: scrapalot
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: agent_profiles
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: workspace_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+                  remarks: "NULL = system profile visible to all workspaces"
+              - column:
+                  name: slug
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+                  remarks: "Stable lookup key (legal, medical, academic, technical, ...)"
+              - column:
+                  name: name
+                  type: VARCHAR(120)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: icon
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: system_prompt
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: rag_strategy
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: citation_style
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: tool_allowlist
+                  type: TEXT
+                  constraints:
+                    nullable: true
+                  remarks: "JSON array of tool names; NULL = all tools allowed"
+              - column:
+                  name: is_system
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            schemaName: scrapalot
+            tableName: agent_profiles
+            columnNames: workspace_id, slug
+            constraintName: uq_agent_profiles_workspace_slug
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: agent_profiles
+
+  - changeSet:
+      id: 109-seed-system-agent-profiles
+      author: scrapalot
+      labels: agent-profiles,personalization,seed
+      comment: "Seed 4 system agent profiles (legal, medical, academic, technical)"
+      preConditions:
+        - onFail: MARK_RAN
+        - sqlCheck:
+            expectedResult: 0
+            sql: |
+              SELECT COUNT(*) FROM scrapalot.agent_profiles
+              WHERE is_system = TRUE AND workspace_id IS NULL
+      changes:
+        - sql:
+            splitStatements: true
+            sql: |
+              INSERT INTO scrapalot.agent_profiles
+                (workspace_id, slug, name, description, icon, system_prompt, rag_strategy, citation_style, tool_allowlist, is_system)
+              VALUES
+                (NULL, 'legal', 'Legal',
+                 'Bias toward precedent, jurisdictional context, and verbatim quotation. Bluebook citations.',
+                 '⚖️',
+                 'You are answering as a research assistant focused on legal materials. Treat sources as primary authority — quote relevant statutes, holdings, and reasoning verbatim and cite section numbers. Always disclose jurisdictional context. Hedge any non-legal claim. Do not give legal advice; surface the analysis the user needs to evaluate the question themselves. Use Bluebook citation style.',
+                 NULL, 'bluebook', NULL, TRUE),
+                (NULL, 'medical', 'Medical',
+                 'Bias toward evidence hierarchy (RCT > meta-analysis > observational). Vancouver citations.',
+                 '⚕️',
+                 'You are answering as a research assistant focused on medical and clinical research. Always cite the strongest evidence available and explicitly rank studies by evidence hierarchy (RCT > systematic review > meta-analysis > cohort > case report). Hedge claims with confidence levels. Do not give medical advice; the user must consult a clinician. Use Vancouver citation style.',
+                 NULL, 'vancouver', NULL, TRUE),
+                (NULL, 'academic', 'Academic',
+                 'IMRAD-friendly, peer-review-ready prose. APA citations.',
+                 '🎓',
+                 'You are answering as a research assistant focused on academic literature. Write in a register suitable for peer review: clear thesis, structured argument, hedged claims, explicit limitations. Prefer primary sources, foreground methodology, and call out replication concerns. Use APA citation style.',
+                 NULL, 'apa', NULL, TRUE),
+                (NULL, 'technical', 'Technical',
+                 'Code-heavy, precision-focused, IEEE citations.',
+                 '🛠',
+                 'You are answering as a research assistant focused on technical and engineering material. Be precise: name versions, libraries, and configurations explicitly. Prefer working code examples over prose explanations when they exist in sources. Cite with IEEE style. Avoid vague guidance — say what works and what doesn''t and why.',
+                 NULL, 'ieee', NULL, TRUE);
+      rollback:
+        - sql: |
+            DELETE FROM scrapalot.agent_profiles
+            WHERE is_system = TRUE AND workspace_id IS NULL
+              AND slug IN ('legal', 'medical', 'academic', 'technical');

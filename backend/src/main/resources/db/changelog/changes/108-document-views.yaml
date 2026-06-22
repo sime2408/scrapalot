@@ -1,0 +1,87 @@
+# Migration 108: document_views
+# (Recent Documents Quick Access / Notion AI pattern).
+#
+# Append-only log of documents the user has touched. Sources:
+#   pdf_open       PDF viewer mount
+#   epub_open      EPUB viewer mount
+#   cited          inline citation click in chat
+#   rag_retrieved  document_id surfaced by RAG retrieval (deduped per session)
+#   note_linked    user linked the doc into a note
+#
+# Documents themselves live Python-side; views stay Kotlin-side as
+# user-owned data. The original "extend reading_positions" idea
+# is moot because that table was dropped in Alembic 080.
+#
+# Auto-prune: rows older than 90 days are removed by a periodic Celery
+# beat job (followup; out of scope for the schema migration).
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 108-create-document-views
+      author: scrapalot
+      labels: documents,personalization,recent
+      comment: "Per-user document view log"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: document_views
+                schemaName: scrapalot
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: document_views
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_dv_user
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: document_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: collection_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+                  remarks: "Nullable: chat citations may reference docs without a known collection scope"
+              - column:
+                  name: source
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: false
+                  remarks: "pdf_open | epub_open | cited | rag_retrieved | note_linked"
+              - column:
+                  name: viewed_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+        - createIndex:
+            schemaName: scrapalot
+            tableName: document_views
+            indexName: idx_dv_user_recent
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: viewed_at
+                  descending: true
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: document_views

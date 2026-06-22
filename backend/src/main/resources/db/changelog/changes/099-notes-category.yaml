@@ -1,0 +1,47 @@
+# Migration 099: notes.category — organizes notes for the Datoteka → Otvori dialog
+# Purpose: Enable category-scoped paginated listing without a sidebar grouping UI.
+#   null = Nekategorizirano. Templates on the frontend set this column via
+#   CreateNoteRequest.category when a note is created from a template.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 099-add-notes-category
+      author: scrapalot
+      labels: notes,organization
+      comment: "Add nullable category column to notes + composite index for list queries"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: notes
+                columnName: category
+                schemaName: scrapalot
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: notes
+            columns:
+              - column:
+                  name: category
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: true
+        - createIndex:
+            schemaName: scrapalot
+            tableName: notes
+            indexName: idx_notes_workspace_category
+            columns:
+              - column:
+                  name: workspace_id
+              - column:
+                  name: category
+      rollback:
+        - dropIndex:
+            schemaName: scrapalot
+            tableName: notes
+            indexName: idx_notes_workspace_category
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: notes
+            columnName: category

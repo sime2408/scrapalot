@@ -1,0 +1,191 @@
+# Migration 115: workspace + collection slugs.
+#
+# Adds a stable, URL/CLI-friendly identifier separate from the human-readable
+# `name`, used as the `model` field in the OpenAI-compatible API surface
+# (`scrapalot:my-workspace:my-collection`). Slugs are
+# unique per scope: workspaces are unique per user, collections per workspace.
+#
+# Slug shape: lowercased, ASCII letters/digits + `-`, no leading/trailing dash.
+# Renaming a workspace or collection deliberately does NOT change its slug —
+# OpenAI SDK consumers would break otherwise. The slug is set once on create
+# and stable for the lifetime of the row.
+#
+# Backfill strategy:
+#   1. Compute a tentative slug from the name via regexp_replace.
+#   2. Disambiguate collisions by appending `-2`, `-3`, ... by row order.
+#   3. If the result is empty (name was punctuation-only), fall back to the
+#      first 8 chars of the row's id.
+#   4. Make the column NOT NULL and add a partial unique index per scope.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 115-workspaces-add-slug
+      author: scrapalot
+      labels: workspaces,openai-compat
+      comment: "Add nullable slug column to workspaces"
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: workspaces
+            columns:
+              - column:
+                  name: slug
+                  type: VARCHAR(120)
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: workspaces
+            columnName: slug
+
+  - changeSet:
+      id: 115-workspaces-backfill-slug
+      author: scrapalot
+      labels: workspaces,openai-compat
+      comment: "Backfill workspace slugs from name, disambiguate per user"
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              -- 1. tentative slug: lowercase + non-alnum→`-` + trim leading/trailing
+              UPDATE scrapalot.workspaces
+              SET slug = NULLIF(
+                  trim(BOTH '-' FROM
+                      lower(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g'))
+                  ),
+                  ''
+              )
+              WHERE slug IS NULL;
+
+              -- 2. fallback for empty (punctuation-only names): id-prefix
+              UPDATE scrapalot.workspaces
+              SET slug = 'ws-' || substr(id::text, 1, 8)
+              WHERE slug IS NULL OR slug = '';
+
+              -- 3. disambiguate per user_id by appending -2, -3, ...
+              WITH ranked AS (
+                  SELECT id,
+                         slug,
+                         row_number() OVER (PARTITION BY user_id, slug ORDER BY created_at, id) AS rn
+                  FROM scrapalot.workspaces
+              )
+              UPDATE scrapalot.workspaces w
+              SET slug = ranked.slug || '-' || ranked.rn
+              FROM ranked
+              WHERE w.id = ranked.id AND ranked.rn > 1;
+
+  - changeSet:
+      id: 115-workspaces-slug-not-null
+      author: scrapalot
+      labels: workspaces,openai-compat
+      comment: "Make workspace slug NOT NULL after backfill"
+      changes:
+        - addNotNullConstraint:
+            schemaName: scrapalot
+            tableName: workspaces
+            columnName: slug
+            columnDataType: VARCHAR(120)
+
+  - changeSet:
+      id: 115-workspaces-slug-unique-index
+      author: scrapalot
+      labels: workspaces,openai-compat
+      comment: "Unique index per (user_id, slug)"
+      changes:
+        - createIndex:
+            schemaName: scrapalot
+            tableName: workspaces
+            indexName: ux_workspaces_user_id_slug
+            unique: true
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: slug
+
+  - changeSet:
+      id: 115-collections-add-slug
+      author: scrapalot
+      labels: collections,openai-compat
+      comment: "Add nullable slug column to collections"
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: collections
+            columns:
+              - column:
+                  name: slug
+                  type: VARCHAR(120)
+                  constraints:
+                    nullable: true
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: collections
+            columnName: slug
+
+  - changeSet:
+      id: 115-collections-backfill-slug
+      author: scrapalot
+      labels: collections,openai-compat
+      comment: "Backfill collection slugs from name, disambiguate per workspace"
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              UPDATE scrapalot.collections
+              SET slug = NULLIF(
+                  trim(BOTH '-' FROM
+                      lower(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g'))
+                  ),
+                  ''
+              )
+              WHERE slug IS NULL;
+
+              UPDATE scrapalot.collections
+              SET slug = 'col-' || substr(id::text, 1, 8)
+              WHERE slug IS NULL OR slug = '';
+
+              WITH ranked AS (
+                  SELECT id,
+                         slug,
+                         row_number() OVER (PARTITION BY workspace_id, slug ORDER BY created_at, id) AS rn
+                  FROM scrapalot.collections
+              )
+              UPDATE scrapalot.collections c
+              SET slug = ranked.slug || '-' || ranked.rn
+              FROM ranked
+              WHERE c.id = ranked.id AND ranked.rn > 1;
+
+  - changeSet:
+      id: 115-collections-slug-not-null
+      author: scrapalot
+      labels: collections,openai-compat
+      comment: "Make collection slug NOT NULL after backfill"
+      changes:
+        - addNotNullConstraint:
+            schemaName: scrapalot
+            tableName: collections
+            columnName: slug
+            columnDataType: VARCHAR(120)
+
+  - changeSet:
+      id: 115-collections-slug-unique-index
+      author: scrapalot
+      labels: collections,openai-compat
+      comment: "Unique index per (workspace_id, slug)"
+      changes:
+        - createIndex:
+            schemaName: scrapalot
+            tableName: collections
+            indexName: ux_collections_workspace_id_slug
+            unique: true
+            columns:
+              - column:
+                  name: workspace_id
+              - column:
+                  name: slug

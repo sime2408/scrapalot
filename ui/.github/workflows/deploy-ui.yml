@@ -1,0 +1,382 @@
+name: CICD-UI
+
+on:
+  # Manual trigger from the Actions tab
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "prod"
+        type: choice
+        options:
+          - dev
+          - rc
+          - prod
+
+  # Automatic deployment on push to main (includes merged/squashed/rebased feature branches)
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "patches/**"
+      - "Dockerfile"
+      - "index.html"
+      - "vite.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/deploy-ui.yml"
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: ${{ github.event.inputs.environment || 'prod' }}
+
+    steps:
+      - name: Pull latest code
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPO_DIR: /opt/scrapalot/scrapalot-ui
+        run: |
+          echo "========================================="
+          echo "Pulling latest code from origin/main"
+          echo "========================================="
+
+          # Add repository to Git safe.directory to avoid ownership issues
+          # GitHub runner runs as github-runner user but repo is owned by scrapalot
+          git config --global --add safe.directory "${REPO_DIR}"
+
+          # Configure git to use token for HTTPS auth (URL rewriting approach)
+          git -C "${REPO_DIR}" config --local url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+          # Ensure remote uses HTTPS
+          git -C "${REPO_DIR}" remote set-url origin https://github.com/sime2408/scrapalot-ui.git
+
+          # Stash any uncommitted local edits before reset so parallel
+          # interactive sessions on the host don't lose in-progress work.
+          # Stash entry stays in `git stash list` for manual recovery if
+          # `stash pop` conflicts with the new HEAD.
+          STASH_TAG="ci-autostash-$(date +%s)-${GITHUB_RUN_ID:-unknown}"
+          git -C "${REPO_DIR}" stash push --include-untracked -m "${STASH_TAG}" || true
+
+          # Ensure we're on main branch and pull latest
+          git -C "${REPO_DIR}" fetch origin
+          git -C "${REPO_DIR}" checkout main
+          git -C "${REPO_DIR}" reset --hard origin/main
+
+          # Best-effort restore of uncommitted edits. Keep stash on conflict
+          # so the operator can resolve manually with `git stash apply`.
+          if git -C "${REPO_DIR}" stash list | grep -q "${STASH_TAG}"; then
+            git -C "${REPO_DIR}" stash pop || \
+              echo "⚠ stash pop conflicted; uncommitted edits preserved as ${STASH_TAG} in 'git stash list'"
+          fi
+
+          echo "✓ Code updated to: $(git -C "${REPO_DIR}" rev-parse --short HEAD)"
+          echo "✓ Commit: $(git -C "${REPO_DIR}" log -1 --format='%s')"
+
+      - name: Ensure permissions
+        run: |
+          # Set proper permissions for collaboration
+          # Use scrapalot-dev group and enable group write permissions
+          # Ignore errors for non-existent directories like test-results
+          sudo chown -R $USER:scrapalot-dev /opt/scrapalot/scrapalot-ui 2>/dev/null || true
+          sudo chmod -R g+w /opt/scrapalot/scrapalot-ui 2>/dev/null || true
+          sudo chmod -R g+s /opt/scrapalot/scrapalot-ui 2>/dev/null || true  # setgid so new files inherit group
+
+      - name: Verify GitHub Environment Variables
+        run: |
+          echo "========================================="
+          echo "GitHub Environment Variables Check:"
+          echo "========================================="
+          echo "Environment: ${{ github.event.inputs.environment || 'prod' }}"
+          echo "VITE_API_BASE_URL from vars: '${{ vars.VITE_API_BASE_URL }}'"
+          echo "VITE_LLM_INFERENCE_ENDPOINT from vars: '${{ vars.VITE_LLM_INFERENCE_ENDPOINT }}'"
+          echo "VITE_APP_ENV from vars: '${{ vars.VITE_APP_ENV }}'"
+
+          # Check actual string length to detect empty values
+          API_URL_LEN=$(echo -n "${{ vars.VITE_API_BASE_URL }}" | wc -c)
+          INFERENCE_LEN=$(echo -n "${{ vars.VITE_LLM_INFERENCE_ENDPOINT }}" | wc -c)
+
+          echo ""
+          echo "String lengths:"
+          echo "VITE_API_BASE_URL length: $API_URL_LEN characters"
+          echo "VITE_LLM_INFERENCE_ENDPOINT length: $INFERENCE_LEN characters"
+          echo "========================================="
+
+          # Check if variables are empty and suggest fix
+          if [ "$API_URL_LEN" -eq 0 ]; then
+            echo "❌ ERROR: VITE_API_BASE_URL is empty!"
+            echo "Please add it to: Settings > Secrets and variables > Actions > Variables"
+            echo "Name: VITE_API_BASE_URL"
+            echo "Value: https://api.scrapalot.app/api/v1"
+            exit 1
+          fi
+          if [ "$INFERENCE_LEN" -eq 0 ]; then
+            echo "❌ ERROR: VITE_LLM_INFERENCE_ENDPOINT is empty!"
+            echo "Please add it to: Settings > Secrets and variables > Actions > Variables"
+            exit 1
+          fi
+
+          echo "All required variables are set"
+
+      - name: Create environment .env file for UI build
+        working-directory: /opt/scrapalot/scrapalot-ui
+        run: |
+          ENV="${{ github.event.inputs.environment || 'prod' }}"
+          cat > .env.production << EOF
+          # Environment Configuration for $ENV
+          VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+          VITE_LLM_INFERENCE_ENDPOINT=${{ vars.VITE_LLM_INFERENCE_ENDPOINT }}
+          VITE_APP_ENV=$ENV
+          VITE_ENABLE_DEBUG_LOGS=$([ "$ENV" = "dev" ] && echo "true" || echo "false")
+          VITE_ENABLE_PERFORMANCE_MONITORING=$([ "$ENV" = "prod" ] && echo "true" || echo "false")
+          EOF
+
+          echo "✓ UI environment file created for $ENV"
+          cat .env.production
+
+      - name: Build UI Docker Image
+        working-directory: /opt/scrapalot/scrapalot-ui
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_LLM_INFERENCE_ENDPOINT: ${{ vars.VITE_LLM_INFERENCE_ENDPOINT }}
+        run: |
+          echo "Building scrapalot-ui frontend image..."
+          ENV="${{ github.event.inputs.environment || 'prod' }}"
+
+          # Debug: Show environment variables being passed
+          echo "========================================="
+          echo "Build Arguments:"
+          echo "========================================="
+          echo "VITE_API_BASE_URL: $VITE_API_BASE_URL"
+          echo "VITE_LLM_INFERENCE_ENDPOINT: $VITE_LLM_INFERENCE_ENDPOINT"
+          echo "VITE_APP_ENV: $ENV"
+          echo "VITE_ENABLE_DEBUG_LOGS: $([ "$ENV" = "dev" ] && echo "true" || echo "false")"
+          echo "VITE_ENABLE_PERFORMANCE_MONITORING: $([ "$ENV" = "prod" ] && echo "true" || echo "false")"
+          echo "========================================="
+
+          # Build with BuildKit for better performance and caching
+          export DOCKER_BUILDKIT=1
+
+          docker build \
+            --progress=plain \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            -f Dockerfile \
+            -t scrapalot-ui:latest \
+            -t scrapalot-ui:${{ github.sha }} \
+            --build-arg NODE_ENV=production \
+            --build-arg VITE_API_BASE_URL="$VITE_API_BASE_URL" \
+            --build-arg VITE_LLM_INFERENCE_ENDPOINT="$VITE_LLM_INFERENCE_ENDPOINT" \
+            --build-arg VITE_APP_ENV="$ENV" \
+            --build-arg VITE_ENABLE_DEBUG_LOGS="$([ "$ENV" = "dev" ] && echo "true" || echo "false")" \
+            --build-arg VITE_ENABLE_PERFORMANCE_MONITORING="$([ "$ENV" = "prod" ] && echo "true" || echo "false")" \
+            . 2>&1 | tee /tmp/docker-build.log
+
+          # Check if build was successful
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "❌ Docker build failed!"
+            echo "Last 50 lines of build log:"
+            tail -50 /tmp/docker-build.log
+            exit 1
+          fi
+
+          echo "✓ UI image built successfully with environment: $ENV"
+
+      - name: Ensure Backend Repository Exists
+        run: |
+          if [ ! -d "/opt/scrapalot/scrapalot-chat/docker-scrapalot" ]; then
+            echo "❌ Error: Backend repository not found at /opt/scrapalot/scrapalot-chat"
+            echo "Please deploy the backend first or ensure the repository exists."
+            exit 1
+          fi
+          echo "✓ Backend repository found"
+
+      - name: Verify New Image Was Built
+        run: |
+          echo "========================================="
+          echo "Verifying newly built image..."
+          echo "========================================="
+          docker images scrapalot-ui:latest --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}"
+
+          # Get the new image ID
+          NEW_IMAGE_ID=$(docker images scrapalot-ui:latest --format "{{.ID}}" | head -1)
+          echo "New image ID: $NEW_IMAGE_ID"
+
+          # IMPORTANT: For Vite apps, env vars are baked into the JS bundle, not stored as ENV in the image
+          # Let's verify by checking the built JavaScript file
+          echo ""
+          echo "Checking if environment variables are baked into JavaScript bundle..."
+
+          # Create a temporary container to extract the built files
+          TEMP_CONTAINER=$(docker create scrapalot-ui:latest)
+
+          # Find the actual JS bundle filename (it's hashed, so we need to discover it)
+          JS_FILE=$(docker run --rm scrapalot-ui:latest sh -c "ls /app/dist/assets/index-*.js 2>/dev/null | head -1" || echo "")
+
+          if [ -n "$JS_FILE" ]; then
+            echo "Found JavaScript bundle: $JS_FILE"
+            docker cp $TEMP_CONTAINER:$JS_FILE /tmp/index.js
+          else
+            echo "⚠️  Could not find JavaScript bundle"
+          fi
+
+          docker rm $TEMP_CONTAINER
+
+          if [ -f /tmp/index.js ]; then
+            echo "Searching for API URL in JavaScript bundle..."
+            if grep -q "api.scrapalot.app" /tmp/index.js; then
+              echo "SUCCESS: Found 'api.scrapalot.app' in JavaScript bundle!"
+              echo "Environment variables were correctly baked into the build."
+            else
+              echo "❌ ERROR: 'api.scrapalot.app' NOT found in JavaScript bundle!"
+              echo "This means environment variables were not used during build."
+              echo "Checking what URL is in the bundle:"
+              grep -o "http[s]*://[^\"']*:8090" /tmp/index.js | head -5 || echo "No localhost URLs found either"
+            fi
+            rm /tmp/index.js
+          else
+            echo "⚠️  Could not extract JavaScript bundle for verification"
+          fi
+
+          # Check if container is using old image
+          if docker ps -a --filter "name=scrapalot-ui" --format "{{.Image}}" | grep -q "scrapalot-ui"; then
+            CURRENT_IMAGE=$(docker inspect scrapalot-ui --format='{{.Image}}' 2>/dev/null || echo "none")
+            echo ""
+            echo "Current container image: $CURRENT_IMAGE"
+            if [ "$CURRENT_IMAGE" != "sha256:$NEW_IMAGE_ID" ] && [ "$CURRENT_IMAGE" != "none" ]; then
+              echo "⚠️  Container is using OLD image - will force recreation"
+            else
+              echo "✓ Container will use new image"
+            fi
+          fi
+
+      - name: Deploy UI Application
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          echo "Deploying scrapalot-ui frontend..."
+
+          # Stop and remove the old container completely
+          echo "Stopping and removing old container..."
+          docker compose stop scrapalot-ui 2>/dev/null || true
+          docker compose rm -f scrapalot-ui 2>/dev/null || true
+
+          # Deploy UI service with the newly built image
+          # --force-recreate ensures we use the new image even if config hasn't changed
+          echo "Starting new container with fresh image..."
+          docker compose up -d --no-deps --force-recreate scrapalot-ui
+
+          # Verify the new container is using the correct image
+          NEW_CONTAINER_IMAGE=$(docker inspect scrapalot-ui --format='{{.Config.Image}}')
+          echo "New container is using image: $NEW_CONTAINER_IMAGE"
+          echo "✓ UI deployed"
+
+      - name: Wait for UI Startup
+        run: |
+          echo "Waiting for UI to be ready..."
+          for i in {1..30}; do
+            # Check via Docker network since port is not exposed to host
+            if docker exec scrapalot-ui wget --spider -q http://localhost:3000 2>/dev/null; then
+              echo "✓ UI is accessible"
+              exit 0
+            fi
+            echo "Attempt $i/30: UI not ready yet..."
+            sleep 2
+          done
+          echo "❌ UI health check failed"
+          exit 1
+
+      - name: Display Service Status
+        working-directory: /opt/scrapalot/scrapalot-chat/docker-scrapalot
+        run: |
+          echo "=========================================" 
+          echo "UI Service Status:"
+          echo "=========================================" 
+          docker compose ps scrapalot-ui
+          echo ""
+          echo "=========================================" 
+          echo "UI Logs (last 20 lines):"
+          echo "=========================================" 
+          docker compose logs --tail=20 scrapalot-ui
+
+      - name: Cleanup Old Images and Free Storage
+        run: |
+          echo "========================================="
+          echo "Comprehensive Docker Cleanup"
+          echo "========================================="
+
+          # Show current disk usage
+          echo "Disk usage before cleanup:"
+          df -h /
+          docker system df
+
+          # List all scrapalot images before cleanup
+          echo ""
+          echo "Scrapalot images before cleanup:"
+          docker images | grep -E "scrapalot|REPOSITORY" || echo "No scrapalot images found"
+
+          # 1. Remove dangling images (untagged)
+          echo ""
+          echo "🧹 Removing dangling images..."
+          docker image prune -f
+
+          # 2. Remove old scrapalot-ui images (keep latest 2)
+          echo ""
+          echo "🧹 Removing old scrapalot-ui images (keeping latest 2)..."
+          docker images scrapalot-ui --format "{{.ID}} {{.CreatedAt}}" | \
+            tail -n +3 | \
+            awk '{print $1}' | \
+            xargs -r docker rmi -f 2>/dev/null || echo "No old scrapalot-ui images to remove"
+
+          # 3. Remove unused images older than 24 hours
+          echo ""
+          echo "🧹 Removing unused images older than 24 hours..."
+          docker image prune -af --filter "until=24h"
+
+          # 4. Remove stopped containers older than 48 hours
+          echo ""
+          echo "🧹 Removing stopped containers..."
+          docker container prune -f --filter "until=48h"
+
+          # 5. Clean build cache aggressively
+          echo ""
+          echo "🧹 Removing build cache..."
+          docker builder prune -af
+
+          # 6. Clean GitHub Actions runner logs older than 14 days
+          echo ""
+          echo "🧹 Cleaning runner diagnostic logs older than 14 days..."
+          find /opt/scrapalot/actions-runner*/_diag -name "*.log" -mtime +14 -delete 2>/dev/null || echo "No old runner logs found"
+
+          # Show disk usage after cleanup
+          echo ""
+          echo "Disk usage after cleanup:"
+          df -h /
+          docker system df
+
+          # Show remaining scrapalot images
+          echo ""
+          echo "Scrapalot images after cleanup:"
+          docker images | grep -E "scrapalot|REPOSITORY" || echo "No scrapalot images found"
+
+          echo ""
+          echo "✓ Comprehensive cleanup complete - storage optimized!"
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo ""
+          echo "========================================="
+          echo "UI Deployment Summary"
+          echo "========================================="
+          echo "Production URL: ${{ vars.FRONTEND_URL }}"
+          echo "  - Accessible via Nginx Proxy Manager (port 443)"
+          echo ""
+          echo "Internal Service:"
+          echo "  - scrapalot-ui:3000 (Docker network only)"
+          echo ""
+          echo "Next Steps:"
+          echo "  1. Ensure Nginx Proxy Manager is configured"
+          echo "  2. Verify SSL certificate is active"
+          echo "  3. Test: ${{ vars.FRONTEND_URL }}"
+          echo "========================================="

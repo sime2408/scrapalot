@@ -1,0 +1,285 @@
+# Migration 021: Notes and Collaboration
+# Based on: Alembic 00004_connectors_notes.py (notes tables)
+# Purpose: Collaborative notes with TipTap editor, versioning, and sharing
+# Status: Full implementation - Spring Boot manages notes system
+
+databaseChangeLog:
+  - changeSet:
+      id: 021-create-notes-table
+      author: liquibase-auto
+      labels: notes,collaboration
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: notes
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: notes
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: workspace_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_notes_workspace_id
+                    references: scrapalot.workspaces(id)
+                    deleteCascade: true
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_notes_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: session_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_notes_session_id
+                    references: scrapalot.sessions(id)
+                    deleteCascade: false
+              - column:
+                  name: title
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: TEXT
+              - column:
+                  name: note_type
+                  type: VARCHAR(50)
+                  defaultValue: markdown
+              - column:
+                  name: tags
+                  type: JSONB
+              - column:
+                  name: is_public
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+              - column:
+                  name: is_pinned
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+              - column:
+                  name: last_edited_by
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_notes_last_edited_by
+                    references: scrapalot.users(id)
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: notes
+            indexName: idx_notes_workspace_id
+            columns:
+              - column:
+                  name: workspace_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: notes
+            indexName: idx_notes_user_id
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            schemaName: scrapalot
+            tableName: notes
+            indexName: idx_notes_session_id
+            columns:
+              - column:
+                  name: session_id
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: notes
+
+  - changeSet:
+      id: 021-create-note-versions-table
+      author: liquibase-auto
+      labels: notes,versioning
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: note_versions
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: note_versions
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: note_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_note_versions_note_id
+                    references: scrapalot.notes(id)
+                    deleteCascade: true
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_note_versions_user_id
+                    references: scrapalot.users(id)
+              - column:
+                  name: content
+                  type: TEXT
+              - column:
+                  name: version_number
+                  type: INTEGER
+              - column:
+                  name: change_summary
+                  type: VARCHAR(500)
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: note_versions
+            indexName: idx_note_versions_note_id
+            columns:
+              - column:
+                  name: note_id
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: note_versions
+
+  - changeSet:
+      id: 021-create-note-shares-table
+      author: liquibase-auto
+      labels: notes,sharing
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: note_shares
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: note_shares
+            columns:
+              - column:
+                  name: note_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_note_shares_note_id
+                    references: scrapalot.notes(id)
+                    deleteCascade: true
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_note_shares_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: permission
+                  type: VARCHAR(20)
+                  defaultValue: read
+
+        - addPrimaryKey:
+            schemaName: scrapalot
+            tableName: note_shares
+            columnNames: note_id, user_id
+            constraintName: pk_note_shares
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: note_shares
+
+  - changeSet:
+      id: 021-create-note-comments-table
+      author: liquibase-auto
+      labels: notes,comments
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: note_comments
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: note_comments
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: note_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_note_comments_note_id
+                    references: scrapalot.notes(id)
+                    deleteCascade: true
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_note_comments_user_id
+                    references: scrapalot.users(id)
+              - column:
+                  name: content
+                  type: TEXT
+              - column:
+                  name: parent_comment_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_note_comments_parent
+                    references: scrapalot.note_comments(id)
+                    deleteCascade: true
+
+        - createIndex:
+            schemaName: scrapalot
+            tableName: note_comments
+            indexName: idx_note_comments_note_id
+            columns:
+              - column:
+                  name: note_id
+
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: note_comments

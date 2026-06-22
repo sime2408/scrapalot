@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package scrapalot.research;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.scrapalot.backend.grpc.research";
+option java_outer_classname = "ResearchServiceProto";
+
+// Research data retrieval service (data populated by deep_research_orchestrator)
+service ResearchDataService {
+  // Get full research data by plan ID
+  rpc GetByPlan(GetByPlanRequest) returns (FullResearchResponse);
+
+  // Get full research data by message ID
+  rpc GetByMessage(GetByMessageRequest) returns (FullResearchResponse);
+
+  // Get all research plans for a session
+  rpc GetSessionPlans(GetSessionPlansRequest) returns (SessionPlansResponse);
+
+  // Delete research plans linked to the given message IDs (cascade deletes tasks/sources/synthesis)
+  rpc DeleteByMessageIds(DeleteByMessageIdsRequest) returns (DeleteByMessageIdsResponse);
+
+  // Get the currently-running research plan for a session (status in
+  // planning/executing/synthesizing). Returns found=false if none.
+  rpc GetActiveResearch(GetActiveResearchRequest) returns (ActiveResearchResponse);
+
+  // Cooperatively cancel a running research run by plan ID. Sets a Redis flag
+  // that the orchestrator polls at every phase boundary.
+  rpc CancelResearch(CancelResearchRequest) returns (CancelResearchResponse);
+}
+
+message GetByPlanRequest {
+  string plan_id = 1;
+  string user_id = 2;
+}
+
+message GetByMessageRequest {
+  string message_id = 1;
+  string user_id = 2;
+}
+
+message GetSessionPlansRequest {
+  string session_id = 1;
+  string user_id = 2;
+}
+
+message ResearchPlanInfo {
+  string id = 1;
+  string session_id = 2;
+  string message_id = 3;
+  string query = 4;
+  string methodology = 5;
+  string sections_json = 6;       // JSON-encoded sections
+  double complexity_score = 7;
+  string status = 8;
+  double progress = 9;
+  string error_message = 10;
+  string created_at = 11;         // ISO-8601
+  string updated_at = 12;         // ISO-8601
+  string discoveries_json = 13;   // JSON-encoded list[Discovery]
+  string council_deliberation_json = 14; // JSON-encoded council deliberation (Feature 4)
+}
+
+message ResearchSynthesisInfo {
+  string id = 1;
+  string plan_id = 2;
+  string title = 3;
+  string executive_summary = 4;
+  string main_content = 5;
+  string sections_json = 6;        // JSON-encoded sections
+  string conclusions_json = 7;     // JSON array
+  string limitations_json = 8;    // JSON array
+  string recommendations_json = 9; // JSON array
+  string citations_json = 10;      // JSON array of objects
+  string bibliography_json = 11;   // JSON array of objects
+  double quality_score = 12;
+  string quality_dimensions_json = 13; // JSON object
+  int32 word_count = 14;
+  int32 total_sources_used = 15;
+  string created_at = 16;
+}
+
+message ResearchSourceInfo {
+  string id = 1;
+  string url = 2;
+  string title = 3;
+  string domain = 4;
+  string source_type = 5;
+  string content_snippet = 6;
+  double credibility_score = 7;
+  bool used_in_synthesis = 8;
+  int32 citation_count = 9;
+}
+
+message FullResearchResponse {
+  bool found = 1;
+  ResearchPlanInfo plan = 2;
+  ResearchSynthesisInfo synthesis = 3;
+  repeated ResearchSourceInfo sources = 4;
+}
+
+message SessionPlansResponse {
+  repeated ResearchPlanInfo plans = 1;
+}
+
+message DeleteByMessageIdsRequest {
+  repeated string message_ids = 1;
+  string user_id = 2;
+}
+
+message DeleteByMessageIdsResponse {
+  int32 deleted_count = 1;
+}
+
+message GetActiveResearchRequest {
+  string session_id = 1;
+  string user_id = 2;
+}
+
+message ActiveResearchResponse {
+  bool found = 1;
+  string plan_id = 2;
+  string status = 3;        // planning | executing | synthesizing
+  double progress = 4;      // 0.0 .. 1.0
+  string current_phase = 5; // planning | decomposition | coordination | search | synthesis
+  string started_at = 6;    // ISO-8601
+  string query = 7;
+}
+
+message CancelResearchRequest {
+  string plan_id = 1;
+  string user_id = 2;
+}
+
+message CancelResearchResponse {
+  bool cancelled = 1;
+  string previous_status = 2;
+}

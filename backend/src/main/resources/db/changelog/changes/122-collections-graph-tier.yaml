@@ -1,0 +1,52 @@
+# Migration 122: collections.graph_tier
+#
+# Per-collection knowledge-graph build tier, decided at collection creation
+# (UI selector next to name/description). Gates how much Neo4j graph each book
+# in the collection builds at ingestion:
+#
+#   0 = no graph        — embeddings only (vector RAG). Zero graph cost.
+#   1 = light graph     — entities + MENTIONS/REFERENCES (spaCy NER); no
+#                         co-occurrence, PageRank, communities or SHARED_ENTITY.
+#   2 = full graph      — LLM entity extraction + co-occurrence + PageRank +
+#                         communities + cross-book SHARED_ENTITY.
+#
+# NULL = inherit from the parent collection (walk parent_collection_id); a root
+# collection that is still NULL resolves to tier 0. This lets one setting on a
+# parent (e.g. spirituality=2) cascade to every sub-collection, with per-child
+# override. The value is the source of truth here and is pushed to the Python
+# replica (collection_workspace_map.graph_tier) over the collections Redis stream.
+
+databaseChangeLog:
+
+  - changeSet:
+      id: 122-add-collections-graph-tier
+      author: scrapalot
+      labels: collections,knowledge-graph,rag
+      comment: "Add graph_tier (0/1/2, NULL=inherit) so each collection controls how heavy a Neo4j graph its books build"
+      preConditions:
+        - onFail: MARK_RAN
+        - and:
+          - tableExists:
+              tableName: collections
+              schemaName: scrapalot
+          - not:
+              - columnExists:
+                  tableName: collections
+                  schemaName: scrapalot
+                  columnName: graph_tier
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: collections
+            columns:
+              - column:
+                  name: graph_tier
+                  type: SMALLINT
+                  constraints:
+                    nullable: true
+                  remarks: "Knowledge-graph build tier: 0=none, 1=light, 2=full; NULL=inherit from parent (root NULL resolves to 0)."
+      rollback:
+        - dropColumn:
+            schemaName: scrapalot
+            tableName: collections
+            columnName: graph_tier

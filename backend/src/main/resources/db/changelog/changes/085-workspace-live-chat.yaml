@@ -1,0 +1,197 @@
+# Migration 085: Workspace live chat — messages + presence tracking
+# Purpose: Enable real-time human-to-human chat within shared workspaces (Pro/Enterprise only)
+
+databaseChangeLog:
+
+  # ============================================
+  # CREATE workspace_chat_messages table
+  # ============================================
+  - changeSet:
+      id: 085-create-workspace-chat-messages
+      author: scrapalot
+      labels: chat,workspace
+      comment: "Create workspace_chat_messages table for live workspace chat"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: workspace_chat_messages
+                schemaName: scrapalot
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: workspace_chat_messages
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: workspace_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sender_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: workspace_chat_messages
+            baseColumnNames: workspace_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: workspaces
+            referencedColumnNames: id
+            constraintName: fk_workspace_chat_messages_workspace
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: workspace_chat_messages
+            baseColumnNames: sender_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_workspace_chat_messages_sender
+            onDelete: CASCADE
+        - createIndex:
+            schemaName: scrapalot
+            tableName: workspace_chat_messages
+            indexName: idx_workspace_chat_messages_workspace_created
+            columns:
+              - column:
+                  name: workspace_id
+              - column:
+                  name: created_at
+                  descending: true
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: workspace_chat_messages
+
+  # ============================================
+  # CREATE workspace_chat_presence table
+  # ============================================
+  - changeSet:
+      id: 085-create-workspace-chat-presence
+      author: scrapalot
+      labels: chat,workspace
+      comment: "Create workspace_chat_presence table for online status tracking"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: workspace_chat_presence
+                schemaName: scrapalot
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: workspace_chat_presence
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: workspace_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_online
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_seen_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: workspace_chat_presence
+            baseColumnNames: user_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_workspace_chat_presence_user
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableSchemaName: scrapalot
+            baseTableName: workspace_chat_presence
+            baseColumnNames: workspace_id
+            referencedTableSchemaName: scrapalot
+            referencedTableName: workspaces
+            referencedColumnNames: id
+            constraintName: fk_workspace_chat_presence_workspace
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            schemaName: scrapalot
+            tableName: workspace_chat_presence
+            columnNames: user_id, workspace_id
+            constraintName: uq_workspace_chat_presence_user_workspace
+        - createIndex:
+            schemaName: scrapalot
+            tableName: workspace_chat_presence
+            indexName: idx_workspace_chat_presence_workspace_online
+            columns:
+              - column:
+                  name: workspace_id
+              - column:
+                  name: is_online
+      rollback:
+        - dropTable:
+            schemaName: scrapalot
+            tableName: workspace_chat_presence
+
+  # ============================================
+  # ADD workspace_chat feature to subscription plans
+  # ============================================
+  - changeSet:
+      id: 085-add-workspace-chat-feature-to-plans
+      author: scrapalot
+      labels: chat,billing
+      comment: "Add workspace_chat feature flag to pro, team, and enterprise plans"
+      changes:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET features = features || '{"workspace_chat": true}'::jsonb,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name IN ('pro', 'team', 'enterprise');
+
+              UPDATE scrapalot.subscription_plans
+              SET features = features || '{"workspace_chat": false}'::jsonb,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name = 'researcher';
+      rollback:
+        - sql:
+            sql: |
+              UPDATE scrapalot.subscription_plans
+              SET features = features - 'workspace_chat',
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name IN ('pro', 'team', 'enterprise', 'researcher');

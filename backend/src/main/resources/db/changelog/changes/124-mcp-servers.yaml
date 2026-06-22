@@ -1,0 +1,97 @@
+# Migration 124: MCP servers
+# Per-user MCP (Model Context Protocol) client integrations. When enabled, a
+# server's remote tools are injected into the user's chat agent at request time.
+# Remote transports only (streamable HTTP / SSE). Matches Python Alembic model.
+
+databaseChangeLog:
+  - changeSet:
+      id: 124-create-mcp-servers
+      author: liquibase-auto
+      labels: mcp,servers
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                schemaName: scrapalot
+                tableName: mcp_servers
+      changes:
+        - createTable:
+            schemaName: scrapalot
+            tableName: mcp_servers
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_mcp_servers
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_mcp_servers_user_id
+                    references: scrapalot.users(id)
+                    deleteCascade: true
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: transport
+                  type: VARCHAR(20)
+                  defaultValue: http
+                  constraints:
+                    nullable: false
+              - column:
+                  name: url
+                  type: VARCHAR(1000)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: auth_token
+                  type: VARCHAR(2000)
+              - column:
+                  name: headers
+                  type: JSONB
+              - column:
+                  name: enabled
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tool_prefix
+                  type: VARCHAR(50)
+              - column:
+                  name: description
+                  type: VARCHAR(500)
+              - column:
+                  name: cached_tools
+                  type: JSONB
+              - column:
+                  name: last_connected_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: last_error
+                  type: VARCHAR(2000)
+        - createIndex:
+            schemaName: scrapalot
+            tableName: mcp_servers
+            indexName: idx_mcp_servers_user_id
+            columns:
+              - column:
+                  name: user_id

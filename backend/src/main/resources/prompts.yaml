@@ -1,0 +1,145 @@
+# AI Prompts Configuration
+# All LLM prompts for Spring AI generation calls.
+# Use {placeholder} syntax for values substituted at runtime.
+
+ai:
+  prompts:
+
+    # ── Collection ──────────────────────────────────────────────────────────────
+    collection:
+      generate-description:
+        system: "You are a helpful librarian assistant that generates clear, concise collection descriptions."
+        user: |
+          Generate a concise, informative description for a document collection named "{collection_name}".
+          The description should explain what kind of documents this collection likely contains and its purpose.
+          Output only the description in 1-2 sentences, no preamble.
+
+    # ── Spring AI generation (describe / suggest / summarize) ───────────────────
+    generation:
+      describe:
+        system: "You are a helpful assistant that generates clear, concise descriptions. Output only the description, no preamble."
+        user: |
+          Generate a concise, informative description for the following content. Respond in {language}.
+
+          Context: {context}
+
+          Content:
+          {content}
+      suggest:
+        system: "You are an expert editor and analyst. Provide actionable, specific suggestions. Format as a numbered list. Be constructive and concise."
+        user: |
+          Analyze the following content and suggest specific improvements. Focus on: {type}. Respond in {language}.
+
+          Content:
+          {content}
+      summarize:
+        system: "You are a precise summarizer. Capture the key points faithfully. Output only the summary."
+        user: |
+          Summarize the following content in {length_instruction}. Respond in {language}.
+
+          Content:
+          {content}
+
+    # ── Notes ───────────────────────────────────────────────────────────────────
+    notes:
+      translate:
+        system: "You are a precise translator. Preserve the original formatting and tone. Output only the translated text."
+        user: |
+          Translate the following text to {language}. Output only the translation, nothing else.
+
+          {text}
+      improve-writing:
+        improve: "Improve the writing quality of this text. Make it clearer and more professional. Return ONLY the improved text, nothing else."
+        fix_grammar: "Fix all grammar and spelling errors in this text. Return ONLY the corrected text, nothing else."
+        make_shorter: "Make this text shorter and more concise while keeping the key information. Return ONLY the shortened text, nothing else."
+        make_longer: "Expand this text with more detail and explanation. Return ONLY the expanded text, nothing else."
+        translate: "Translate this text to {language}. Return ONLY the translation, nothing else."
+        summarize: "Summarize this text in 2-3 sentences. Return ONLY the summary, nothing else."
+
+    # ── Research templates ───────────────────────────────────────────────────────
+    research:
+      templates:
+        - id: "88c54662-6bb8-4368-9db4-981314cf8150"
+          name: "Scientific Paper Research"
+          description: "Deep literature review for academic writing. Prioritizes peer-reviewed sources, high citation standards."
+          template-type: "scientific_paper"
+          methodology: "systematic_literature_review"
+          tone: "objective"
+          citation-style: "APA"
+          depth: 5
+          breadth: 3
+          output-format: "academic_paper"
+          source-types:
+            - "academic_papers"
+            - "books_publications"
+            - "statistical_data"
+          is-default: false
+
+        - id: "490b7d1e-4e40-4f37-807f-2953e17902f3"
+          name: "Literature Review"
+          description: "Broad survey of a field. High breadth, systematic organization by theme or chronology."
+          template-type: "literature_review"
+          methodology: "systematic_literature_review"
+          tone: "analytical"
+          citation-style: "APA"
+          depth: 4
+          breadth: 5
+          output-format: "annotated_bibliography"
+          source-types:
+            - "academic_papers"
+            - "books_publications"
+            - "industry_reports"
+            - "expert_blogs"
+          is-default: false
+
+        - id: "a599fb68-d137-4ff3-ad3d-1b3d236fd623"
+          name: "Concept Exploration"
+          description: "Broad exploration of a new topic. Diverse sources, narrative style."
+          template-type: "concept_exploration"
+          methodology: "mixed_methods"
+          tone: "narrative"
+          citation-style: "APA"
+          depth: 3
+          breadth: 5
+          output-format: "report"
+          source-types:
+            - "academic_papers"
+            - "news_articles"
+            - "expert_blogs"
+            - "official_websites"
+            - "books_publications"
+          is-default: true
+
+        - id: "4ca923eb-c8c5-45d7-aa49-35cf01097d09"
+          name: "Fact Verification"
+          description: "Deep but narrow fact-checking. Authoritative sources only, high accuracy standard."
+          template-type: "fact_verification"
+          methodology: "investigative_journalism"
+          tone: "objective"
+          citation-style: "Chicago"
+          depth: 5
+          breadth: 2
+          output-format: "bullet_points"
+          source-types:
+            - "academic_papers"
+            - "government_reports"
+            - "official_websites"
+            - "statistical_data"
+          is-default: false
+
+        - id: "08182f53-f313-40c5-a06a-797c7b03c6e3"
+          name: "Comparative Analysis"
+          description: "Balanced comparison of technologies, approaches, or theories. Analytical style."
+          template-type: "comparative_analysis"
+          methodology: "comparative_study"
+          tone: "analytical"
+          citation-style: "APA"
+          depth: 4
+          breadth: 4
+          output-format: "report"
+          source-types:
+            - "academic_papers"
+            - "industry_reports"
+            - "news_articles"
+            - "official_websites"
+          is-default: false

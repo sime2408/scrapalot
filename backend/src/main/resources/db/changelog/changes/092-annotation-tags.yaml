@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 092-add-annotation-tag-ids
+      author: scrapalot
+      labels: annotations,tags
+      comment: "Add tag_ids JSON column to annotations for cross-DB tag references"
+      changes:
+        - addColumn:
+            schemaName: scrapalot
+            tableName: annotations
+            columns:
+              - column:
+                  name: tag_ids
+                  type: TEXT
+                  constraints:
+                    nullable: true

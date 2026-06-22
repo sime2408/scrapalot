@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Scrapalot Backend - Logback Configuration
+Enhanced logging with color formatting matching Python backend style
+
+Features:
+- Color-coded log levels (DEBUG=gray, INFO=white, WARNING=orange, ERROR=red)
+- Level-specific emojis (⚠️ WARNING, ❌ ERROR, 🔥 CRITICAL)
+- Module-based coloring (AI/ML=blue, Database=purple, Security=bright blue, etc.)
+- Format: timestamp icon[LEVEL   ] module_name | message
+- Daily log rotation with 7-day retention
+- UTF-8 encoding for emoji support
+
+Based on: scrapalot-chat/configs/logging.conf and src/main/utils/logger.py
+-->
+<configuration>
+
+    <!-- Properties -->
+    <property name="LOG_FILE" value="${LOG_FILE:-logs/scrapalot-backend.log}"/>
+    <property name="LOG_PATH" value="${LOG_PATH:-logs}"/>
+
+    <!-- Color definitions matching Python backend -->
+    <conversionRule conversionWord="clr" class="org.springframework.boot.logging.logback.ColorConverter"/>
+    <conversionRule conversionWord="wex" class="org.springframework.boot.logging.logback.WhitespaceThrowableProxyConverter"/>
+    <conversionRule conversionWord="wEx" class="org.springframework.boot.logging.logback.ExtendedWhitespaceThrowableProxyConverter"/>
+
+    <!-- Custom conversion rule for emoji icons -->
+    <conversionRule conversionWord="emoji" class="com.scrapalot.backend.logging.EmojiConverter"/>
+    <conversionRule conversionWord="moduleColor" class="com.scrapalot.backend.logging.ModuleColorConverter"/>
+
+    <!-- Console Appender with Color Formatting (matches Python operationHandler) -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <!-- Format: 2025-12-07 08:00:00 ⚠️[WARNING] com.scrapalot.backend.controller | Message -->
+            <!-- Level colors: ERROR=red, WARN=yellow, INFO=white, DEBUG=cyan -->
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} %emoji%clr([%-7level]){ERROR=red, WARN=yellow, INFO=white, DEBUG=cyan} %moduleColor{%-35logger{35}}%clr( |){faint} %msg%n%wEx</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- File Appender with Daily Rotation (matches Python timedRotatingFileHandler) -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}</file>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <!-- Same format but without ANSI colors for file output -->
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} %emoji[%-7level] %-35logger{35} | %msg%n%wEx</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- Daily rotation: scrapalot-backend-ddMMyyyy.log -->
+            <fileNamePattern>${LOG_PATH}/scrapalot-backend-%d{ddMMyyyy}.log</fileNamePattern>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Async appenders for better performance -->
+    <appender name="ASYNC_CONSOLE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <appender-ref ref="CONSOLE"/>
+    </appender>
+
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <appender-ref ref="FILE"/>
+    </appender>
+
+    <!-- Logger Configurations (matching Python logging.conf) -->
+
+    <!-- Root logger -->
+    <root level="INFO">
+        <appender-ref ref="ASYNC_CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </root>
+
+    <!-- Application loggers -->
+    <logger name="com.scrapalot.backend" level="DEBUG" additivity="false">
+        <appender-ref ref="ASYNC_CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Controller/API operations (matches logger_api_operations) -->
+    <logger name="com.scrapalot.backend.controller" level="DEBUG" additivity="false">
+        <appender-ref ref="ASYNC_CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Service operations -->
+    <logger name="com.scrapalot.backend.service" level="DEBUG" additivity="false">
+        <appender-ref ref="ASYNC_CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Repository/Database operations (matches logger_db_operations) -->
+    <logger name="com.scrapalot.backend.repository" level="DEBUG" additivity="false">
+        <appender-ref ref="ASYNC_CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Security/Auth operations (matches logger_auth_operations) -->
+    <logger name="com.scrapalot.backend.security" level="DEBUG" additivity="false">
+        <appender-ref ref="ASYNC_CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- gRPC operations -->
+    <logger name="com.scrapalot.backend.grpc" level="DEBUG" additivity="false">
+        <appender-ref ref="ASYNC_CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Redis operations (matches logger_redis_operations) -->
+    <logger name="com.scrapalot.backend.redis" level="DEBUG" additivity="false">
+        <appender-ref ref="ASYNC_CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Third-party libraries (reduce noise) -->
+
+    <!-- Spring Framework -->
+    <logger name="org.springframework" level="INFO"/>
+    <logger name="org.springframework.boot" level="INFO"/>
+    <logger name="org.springframework.web" level="INFO"/>
+    <logger name="org.springframework.security" level="INFO"/>
+    <logger name="org.springframework.data" level="INFO"/>
+
+    <!-- Suppress BeanPostProcessor warnings (gRPC auto-configuration) -->
+    <logger name="org.springframework.context.support.PostProcessorRegistrationDelegate" level="ERROR"/>
+
+    <!-- Hibernate/JPA -->
+    <logger name="org.hibernate" level="WARN"/>
+    <logger name="org.hibernate.SQL" level="DEBUG"/>
+    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/>
+
+    <!-- Liquibase (matches logger_alembic) -->
+    <logger name="liquibase" level="INFO"/>
+
+    <!-- gRPC -->
+    <logger name="io.grpc" level="INFO"/>
+    <logger name="net.devh.boot.grpc" level="INFO"/>
+
+    <!-- Redis -->
+    <logger name="io.lettuce" level="WARN"/>
+    <logger name="org.springframework.data.redis" level="INFO"/>
+
+    <!-- MapStruct -->
+    <logger name="org.mapstruct" level="WARN"/>
+
+    <!-- Kotlin -->
+    <logger name="org.jetbrains.kotlin" level="WARN"/>
+
+    <!-- Uvicorn equivalent - Tomcat/Netty -->
+    <logger name="org.apache.tomcat" level="WARN"/>
+    <logger name="reactor.netty" level="WARN"/>
+
+    <!-- Health check noise reduction (matches Python ServiceLogsFilter) -->
+    <logger name="org.springframework.boot.actuate.endpoint" level="WARN"/>
+
+</configuration>
