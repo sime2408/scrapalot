@@ -10,13 +10,26 @@ from src.main.utils.core.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _get_speech_config_from_db() -> dict | None:
+    """Read the ``speech_config`` blob from server_settings, or None if absent."""
+    try:
+        from src.main.grpc.grpc_utils import grpc_db_session
+        from src.main.models.sqlmodel_settings import ServerSetting
+
+        with grpc_db_session() as db:
+            setting = db.query(ServerSetting).filter(ServerSetting.setting_key == "speech_config").first()
+            if setting and setting.setting_value:
+                return dict(setting.setting_value)
+    except Exception as e:
+        logger.debug("Could not load speech_config from DB: %s", str(e))
+    return None
+
+
 def create_tts_provider(provider_override: str | None = None) -> BaseTTS:
     """Create a TTS provider instance.
 
     Priority: provider_override > DB (server_settings) > config.yaml
     """
-    from src.main.service.speech.stt_factory import _get_speech_config_from_db
-
     db_config = _get_speech_config_from_db()
     yaml_config = resolved_config.get("tts", {})
 

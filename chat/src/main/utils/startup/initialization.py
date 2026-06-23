@@ -298,62 +298,20 @@ async def run_heavy_initialization(app_instance=None):
             startup_state.fail_task("model_download", str(e))
             logger.warning("Failed to pre-download ML models: %s", str(e))
 
-        # Reranker model loading (for RAG document reranking)
+        # Reranker model loading is not available in this edition (cross-encoder
+        # reranking was removed). RAG falls back to MMR reranking at query time.
         startup_state.start_task("reranker_loading")
-        try:
-            logger.info("🔄 Loading reranker model for RAG document reranking...")
-
-            from src.main.service.retriever.reranker_manager import get_reranker_manager
-
-            reranker_start = time.time()
-            reranker_manager = get_reranker_manager()
-            reranker_loaded = reranker_manager.load_reranker()
-            reranker_time = time.time() - reranker_start
-
-            if reranker_loaded:
-                model_info = reranker_manager.get_model_info()
-                logger.info(
-                    "Reranker loaded successfully: %s on %s in %.2f seconds",
-                    model_info["model_name"],
-                    model_info["device"],
-                    reranker_time,
-                )
-                startup_state.complete_task(
-                    "reranker_loading",
-                    {
-                        "loaded": True,
-                        "model_name": model_info["model_name"],
-                        "device": model_info["device"],
-                        "load_time": reranker_time,
-                    },
-                )
-            else:
-                logger.warning("⚠️ Reranker failed to load - will fall back to MMR reranking")
-                startup_state.complete_task("reranker_loading", {"loaded": False})
-
-        except Exception as e:
-            startup_state.fail_task("reranker_loading", str(e))
-            logger.warning("Failed to load reranker model: %s - will use MMR fallback", str(e))
+        logger.info("ℹ️ Reranker not available in this edition - RAG will use MMR reranking")
+        startup_state.complete_task("reranker_loading", {"loaded": False})
 
         # Service pre-warming (prevent 61-second delays on first document request)
         startup_state.start_task("service_prewarming")
         try:
             logger.info("🔥 Pre-warming services (lightweight initialization)...")
 
-            # Only do lightweight initialization - avoid heavy model loading during startup
-            # Heavy model loading (EntityExtractor, spaCy, LLM) will happen on-demand
-            from src.main.service.graph.graph_integration_service import GraphIntegrationService
-
-            graph_start = time.time()
-            # Check if the graph service is enabled without fully initializing it
-            graph_service = GraphIntegrationService()
-            graph_enabled = graph_service.is_graph_enabled()
-            graph_time = time.time() - graph_start
-
-            if graph_enabled:
-                logger.info("GraphIntegrationService configuration verified in %.2f seconds (heavy models deferred)", graph_time)
-            else:
-                logger.info("ℹ️ GraphIntegrationService disabled - document operations will be faster")
+            # Knowledge graph is not available in this edition - nothing heavy to
+            # pre-warm here. Document operations run without graph integration.
+            logger.info("ℹ️ Knowledge graph not available in this edition - skipping graph pre-warm")
 
             startup_state.complete_task("service_prewarming")
 
@@ -654,26 +612,10 @@ async def _background_initialization(_app: FastAPI, redis_config: dict):
         logger.info("Embedding model pre-loading completed (took %.2f seconds)", embedding_time)
         startup_monitor.checkpoint("Embedding Models Preload Complete")
 
-        # Preload reranker model to avoid on-demand loading delays
-        logger.info("Pre-loading reranker model...")
-        startup_monitor.checkpoint("Reranker Model Preload Start")
-        start_time = time.time()
-        try:
-            from src.main.service.retriever.reranker_manager import get_reranker_manager
-
-            reranker_manager = get_reranker_manager()
-            reranker_loaded = reranker_manager.load_reranker()
-
-            if reranker_loaded:
-                logger.info("Successfully preloaded reranker model")
-            else:
-                logger.warning("Failed to preload reranker model")
-        except Exception as reranker_error:
-            logger.warning("Failed to pre-load reranker model: %s", reranker_error)
-
-        reranker_time = time.time() - start_time
-        logger.info("Reranker model pre-loading completed (took %.2f seconds)", reranker_time)
-        startup_monitor.checkpoint("Reranker Model Preload Complete")
+        # Reranker model is not available in this edition (cross-encoder reranking
+        # was removed). RAG falls back to MMR reranking at query time.
+        logger.info("ℹ️ Reranker not available in this edition - skipping preload (RAG uses MMR)")
+        startup_monitor.checkpoint("Reranker Model Preload Skipped")
 
         # Retriever Manager initialization with config
         logger.info("Initializing Retriever Manager...")
@@ -708,52 +650,15 @@ async def _background_initialization(_app: FastAPI, redis_config: dict):
                 document_service = DocumentService(db=db)
                 logger.info("DocumentService preloaded successfully")
 
-                # Check graph integration service availability (lightweight)
-                graph_config = resolved_config.get("graph", {})
-                graph_enabled = graph_config.get("enabled", False)
-
-                if graph_enabled:
-                    from src.main.service.graph.graph_integration_service import GraphIntegrationService
-
-                    graph_service = GraphIntegrationService()
-                    if graph_service.is_graph_enabled():
-                        logger.info("Graph Integration Service available (heavy initialization deferred)")
-
-                        # Setup Neo4j optimizations (indexes, constraints) in background
-                        # This prevents "no such vector schema index" errors during entity similarity search
-                        try:
-                            from src.main.service.graph.neo4j_optimizations import get_neo4j_optimization_service
-
-                            logger.info("Setting up Neo4j optimizations (indexes, constraints)...")
-                            optimization_service = await get_neo4j_optimization_service()
-                            optimization_result = await optimization_service.setup_all_optimizations()
-
-                            if optimization_result.get("success"):
-                                logger.info(
-                                    "Neo4j optimizations created: %d indexes, %d constraints",
-                                    optimization_result.get("indexes_created", 0),
-                                    optimization_result.get("constraints_created", 0),
-                                )
-                            else:
-                                logger.warning(
-                                    "Neo4j optimization setup had errors: %s",
-                                    optimization_result.get("errors", []),
-                                )
-                        except Exception as neo4j_opt_error:
-                            logger.warning(
-                                "Failed to setup Neo4j optimizations (will retry on-demand): %s",
-                                str(neo4j_opt_error),
-                            )
-                    else:
-                        logger.info("ℹ️  Graph Integration Service disabled by service config")
-                else:
-                    logger.info("ℹ️  Graph Integration Service disabled by config")
+                # Knowledge graph (Neo4j) is not available in this edition - no
+                # graph integration service or Neo4j optimizations to set up.
+                logger.info("ℹ️  Knowledge graph not available in this edition - skipping graph integration")
 
                 # Store references for potential cleanup
                 _app.state.document_service = document_service
                 _app.state.document_job_manager = document_job_manager
                 _app.state.document_processor = document_processor
-                _app.state.graph_integration_service = None  # Will be lazy-loaded when needed
+                _app.state.graph_integration_service = None  # Not available in this edition
 
             finally:
                 db.close()

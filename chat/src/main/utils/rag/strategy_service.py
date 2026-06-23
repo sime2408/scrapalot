@@ -12,6 +12,8 @@ Key responsibilities:
 """
 
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -19,6 +21,40 @@ from sqlalchemy.orm import Session
 from src.main.utils.core.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class RoutingResult:
+    """Result of basic RAG strategy selection (Community Edition).
+
+    The hosted edition fills this from the agentic router (query analysis,
+    source analysis, routing tiers). CE has no agentic routing or strategy
+    presets, so every request resolves to plain pgvector similarity search.
+    The optional/agentic fields are kept (defaulted to neutral values) so
+    downstream consumers that read them don't hit AttributeError.
+    """
+
+    strategy_name: str
+    strategy_type: str
+    strategy_class: type
+    source_analysis: Any | None = None
+    routing_tier: int | None = None
+    routing_tier_name: str | None = None
+    confidence: float | None = None
+    reasoning: str | None = None
+    query_characteristics: dict[str, Any] = field(default_factory=dict)
+
+
+def _basic_routing_result() -> RoutingResult:
+    """Build the default similarity-search routing result for CE."""
+    from src.main.service.rag.rag_similarity_search import RAGSimilaritySearch
+
+    return RoutingResult(
+        strategy_name="RAGSimilaritySearch",
+        strategy_type="similarity",
+        strategy_class=RAGSimilaritySearch,
+        reasoning="Basic similarity search (Community Edition).",
+    )
 
 
 class RAGStrategyService:
@@ -67,20 +103,20 @@ class RAGStrategyService:
             ):
                 yield packet  # Forward to a client
         """
-        from src.main.service.rag.agentic_routing import (
-            get_agentic_rag_strategy_with_streaming,
-        )
+        # Community Edition has no agentic routing / strategy presets. Always
+        # resolve to plain pgvector similarity search and emit a single
+        # strategy_selected packet so the caller can collect it.
+        from src.main.service.streaming.packet_emitter import PacketEmitter
 
-        # Stream routing decision - agentic_routing.py handles the branching logic
-        # internally based on use_agentic_routing setting
-        # NOTE: System agent model is used for routing, not user's chat model
-        async for packet in get_agentic_rag_strategy_with_streaming(
-            query=query,
-            collection_ids=collection_ids,
-            user_id=user_id,
-            db=db,
-        ):
-            yield packet
+        routing = _basic_routing_result()
+        _emitter = PacketEmitter(buffer_mode=False)
+        yield _emitter.emit_custom(
+            packet_type="strategy_selected",
+            content={
+                "strategy_name": routing.strategy_name,
+                "strategy_type": routing.strategy_type,
+            },
+        )
 
     @staticmethod
     def extract_strategy_info(packets: list[str]):
@@ -105,9 +141,9 @@ class RAGStrategyService:
             routing = RAGStrategyService.extract_strategy_info(packets)
             strategy = routing.strategy_class(retriever, llm, packet_emitter)
         """
-        from src.main.service.rag.agentic_routing import extract_strategy_from_packets
-
-        return extract_strategy_from_packets(packets)
+        # Community Edition always uses basic similarity search; the streamed
+        # packets are informational only.
+        return _basic_routing_result()
 
     @staticmethod
     async def select_strategy_sync(

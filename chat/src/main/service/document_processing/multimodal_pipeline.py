@@ -129,14 +129,5 @@ def describe_pending(db: Session, document_id: str | UUID, loop=None) -> dict[st
         logger.warning("describe_pending failed for %s: %s", document_id, ex)
         return {"described": 0, "failed": 0, "skipped": 0}
 
-    try:
-        from src.main.service.document_processing.multimodal_graph_sync import (
-            sync_described_to_neo4j,
-        )
-
-        synced = sync_described_to_neo4j(db, document_id)
-        counters["graph_synced"] = synced
-    except Exception as ex:
-        logger.warning("Neo4j sync after describe failed for %s: %s", document_id, ex)
-
+    # Community Edition: knowledge-graph sync of described elements is not bundled.
     return counters

@@ -15,10 +15,6 @@ from sqlmodel import Session as SQLModelSession
 
 from src.main.constants.status_codes import StatusCode
 from src.main.models.sqlmodel_models import Document
-from src.main.service.chat.chat_utils import (
-    StreamingResponseState,
-    accumulate_streaming_response,
-)
 from src.main.service.streaming.packet_emitter import PacketEmitter
 from src.main.utils.core.logger import get_logger
 
@@ -60,39 +56,21 @@ async def process_document_qa(
     Yields:
         JSON packet strings for streaming response
     """
-    from src.main.service.agents.rag_agents.document_qa_agent import DocumentQAAgent
-
     logger.info(
-        "Document %s is unprocessed (status: %s), routing to DocumentQAAgent",
+        "Document %s is unprocessed (status: %s); direct document Q&A is not available in this edition",
         document.id,
         document.processing_status,
     )
 
     yield emitter.emit_status(StatusCode.DOCUMENT_QA_NOT_INDEXED.value, stage=StatusCode.DOCUMENT_QA.value)
 
-    # Use DocumentQAAgent for direct file Q&A
-    doc_qa_agent = DocumentQAAgent(packet_emitter=emitter)
-
-    # Track state using shared utility
-    state = StreamingResponseState()
-
-    async for packet, _state in accumulate_streaming_response(
-        doc_qa_agent.answer_document_question(
-            query=query,
-            document=document,
-            db=db,
-            user_id=user_id,
-            conversation_context=conversation_context,
-        )
-    ):
-        yield packet
-
-    if state.full_response:
-        logger.info(
-            "DocumentQA response accumulated (%d chars) for message ID: %s",
-            len(state.full_response),
-            assistant_message_id,
-        )
+    # Community Edition removes the DocumentQAAgent (direct file Q&A on unindexed
+    # documents). Degrade gracefully: inform the user the document must finish
+    # processing before it can be queried via the normal RAG retrieval path.
+    yield emitter.emit_message_delta(
+        "This document is still being processed and isn't indexed yet. "
+        "Please wait for processing to complete, then ask your question again."
+    )
 
     # Start background title generation for DocumentQA (non-blocking)
     if session_id and user_id and document and query:

@@ -12,6 +12,7 @@ from typing import Any
 
 from langchain_core.documents import Document
 
+from src.main.utils.config.loader import resolved_config
 from src.main.utils.core.datetime_utils import parse_iso_datetime
 from src.main.utils.core.logger import get_logger
 from src.main.utils.text.formatting import truncate_at_word_boundary
@@ -201,11 +202,7 @@ class CitationGenerator:
     def _load_citation_style_from_config() -> CitationStyle:
         """Load citation style from system configuration."""
         try:
-            # noinspection PyUnresolvedReferences
-            from src.main.service.system_settings_service import SystemSettingsService
-
-            settings_service = SystemSettingsService()
-            style_name = settings_service.get_setting("citation_default_style", "internal")
+            style_name = resolved_config.get("citation_default_style", "internal")
 
             try:
                 return CitationStyle(style_name)

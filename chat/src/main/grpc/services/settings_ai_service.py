@@ -420,7 +420,7 @@ class SettingsAIServiceServicer(settings_ai_pb2_grpc.SettingsAIServiceServicer):
     async def ListRagStrategies(self, request, context):
         logger.info("SettingsAIService.ListRagStrategies called")
         try:
-            from src.main.service.rag.rag_strategy_registry import get_rag_strategies
+            from src.main.utils.rag.strategies import get_rag_strategies
 
             strategies = get_rag_strategies()
             return settings_ai_pb2.RagStrategiesResponse(

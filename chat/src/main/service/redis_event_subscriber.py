@@ -226,16 +226,8 @@ def _schedule_collection_graph_cleanup(collection_id: str) -> None:
 
 
 async def _cleanup_collection_graph_async(collection_id: str) -> None:
-    """Delete all Neo4j nodes for a collection."""
-    try:
-        from src.main.service.graph.graph_structure_service import GraphStructureService
-
-        service = GraphStructureService()
-        deleted = await service.delete_collection_structure(collection_id)
-        if deleted > 0:
-            logger.info("Cleaned up %d Neo4j nodes for deleted collection %s", deleted, collection_id)
-    except Exception as e:
-        logger.warning("Failed to clean up Neo4j for collection %s: %s", collection_id, str(e))
+    """Knowledge graph is not part of CE — collection graph cleanup is a no-op."""
+    logger.debug("Knowledge graph not available in CE, skipping graph cleanup for collection %s", collection_id)
 
 
 def _handle_workspace_updated(fields: dict[str, Any]) -> None:
@@ -270,137 +262,43 @@ def _handle_workspace_deleted(fields: dict[str, Any]) -> None:
 
 
 def _handle_connector_created(fields: dict[str, Any]) -> None:
-    """Handle CONNECTOR_CREATED event by upserting the connector."""
-    from src.main.service.connector_cache import upsert_connector
-
-    db = _get_db_session()
-    try:
-        payload = _extract_payload(fields)
-        connector_id = payload.get("connector_id", fields.get("connector_id", ""))
-        if not connector_id:
-            return
-        upsert_connector(
-            db=db,
-            connector_id=UUID(connector_id),
-            workspace_id=UUID(fields.get("workspace_id", payload.get("workspace_id", ""))),
-            name=payload.get("name", ""),
-            connector_type=payload.get("connector_type", ""),
-            sync_enabled=payload.get("sync_enabled", True),
-            source_path=payload.get("source_path"),
-        )
-        logger.debug("Synced CONNECTOR_CREATED: %s", connector_id)
-    finally:
-        db.close()
+    """Connectors are not part of CE — event is not handled."""
+    logger.debug("CONNECTOR_CREATED not handled in CE")
 
 
 def _handle_connector_updated(fields: dict[str, Any]) -> None:
-    """Handle CONNECTOR_UPDATED event by upserting the connector."""
-    _handle_connector_created(fields)
+    """Connectors are not part of CE — event is not handled."""
+    logger.debug("CONNECTOR_UPDATED not handled in CE")
 
 
 def _handle_connector_deleted(fields: dict[str, Any]) -> None:
-    """Handle CONNECTOR_DELETED event by removing the connector and children."""
-    from src.main.service.connector_cache import delete_connector
-
-    db = _get_db_session()
-    try:
-        payload = _extract_payload(fields)
-        connector_id = payload.get("connector_id", fields.get("connector_id", ""))
-        if not connector_id:
-            return
-        delete_connector(db=db, connector_id=UUID(connector_id))
-        logger.debug("Synced CONNECTOR_DELETED: %s", connector_id)
-    finally:
-        db.close()
+    """Connectors are not part of CE — event is not handled."""
+    logger.debug("CONNECTOR_DELETED not handled in CE")
 
 
 def _handle_mcp_server_created(fields: dict[str, Any]) -> None:
-    """Handle MCP_SERVER_CREATED event by upserting the per-user MCP server."""
-    from src.main.service.mcp_server_cache import upsert_mcp_server
-
-    db = _get_db_session()
-    try:
-        payload = _extract_payload(fields)
-        server_id = payload.get("server_id", fields.get("server_id", ""))
-        user_id = fields.get("user_id", payload.get("user_id", ""))
-        if not server_id or not user_id:
-            return
-        upsert_mcp_server(
-            db=db,
-            server_id=UUID(server_id),
-            user_id=UUID(user_id),
-            name=payload.get("name", ""),
-            transport=payload.get("transport", "http"),
-            url=payload.get("url", ""),
-            auth_token=payload.get("auth_token") or None,
-            headers=payload.get("headers") or None,
-            enabled=payload.get("enabled", True),
-            tool_prefix=payload.get("tool_prefix") or None,
-            description=payload.get("description") or None,
-        )
-        logger.debug("Synced MCP_SERVER_CREATED: %s", server_id)
-    finally:
-        db.close()
+    """Per-user MCP servers are not part of CE — event is not handled."""
+    logger.debug("MCP_SERVER_CREATED not handled in CE")
 
 
 def _handle_mcp_server_updated(fields: dict[str, Any]) -> None:
-    """Handle MCP_SERVER_UPDATED event by upserting the MCP server."""
-    _handle_mcp_server_created(fields)
+    """Per-user MCP servers are not part of CE — event is not handled."""
+    logger.debug("MCP_SERVER_UPDATED not handled in CE")
 
 
 def _handle_mcp_server_deleted(fields: dict[str, Any]) -> None:
-    """Handle MCP_SERVER_DELETED event by removing the MCP server."""
-    from src.main.service.mcp_server_cache import delete_mcp_server
-
-    db = _get_db_session()
-    try:
-        payload = _extract_payload(fields)
-        server_id = payload.get("server_id", fields.get("server_id", ""))
-        if not server_id:
-            return
-        delete_mcp_server(db=db, server_id=UUID(server_id))
-        logger.debug("Synced MCP_SERVER_DELETED: %s", server_id)
-    finally:
-        db.close()
+    """Per-user MCP servers are not part of CE — event is not handled."""
+    logger.debug("MCP_SERVER_DELETED not handled in CE")
 
 
 def _handle_sync_destination_created(fields: dict[str, Any]) -> None:
-    """Handle SYNC_DESTINATION_CREATED event by upserting the destination."""
-    from src.main.service.connector_cache import upsert_sync_destination
-
-    db = _get_db_session()
-    try:
-        payload = _extract_payload(fields)
-        dest_id = payload.get("destination_id", "")
-        connector_id = payload.get("connector_id", fields.get("connector_id", ""))
-        if not dest_id or not connector_id:
-            return
-        upsert_sync_destination(
-            db=db,
-            destination_id=UUID(dest_id),
-            connector_id=UUID(connector_id),
-            destination_type=payload.get("destination_type", "collection"),
-            collection_id=UUID(payload["collection_id"]) if payload.get("collection_id") else None,
-        )
-        logger.debug("Synced SYNC_DESTINATION_CREATED: %s", dest_id)
-    finally:
-        db.close()
+    """Connector sync destinations are not part of CE — event is not handled."""
+    logger.debug("SYNC_DESTINATION_CREATED not handled in CE")
 
 
 def _handle_sync_destination_deleted(fields: dict[str, Any]) -> None:
-    """Handle SYNC_DESTINATION_DELETED event by removing the destination."""
-    from src.main.service.connector_cache import delete_sync_destination
-
-    db = _get_db_session()
-    try:
-        payload = _extract_payload(fields)
-        dest_id = payload.get("destination_id", "")
-        if not dest_id:
-            return
-        delete_sync_destination(db=db, destination_id=UUID(dest_id))
-        logger.debug("Synced SYNC_DESTINATION_DELETED: %s", dest_id)
-    finally:
-        db.close()
+    """Connector sync destinations are not part of CE — event is not handled."""
+    logger.debug("SYNC_DESTINATION_DELETED not handled in CE")
 
 
 def _handle_annotation_changed(fields: dict[str, Any]) -> None:
@@ -482,21 +380,8 @@ async def _generate_description_async(collection_id: UUID) -> None:
 
 
 def _handle_message_feedback(fields: dict[str, Any]) -> None:
-    """Apply Memify EMA reweighting to graph elements touched by an AI answer.
-
-    Stream payload comes from Kotlin RedisEventPublisher.publishMessageFeedback().
-    Bad records (missing UUIDs, removal feedback) are dropped silently — feedback
-    removal does not call back; the previous EMA state stays.
-    """
-    from src.main.service.graph.memify_service import apply_feedback_weights, parse_feedback_event
-
-    event = parse_feedback_event(fields)
-    if event is None:
-        return
-    try:
-        apply_feedback_weights(event)
-    except Exception as exc:  # never let memify failures stop the consumer
-        logger.warning("Memify failed for message_id=%s: %s", fields.get("message_id"), exc)
+    """Memify graph EMA reweighting is not part of CE — event is not handled."""
+    logger.debug("message_feedback not handled in CE (no knowledge graph)")
 
 
 # Event type → handler mapping (for stream events with a "type" field)
@@ -798,164 +683,17 @@ def reconcile_from_snapshot() -> None:
     except Exception as e:
         logger.error("Failed to reconcile from collection_workspace snapshot: %s", e)
 
-    # Reconcile connectors snapshot (also in Redis DB 1)
-    _reconcile_connectors_snapshot()
-
-    # Reconcile per-user MCP servers snapshot (also in Redis DB 1)
-    _reconcile_mcp_servers_snapshot()
+    # Connectors and per-user MCP servers are not part of CE — nothing to reconcile.
 
 
 def _reconcile_connectors_snapshot() -> None:
-    """Read the connectors snapshot from Redis DB 1 and bulk-upsert."""
-    from src.main.service.connector_cache import upsert_connector, upsert_sync_destination
-
-    try:
-        import os
-
-        import redis as redis_lib
-
-        redis_host = os.getenv("REDIS_HOST", "redis")
-        redis_port = int(os.getenv("REDIS_PORT", "6379"))
-        redis_password = os.getenv("REDIS_PASSWORD", "")
-        kotlin_redis = redis_lib.Redis(
-            host=redis_host,
-            port=redis_port,
-            password=redis_password,
-            db=1,
-            decode_responses=False,
-            socket_timeout=5,
-        )
-        raw = kotlin_redis.get("scrapalot:sync:connectors_snapshot")
-        kotlin_redis.close()
-        if not raw:
-            logger.info("No connectors snapshot found in Redis, skipping reconciliation")
-            return
-
-        raw_value: bytes | str = raw if isinstance(raw, (bytes, str)) else str(raw)
-        if isinstance(raw_value, bytes):
-            raw_value = raw_value.decode("utf-8")
-
-        snapshot = json.loads(raw_value)
-        if not isinstance(snapshot, list):
-            logger.warning("Invalid connectors snapshot format, expected list")
-            return
-
-        db = _get_db_session()
-        try:
-            count = 0
-            for entry in snapshot:
-                conn = entry.get("connector", {})
-                conn_id = conn.get("id", "")
-                ws_id = conn.get("workspace_id", "")
-                if not conn_id or not ws_id:
-                    continue
-
-                upsert_connector(
-                    db=db,
-                    connector_id=UUID(conn_id),
-                    workspace_id=UUID(ws_id),
-                    name=conn.get("name", ""),
-                    connector_type=conn.get("connector_type", ""),
-                    credential_id=UUID(conn["credential_id"]) if conn.get("credential_id") else None,
-                    sync_enabled=conn.get("sync_enabled", True),
-                    sync_frequency=conn.get("sync_frequency", "daily"),
-                    auto_sync=conn.get("auto_sync", False),
-                    source_path=conn.get("source_path"),
-                    file_filters=conn.get("file_filters"),
-                    exclude_patterns=conn.get("exclude_patterns"),
-                    sync_status=conn.get("sync_status", "idle"),
-                )
-                count += 1
-
-                for dest in entry.get("sync_destinations", []):
-                    dest_id = dest.get("id", "")
-                    if not dest_id:
-                        continue
-                    upsert_sync_destination(
-                        db=db,
-                        destination_id=UUID(dest_id),
-                        connector_id=UUID(conn_id),
-                        destination_type=dest.get("destination_type", "collection"),
-                        collection_id=UUID(dest["collection_id"]) if dest.get("collection_id") else None,
-                        destination_path=dest.get("destination_path"),
-                        auto_process=dest.get("auto_process", True),
-                        chunking_strategy=dest.get("chunking_strategy"),
-                        overwrite_existing=dest.get("overwrite_existing", True),
-                        preserve_structure=dest.get("preserve_structure", False),
-                        file_filters=dest.get("file_filters"),
-                    )
-
-            logger.info("Reconciled %d connectors from snapshot", count)
-        finally:
-            db.close()
-
-    except Exception as e:
-        logger.error("Failed to reconcile from connectors snapshot: %s", e)
+    """Connectors are not part of CE — nothing to reconcile."""
+    logger.debug("Connectors not available in CE, skipping connectors snapshot reconciliation")
 
 
 def _reconcile_mcp_servers_snapshot() -> None:
-    """Read the per-user MCP servers snapshot from Redis DB 1 and bulk-upsert."""
-    from src.main.service.mcp_server_cache import upsert_mcp_server
-
-    try:
-        import os
-
-        import redis as redis_lib
-
-        redis_host = os.getenv("REDIS_HOST", "redis")
-        redis_port = int(os.getenv("REDIS_PORT", "6379"))
-        redis_password = os.getenv("REDIS_PASSWORD", "")
-        kotlin_redis = redis_lib.Redis(
-            host=redis_host,
-            port=redis_port,
-            password=redis_password,
-            db=1,
-            decode_responses=False,
-            socket_timeout=5,
-        )
-        raw = kotlin_redis.get("scrapalot:sync:mcp_servers_snapshot")
-        kotlin_redis.close()
-        if not raw:
-            logger.info("No mcp_servers snapshot found in Redis, skipping reconciliation")
-            return
-
-        raw_value: bytes | str = raw if isinstance(raw, (bytes, str)) else str(raw)
-        if isinstance(raw_value, bytes):
-            raw_value = raw_value.decode("utf-8")
-
-        snapshot = json.loads(raw_value)
-        if not isinstance(snapshot, list):
-            logger.warning("Invalid mcp_servers snapshot format, expected list")
-            return
-
-        db = _get_db_session()
-        try:
-            count = 0
-            for entry in snapshot:
-                server_id = entry.get("id", "")
-                user_id = entry.get("user_id", "")
-                if not server_id or not user_id:
-                    continue
-                upsert_mcp_server(
-                    db=db,
-                    server_id=UUID(server_id),
-                    user_id=UUID(user_id),
-                    name=entry.get("name", ""),
-                    transport=entry.get("transport", "http"),
-                    url=entry.get("url", ""),
-                    auth_token=entry.get("auth_token") or None,
-                    headers=entry.get("headers") or None,
-                    enabled=entry.get("enabled", True),
-                    tool_prefix=entry.get("tool_prefix") or None,
-                    description=entry.get("description") or None,
-                )
-                count += 1
-            logger.info("Reconciled %d MCP servers from snapshot", count)
-        finally:
-            db.close()
-
-    except Exception as e:
-        logger.error("Failed to reconcile from mcp_servers snapshot: %s", e)
+    """Per-user MCP servers are not part of CE — nothing to reconcile."""
+    logger.debug("Per-user MCP servers not available in CE, skipping mcp_servers snapshot reconciliation")
 
 
 # ==================== Lifecycle ====================

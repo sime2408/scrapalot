@@ -627,31 +627,13 @@ class JobRecoveryService:
                 )
 
     def _entities_present(self, doc_id: str) -> bool:
-        """True iff this doc has at least one Book→MENTIONS→Entity edge in
-        Neo4j. Cheap probe (COUNT LIMIT 1) — bounded by Neo4j outage
-        timeout from the singleton; on failure we return False so the
-        caller marks the Job failed rather than spuriously completed.
-
-        Wrapped in `run_with_reconnect` so a transient blip during
-        recovery self-heals — same rationale as `_artifacts_present`."""
-        try:
-            from src.main.service.graph.neo4j_service import get_neo4j_service
-
-            neo4j = get_neo4j_service()
-
-            def _probe() -> int:
-                with neo4j.session() as s:
-                    row = s.run(
-                        "MATCH (b:Book {document_id: $id})-[:MENTIONS]->(e) RETURN count(e) AS c LIMIT 1",
-                        id=doc_id,
-                    ).single()
-                    return int(row["c"]) if row else 0
-
-            count = neo4j.run_with_reconnect(_probe)
-            return count > 0
-        except Exception as exc:
-            logger.warning("JobRecovery: Neo4j entities check failed for %s, treating as missing: %s", doc_id, exc)
-            return False
+        """Entity extraction / Neo4j knowledge graph is a hosted-only feature
+        and is not available in the Community Edition. There is no graph to
+        probe, so we report entities as "present" — that way a stale
+        entity-extraction job is recovered (marked completed) rather than
+        spuriously failed for a feature that does not run in CE."""
+        logger.debug("JobRecovery: entity presence check skipped (hosted-only) in CE for %s", doc_id)
+        return True
 
     def _mark_job_terminal(self, job_id: str, status: str, error: str | None = None) -> None:
         """Flip a jobs row to completed/failed. Mirror of the
@@ -697,11 +679,13 @@ class JobRecoveryService:
 
     def _artifacts_present(self, doc_id: str) -> bool:
         """
-        Returns True iff BOTH the pgvector embeddings AND the Neo4j Book
-        node exist for this document. We require both because each is
-        the natural terminal output of one of the two pipeline halves
-        (chunking → embeddings, graph integration → Book + hierarchy).
-        Half-finished work means re-process, not recovery.
+        Returns True iff the pgvector embeddings exist for this document.
+
+        In the hosted edition this also required a Neo4j Book node, but the
+        knowledge graph is a hosted-only feature absent from the Community
+        Edition. The terminal output of the CE pipeline is the pgvector
+        embeddings (chunking → embeddings), so embeddings alone decide
+        recovery here.
         """
         # pgvector
         emb_count = int(
@@ -717,30 +701,9 @@ class JobRecoveryService:
         if emb_count == 0:
             return False
 
-        # Neo4j Book node — wrap in try so a Neo4j outage does not
-        # downgrade an otherwise-recoverable doc into "failed". Phase
-        # 5-B follow-up: use `run_with_reconnect` so a transient blip
-        # during recovery self-heals instead of misclassifying the
-        # artifact as missing.
-        try:
-            from src.main.service.graph.neo4j_service import get_neo4j_service
-
-            neo4j = get_neo4j_service()
-
-            def _probe() -> int:
-                with neo4j.session() as s:
-                    row = s.run(
-                        "MATCH (b:Book {document_id: $id}) RETURN count(b) AS c",
-                        id=doc_id,
-                    ).single()
-                    return int(row["c"]) if row else 0
-
-            book_count = neo4j.run_with_reconnect(_probe)
-        except Exception as exc:
-            logger.warning("JobRecovery: Neo4j check failed for %s, treating as missing: %s", doc_id, exc)
-            return False
-
-        return book_count > 0
+        # Neo4j Book-node check skipped — graph integration is hosted-only in CE.
+        logger.debug("JobRecovery: Neo4j artifact check skipped (hosted-only) in CE for %s", doc_id)
+        return True
 
     def _mark_completed(self, doc_id: str, job_id: str) -> None:
         """Promote both job and document to `completed` in one statement

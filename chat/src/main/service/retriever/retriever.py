@@ -398,9 +398,12 @@ Relevance score:"""
             await retriever.initialize_retriever(config, **kwargs)
             return retriever
         elif retriever_type.lower() == "neo4j":
-            from src.main.service.retriever.retriever_neo4j import Neo4JRetriever
+            # Community Edition has no knowledge-graph / neo4j retriever.
+            # Fall back to plain pgvector similarity retrieval.
+            logger.warning("neo4j retriever is unavailable in this edition; falling back to pgvector")
+            from src.main.service.retriever.retriever_pgvector import PGVectorRetriever
 
-            retriever = Neo4JRetriever(config=config, **kwargs)
+            retriever = PGVectorRetriever(config, **kwargs)
             await retriever.initialize_retriever(config, **kwargs)
             return retriever
         elif retriever_type.lower() == "ensemble":

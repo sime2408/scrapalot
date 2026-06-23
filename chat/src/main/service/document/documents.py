@@ -122,34 +122,12 @@ class DocumentService:
 
     @property
     def graph_integration_service(self):
-        """Lazy initialization of the graph integration service."""
-        # Check if graph integration is enabled in config before initializing
-        graph_config = resolved_config.get("graph", {})
-        graph_enabled_raw = graph_config.get("enabled", False)
+        """Lazy initialization of the graph integration service.
 
-        # Handle string values like "false", "true" from config files
-        if isinstance(graph_enabled_raw, str):
-            graph_enabled = graph_enabled_raw.lower() in ("true", "1", "yes", "on")
-        else:
-            graph_enabled = bool(graph_enabled_raw)
-
-        if not graph_enabled:
-            logger.debug(
-                "Graph integration disabled in config (enabled=%s, type=%s) - skipping service initialization",
-                graph_enabled_raw,
-                type(graph_enabled_raw).__name__,
-            )
-            return None
-
-        if self._graph_integration_service is None:
-            logger.debug("Initializing GraphIntegrationService on first access")
-            start_time = time.time()
-            from src.main.service.graph.graph_integration_service import GraphIntegrationService
-
-            self._graph_integration_service = GraphIntegrationService.get_instance()
-            init_time = time.time() - start_time
-            logger.debug("GraphIntegrationService initialized in %.2f seconds", init_time)
-        return self._graph_integration_service
+        Community Edition: the knowledge-graph integration service is not
+        bundled, so this always returns None and callers degrade gracefully.
+        """
+        return None
 
     def check_collection_permissions(self, collection_id: str, user_id: str, db=None) -> bool:
         """

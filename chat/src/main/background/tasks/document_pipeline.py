@@ -215,28 +215,9 @@ def process_uploaded_document(
             ocr_enabled = user_settings.get("document_processing", {}).get("ocr_enabled", False)
             file_extension = os.path.splitext(file_path)[1].lower()
 
-            # Audio/video → transcribe to text with Whisper, then ride the
-            # content-only path so the transcript is chunked, embedded, persisted
-            # to documents.content and RAG-searchable exactly like any other doc.
-            from src.main.service.speech.stt_constants import TRANSCRIBABLE_MEDIA_EXTENSIONS
-
-            if not content_only and file_extension in TRANSCRIBABLE_MEDIA_EXTENSIONS:
-                job.progress = 20.0
-                job.description = "transcribingMedia"
-                db.commit()
-                publish_job_progress(job_id, document_id, user_id, collection_id, 20.0, "transcribingMedia", "processing", _filename)
-                from pathlib import Path as _MediaPath
-
-                from src.main.service.speech.media_transcription import transcribe_media_file
-
-                _media_result = transcribe_media_file(_MediaPath(file_path))
-                markdown_content = (_media_result.get("text") or "").strip()
-                if not markdown_content:
-                    raise ValueError(
-                        "No speech could be transcribed from this audio/video file. It may contain only music/silence or an unsupported codec."
-                    )
-                content_only = True
-                logger.info("Transcribed media for doc %s: %d chars", document_id[:8], len(markdown_content))
+            # Audio/video transcription (Whisper) is a hosted-only feature and is
+            # not available in the Community Edition. Media files are not processed.
+            logger.debug("Media transcription skipped (hosted-only) in CE")
 
             if content_only:
                 assert markdown_content is not None
@@ -450,42 +431,10 @@ def process_uploaded_document(
                     _hier_err,
                 )
 
-            # Step 6: Build Neo4j hierarchy (skipped during batch — use admin graph rebuild)
-            from src.main.utils.graph.service import (
-                get_graph_service_for_worker,
-                process_document_graph_integration,
-            )
-
-            graph_service = get_graph_service_for_worker()
-            skip_graph = os.getenv("SKIP_GRAPH_IN_BATCH", "true").lower() == "true"
-            # Reprocess flows must always rebuild the graph — the caller just
-            # deleted the old hierarchy and would leave the book orphaned in Neo4j.
-            if force_graph_build:
-                skip_graph = False
-            if graph_service and graph_service.is_graph_enabled() and not skip_graph:
-                job.progress = 75.0
-                job.description = "creatingGraphStructure"
-                db.commit()
-                publish_job_progress(
-                    job_id,
-                    document_id,
-                    user_id,
-                    collection_id,
-                    75.0,
-                    "creatingGraphStructure",
-                    "processing",
-                    _filename,
-                )
-
-                document_data = document_service.get_document_metadata_sync(document_id, file_path)  # type: ignore[attr-defined]
-                process_document_graph_integration(
-                    graph_service,
-                    document_id,
-                    collection_id,
-                    workspace_id,
-                    document_data,
-                    enriched_documents,
-                )
+            # Step 6: Neo4j graph integration is a hosted-only feature and is not
+            # available in the Community Edition. Documents still parse/chunk/embed;
+            # the knowledge-graph build step is skipped.
+            logger.debug("Graph integration skipped (hosted-only) in CE")
 
             # Step 6b: Generate the thumbnail. Runs HERE — strictly between
             # graph build and the caller's `cleanup_file_after` block — so
@@ -789,47 +738,10 @@ def _extract_and_store_document_metadata(db, document_id: str, file_path: str, f
                             str(document_id)[:8],
                         )
 
-                    # OpenLibrary enrichment: query the canonical bibliographic
-                    # record for this filename and, on a confident match,
-                    # override the heuristic title and persist
-                    # `extracted_metadata.resolved` so RAG citation, deep
-                    # research, and book-summary surfaces have a real
-                    # author + year + cover. The async resolver runs on the
-                    # worker's existing event loop. All API failures degrade
-                    # silently; the heuristic title is kept.
-                    try:
-                        import asyncio as _asyncio
-
-                        from src.main.service.document.openlibrary_title_resolver import (
-                            resolve_via_openlibrary,
-                        )
-
-                        try:
-                            _loop = _asyncio.get_event_loop()
-                        except RuntimeError:
-                            _loop = _asyncio.new_event_loop()
-                            _asyncio.set_event_loop(_loop)
-                        ol_result = _loop.run_until_complete(
-                            resolve_via_openlibrary(
-                                doc_filename_row[0],
-                                fallback_title=title,
-                            )
-                        )
-                        if ol_result:
-                            title = ol_result["title"]
-                            extracted_meta["resolved"] = ol_result
-                            logger.info(
-                                "OpenLibrary match accepted for doc %s: title='%s' conf=%.2f",
-                                str(document_id)[:8],
-                                title[:60],
-                                ol_result.get("confidence", 0.0),
-                            )
-                    except Exception as ol_err:
-                        logger.debug(
-                            "OpenLibrary enrichment failed (non-fatal) for doc %s: %s",
-                            str(document_id)[:8],
-                            ol_err,
-                        )
+                    # OpenLibrary bibliographic enrichment is a hosted-only
+                    # feature and is not available in the Community Edition.
+                    # The heuristic filename-derived title is kept as-is.
+                    logger.debug("OpenLibrary enrichment skipped (hosted-only) in CE")
             except Exception as fallback_err:
                 logger.warning("parse_title_from_filename fallback failed: %s", fallback_err)
 

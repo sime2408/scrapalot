@@ -402,21 +402,20 @@ async def process_agentic_rag(
     Yields:
         JSON packet strings for streaming response
     """
-    from src.main.service.agents.rag_agents.agentic_orchestrator import (
-        extract_orchestration_result_from_packets,
-        orchestrate_agentic_rag_with_streaming,
-    )
-    from src.main.service.agents.rag_agents.collection_selector import get_collection_selector
     from src.main.utils.workspaces.access import get_user_accessible_collections
 
-    logger.info("Starting agentic RAG with multi-source orchestration for query: %s", request.prompt[:100])
+    # Community Edition: the multi-agent orchestrator, tiered router, collection
+    # selector, strategy presets, MCP toolsets and chart agent are hosted-only and
+    # were stripped from this build. The CE flow keeps collection scoping (explicit
+    # pins, content chunk-probe, small-workspace fan-out) and answers with basic
+    # similarity-search retrieval + LLM synthesis, falling back to direct chat when
+    # nothing in the library is relevant.
+    logger.info("Starting agentic RAG (Community Edition basic retrieval) for query: %s", request.prompt[:100])
 
     result = AgenticRAGResult()
 
     try:
-        orchestration_packets = []
-
-        # Triage gate #0: before ANY orchestration, ask one cheap LLM call whether
+        # Triage gate #0: before ANY retrieval, ask one cheap LLM call whether
         # this turn actually needs retrieval. Greetings, acknowledgements, small
         # talk and pure meta/formatting instructions ("say only 'hello'") are
         # answered directly and we return — skipping collection resolution, the
@@ -512,7 +511,7 @@ async def process_agentic_rag(
             )
         elif accessible_collections:
             logger.info(
-                "Agentic mode: discovering from %d accessible collections",
+                "Agentic mode (CE): scoping from %d accessible collections",
                 len(accessible_collections),
             )
             yield emitter.emit_status(
@@ -520,133 +519,31 @@ async def process_agentic_rag(
                 stage=StatusCode.COLLECTION_DISCOVERY.value,
             )
 
-            # Narrator beat #2: explain what the agent is about to spend
-            # 3-5s doing (the collection selector LLM call). The number
-            # makes it feel concrete instead of abstract "thinking".
-            yield _narrate(
-                emitter,
-                request.language,
-                f"Imaš {len(accessible_collections)} kolekcija — razmišljam koja je najrelevantnija za ovaj upit.",
-                f"You have {len(accessible_collections)} collections — picking the most relevant one for this query.",
-            )
-
-            # Use singleton collection selector with system-configured model
-            selector = get_collection_selector(db)
-
-            # Select from accessible collections (top_k and min_confidence from settings)
-            selection_result = await selector.select_from_collections(
-                query=request.prompt,
-                collections=accessible_collections,
-                db_session=db,
-            )
-
-            if selection_result.selected_collections:
-                # Validate collection IDs - only use valid UUIDs that exist in accessible collections
-                accessible_ids = {c["id"] for c in accessible_collections}
-                effective_collection_ids = []
-                for col in selection_result.selected_collections:
-                    try:
-                        col_uuid = uuid.UUID(col.collection_id)
-                        if str(col_uuid) in accessible_ids or col.collection_id in accessible_ids:
-                            effective_collection_ids.append(col_uuid)
-                        else:
-                            logger.warning("Collection selector returned invalid ID: %s", col.collection_id)
-                    except ValueError:
-                        logger.warning("Collection selector returned non-UUID ID: %s", col.collection_id)
-
-                if effective_collection_ids:
-                    selected_names = [
-                        col.name
-                        for col in selection_result.selected_collections
-                        if col.collection_id in accessible_ids or str(col.collection_id) in accessible_ids
-                    ]
-                    logger.info(
-                        "Collection selector chose %d collections: %s",
-                        len(effective_collection_ids),
-                        selected_names,
-                    )
-                    yield emitter.emit_status(
-                        StructuredStatusCode.selected_collections(len(effective_collection_ids)),
-                        stage=StatusCode.COLLECTION_DISCOVERY.value,
-                    )
-                    # Narrator beat #3: tell the user WHICH collections won
-                    # and with what confidence — the single most important
-                    # piece of context-aware reasoning to surface (it answers
-                    # "is the agent looking in the right place?").
-                    names_label = ", ".join(f"'{n}'" for n in selected_names[:3])
-                    conf_pct = int((selection_result.confidence or 0.0) * 100)
-                    yield _narrate(
-                        emitter,
-                        request.language,
-                        f"Najrelevantnije mi izgledaju: {names_label} (pouzdanje {conf_pct}%).",
-                        f"Most relevant: {names_label} (confidence {conf_pct}%).",
-                    )
-                else:
-                    # All selected IDs were invalid. With the fixed selector
-                    # prompt (placeholders + "verbatim UUID" rule) this should
-                    # almost never happen, but if it does, do NOT fall back to
-                    # scanning every accessible collection — on a workspace
-                    # with 20+ collections that exhausts the pgvector
-                    # connection pool ("too many clients already") and the
-                    # entire chat fails. Better to retrieve nothing and let
-                    # the LLM answer from general knowledge with a clean
-                    # "ne nalazim u tvojim dokumentima" framing.
-                    # Validation discarded every selected id. Same fallback as the
-                    # "no results" branch: search all accessible on a small
-                    # workspace rather than vetoing documents entirely.
-                    fallback_ids = _all_accessible_scope(accessible_collections)
-                    if fallback_ids:
-                        effective_collection_ids = fallback_ids
-                        logger.warning(
-                            "Selector returned 0 valid collection IDs; small workspace (%d) → searching all accessible",
-                            len(accessible_collections),
-                        )
-                        yield _narrate(
-                            emitter,
-                            request.language,
-                            "Nijedna se ne ističe — pretražit ću sve tvoje kolekcije.",
-                            "None stands out — I'll search across all your collections.",
-                        )
-                    else:
-                        # Large workspace, name-selector gave nothing usable. Leave
-                        # the scope empty for now; the content chunk-probe below gets
-                        # a chance to rescue it before we surrender to general
-                        # knowledge (so we do NOT narrate that here).
-                        effective_collection_ids = []
-                        logger.warning(
-                            "Selector returned 0 valid collection IDs out of %d candidates; large workspace, will try content chunk-probe",
-                            len(selection_result.selected_collections),
-                        )
+            # Community Edition has no LLM collection selector. On a SMALL workspace
+            # fan out across all accessible collections (the retrieval semaphore
+            # bounds concurrency, so a handful is safe). On a LARGE workspace leave
+            # the scope empty so the content chunk-probe below can pick by content —
+            # which scales far better than scanning everything and protects the
+            # pgvector connection pool.
+            fallback_ids = _all_accessible_scope(accessible_collections)
+            if fallback_ids:
+                effective_collection_ids = fallback_ids
+                logger.info(
+                    "Small workspace (%d collections) → searching all accessible",
+                    len(accessible_collections),
+                )
+                yield _narrate(
+                    emitter,
+                    request.language,
+                    "Pretražit ću sve tvoje kolekcije.",
+                    "I'll search across all your collections.",
+                )
             else:
-                # Selector found nothing specific. Do NOT veto documents entirely:
-                # "couldn't narrow down" must not collapse to "answer from general
-                # knowledge" (that was the cause of ~22% of queries skipping the
-                # library). On a SMALL workspace, fall back to searching all
-                # accessible collections — the retrieval semaphore bounds
-                # concurrency so a handful is safe. Only on a LARGE workspace keep
-                # the empty scope to protect the pgvector pool.
-                fallback_ids = _all_accessible_scope(accessible_collections)
-                if fallback_ids:
-                    effective_collection_ids = fallback_ids
-                    logger.info(
-                        "Selector returned no results; small workspace (%d collections) → searching all accessible",
-                        len(accessible_collections),
-                    )
-                    yield _narrate(
-                        emitter,
-                        request.language,
-                        "Nijedna se ne ističe — pretražit ću sve tvoje kolekcije.",
-                        "None stands out — I'll search across all your collections.",
-                    )
-                else:
-                    # Large workspace, name-selector found nothing. Defer the
-                    # general-knowledge narration to after the content chunk-probe
-                    # rescue below (it scales where name-scoring does not).
-                    effective_collection_ids = []
-                    logger.info("Selector returned no results; large workspace, will try content chunk-probe")
+                effective_collection_ids = []
+                logger.info("Large workspace → will pick collections by content chunk-probe")
 
-        # Content chunk-probe rescue: the name-selector left a large workspace with
-        # no scope. Before answering from general knowledge, probe the actual chunk
+        # Content chunk-probe rescue: a large workspace was left with no scope.
+        # Before answering from general knowledge, probe the actual chunk
         # embeddings — this scales to any number of collections and one pgvector
         # query is pool-safe. Skipped when an explicit pin already set the scope or
         # a small workspace already fell back to scanning all accessible collections.
@@ -698,48 +595,15 @@ async def process_agentic_rag(
                         yield packet
                 return
 
-        # Check for chart intent — bypass orchestration and go to chart-only agent
-        chart_keywords = {
-            "chart",
-            "graph",
-            "plot",
-            "visualize",
-            "visualise",
-            "visualization",
-            "bar chart",
-            "line chart",
-            "pie chart",
-            "scatter",
-            "diagram",
-            "compare visually",
-            "show me a chart",
-            "draw a chart",
-        }
-        query_lower = request.prompt.lower()
-        has_chart_intent = any(kw in query_lower for kw in chart_keywords)
-
-        if has_chart_intent:
-            logger.info("Chart intent detected, bypassing orchestration and routing to chart-only agent")
-            async for packet in _process_chart_only_agent(
-                request=request,
-                emitter=emitter,
-                _main_instance=main_instance,
-                db=db,
-                user_id=user_id,
-            ):
-                yield packet
-            return
-
-        # If user explicitly @-tagged documents, skip orchestration and go straight to document RAG.
-        # The orchestration agent has no awareness of explicit document_ids and may choose 'llm' source,
-        # completely ignoring the user's intent to query specific documents.
-        elif request.document_ids:
+        # If the user explicitly @-tagged documents, go straight to the
+        # summary-first tagged-document flow (does NOT depend on any deleted
+        # agent). Ensure we have collection_ids for the tagged documents.
+        if request.document_ids:
             logger.info(
-                "Explicit document_ids provided (%d docs), bypassing orchestration and forcing document RAG",
+                "Explicit document_ids provided (%d docs), routing to tagged-document RAG",
                 len(request.document_ids),
             )
 
-            # Ensure we have collection_ids for the tagged documents
             if not effective_collection_ids:
                 from sqlalchemy import text as sa_text
 
@@ -766,313 +630,35 @@ async def process_agentic_rag(
                 effective_collection_ids=effective_collection_ids,
             ):
                 yield packet
+            return
 
-        else:
-            # FAST PATH: tiered routing (Tier 1 regex ~0.5ms, Tier 2 embedding ~15ms)
-            # skips the 3-LLM-call orchestrator (~20s of query_analyzer +
-            # source_selector + strategy_router) for queries that confidently match a
-            # routing rule. Rule matches (relationship, cross-document, comparison,
-            # error-code, decomposition…) are inherently DOCUMENT queries, so when
-            # collections are in scope the source is unambiguously "documents" — go
-            # straight to document RAG with the matched strategy. Greetings/trivia
-            # were already peeled off by the upstream triage gate, and ambiguous
-            # queries fall through to the full orchestrator (which also weighs
-            # web / direct-LLM).
-            fast_route = None
-            if effective_collection_ids:
-                try:
-                    from src.main.service.rag.tiered_router import ExemplarRouter, RuleBasedRouter
-
-                    rule_router = RuleBasedRouter()
-                    # Tier 1 on the original prompt — English queries match here with
-                    # zero translation cost.
-                    fast_route = rule_router.route(request.prompt)
-
-                    # The Tier-1 rules are English regex, so a non-English query
-                    # (Croatian — often mistagged 'sl'/'bs' by langdetect, now
-                    # normalized in translate_query_if_needed) misses them. Translate
-                    # ONCE and retry Tier 1, then Tier 2 (embedding similarity) on the
-                    # English text. Translation only runs when Tier 1 missed AND the
-                    # query is non-English, so English queries pay nothing.
-                    if fast_route is None:
-                        from src.main.service.rag.cross_language import (
-                            detect_language,
-                            translate_query_if_needed,
-                        )
-
-                        if (detect_language(request.prompt) or "en") != "en":
-                            _orig, _translated = await translate_query_if_needed(request.prompt)
-                            if _translated:
-                                fast_route = rule_router.route(_translated) or ExemplarRouter.get_instance().route(_translated)
-                except Exception as e:
-                    logger.debug("Tiered fast-route skipped: %s", e)
-
-            if fast_route is not None:
-                logger.info(
-                    "Fast-path routing: rule '%s' -> strategy '%s' (conf %.2f) — skipping LLM orchestrator",
-                    fast_route.rule_id,
-                    fast_route.strategy_name,
-                    fast_route.confidence,
-                )
-                yield _narrate(
-                    emitter,
-                    request.language,
-                    "Prepoznajem tip pitanja — pokrećem ciljanu pretragu kroz tvoje dokumente.",
-                    "Recognized the question type — running a targeted search across your documents.",
-                )
-                async for packet in _process_document_rag(
-                    request=request,
-                    emitter=emitter,
-                    main_instance=main_instance,
-                    subscription_tier=subscription_tier,
-                    db=db,
-                    user_id=user_id,
-                    assistant_message_id=assistant_message_id,
-                    effective_collection_ids=effective_collection_ids,
-                    author_names=[],
-                    selected_strategy=fast_route.strategy_name,
-                    query_intent=None,
-                ):
-                    yield packet
-                return
-
-            logger.info(
-                "Starting improved agentic orchestration for query: %s (user: %s)",
-                request.prompt[:50],
-                user_id,
-            )
-
-            # Narrator beat #5: the next ~10-15s are query analysis + source
-            # selection + strategy routing (three LLM calls inside the
-            # orchestrator). Tell the user what those phases are — without
-            # this the spinner just sits there.
+        # Community Edition: no multi-agent orchestrator / tiered router. When we
+        # have a document scope, run basic similarity-search retrieval + synthesis.
+        # Otherwise fall back to direct LLM chat.
+        if effective_collection_ids:
             yield _narrate(
                 emitter,
                 request.language,
-                "Analiziram strukturu pitanja i biram strategiju pretrage.",
-                "Analyzing the question structure and picking a search strategy.",
+                "Pokrećem pretragu kroz tvoje dokumente.",
+                "Running a search across your documents.",
             )
-
-            # Stream complete agentic orchestration: Query Analysis -> Source Selection -> Strategy Routing
-            # This implements the improved "shared analysis + specialized routing" architecture
-            _agentic_start_time = time.time()
-            async for packet in orchestrate_agentic_rag_with_streaming(
-                query=request.prompt,
-                collection_ids=effective_collection_ids,
-                user_id=user_id,
+            async for packet in _process_document_rag(
+                request=request,
+                emitter=emitter,
+                main_instance=main_instance,
+                subscription_tier=subscription_tier,
                 db=db,
-                model_name=request.model_name,
-                provider_type=request.provider_type,
+                user_id=user_id,
+                assistant_message_id=assistant_message_id,
+                effective_collection_ids=effective_collection_ids,
             ):
                 yield packet
-                orchestration_packets.append(packet)
+        else:
+            from src.main.service.rag.rag_utils import process_direct_llm_chat
 
-            # Extract orchestration result with all analysis components
-            orchestration_result = extract_orchestration_result_from_packets(orchestration_packets)
-            result.orchestration_result = orchestration_result
-
-            logger.info(
-                "Orchestration completed - Sources: %s, Strategy: %s",
-                orchestration_result.source_selection.primary_sources,
-                (orchestration_result.strategy_selection.selected_strategy if orchestration_result.strategy_selection else "None"),
-            )
-
-            # Emit a Search Strategy transparency packet so the UI can render a
-            # collapsible sidebar showing how the answer was constructed. This is
-            # the methodological-defensibility signal academic users need when
-            # quoting Scrapalot answers in systematic reviews.
-            try:
-                from src.main.dto.streaming import StrategyTransparencyPacket
-
-                qa = orchestration_result.query_analysis
-                ss = orchestration_result.strategy_selection
-                sel = orchestration_result.source_selection
-
-                filters: dict[str, str] = {}
-                if qa:
-                    if getattr(qa, "intent", None):
-                        filters["intent"] = str(qa.intent)
-                    if getattr(qa, "complexity", None):
-                        filters["complexity"] = str(qa.complexity)
-                    if getattr(qa, "domain", None):
-                        filters["domain"] = str(qa.domain)
-                    if getattr(qa, "information_depth", None):
-                        filters["depth"] = str(qa.information_depth)
-
-                sub_queries = [request.prompt]
-                if qa and getattr(qa, "entities", None):
-                    # Surface the entities the analyzer picked out — they are the
-                    # most literal decomposition the UI can show without a full
-                    # decompose_query tool run.
-                    sub_queries += [str(e) for e in qa.entities if e]
-
-                # Report only the sources this request ACTUALLY executes — mirror
-                # the dispatch condition below (line ~1022) so the panel never
-                # claims a source that produced no citations:
-                #  - 'web' never runs in the agentic path (no web_search tool / no
-                #    preset declares the 'web' category) → always dropped.
-                #  - a document source only runs when collections were selected;
-                #    with none, the flow falls back to direct LLM and retrieves
-                #    nothing, so claiming 'documents' (with zero citations) misled.
-                _src_lower = [s.lower().strip() for s in (sel.primary_sources if sel else [])]
-                _will_run_docs = bool(effective_collection_ids) and any(s not in ("web", "llm") for s in _src_lower)
-                _queried = []
-                if _will_run_docs:
-                    _queried.append("documents")
-                # Direct LLM is the generator whenever documents don't run, and an
-                # explicit 'llm' source is honoured either way.
-                if "llm" in _src_lower or not _will_run_docs:
-                    _queried.append("llm")
-                yield emitter.emit(
-                    StrategyTransparencyPacket(
-                        sub_queries=sub_queries[:8],
-                        filters_applied=filters,
-                        sources_queried=_queried,
-                        strategy_name=(ss.selected_strategy if ss else None),
-                        rationale=(ss.strategy_reasoning if ss else None),
-                        # Reflect the real executor: the unified tool-agent when
-                        # documents run, otherwise the direct-LLM fallback.
-                        executor="agentic_tool_agent" if _will_run_docs else "direct_llm",
-                    )
-                )
-            except Exception as strategy_emit_err:
-                logger.debug("Could not emit StrategyTransparencyPacket: %s", strategy_emit_err)
-
-            # Fire-and-forget: persist RAG trace for evaluation metrics (background, no latency impact)
-            if request.session_id:
-                try:
-                    import asyncio
-
-                    from src.main.config.database import SessionLocal
-                    from src.main.service.evaluation.rag_evaluation_service import persist_rag_trace
-
-                    strategy_sel = orchestration_result.strategy_selection
-                    query_analysis = orchestration_result.query_analysis
-                    query_chars = None
-                    if query_analysis:
-                        query_chars = {
-                            "intent": getattr(query_analysis, "intent", None),
-                            "complexity": getattr(query_analysis, "complexity", None),
-                            "domain": getattr(query_analysis, "domain", None),
-                            "entities": getattr(query_analysis, "entities", []),
-                        }
-
-                    # session_id format is "userId:sessionId" composite — extract session UUID
-                    raw_session = request.session_id
-                    if ":" in raw_session:
-                        raw_session = raw_session.split(":", 1)[1]
-
-                    selected_strategy = strategy_sel.selected_strategy if strategy_sel else "direct_llm"
-                    strategy_confidence = strategy_sel.strategy_confidence if strategy_sel else 1.0
-                    strategy_reasoning = strategy_sel.strategy_reasoning if strategy_sel else "LLM-only routing"
-                    use_orchestrator = strategy_sel.use_orchestrator if strategy_sel else False
-
-                    # Extract routing tier from strategy selection
-                    _routing_tier = getattr(strategy_sel, "routing_tier", None) if strategy_sel else None
-                    _routing_tier_name = getattr(strategy_sel, "routing_tier_name", None) if strategy_sel else None
-
-                    _agentic_latency_ms = int((time.time() - _agentic_start_time) * 1000)
-                    # Persist the resolved prompt variant alongside
-                    # the strategy choice so the admin Data Inspector can
-                    # slice by variant. Variant is computed the same way
-                    # process_chat_request_base does it for synthesis.
-                    _prompt_variant: str | None = None
-                    try:
-                        from src.main.service.rag.prompt_variants import (
-                            resolve_prompt_variant,
-                        )
-
-                        _prompt_variant = resolve_prompt_variant(strategy_sel.query_characteristics if strategy_sel else None)
-                    except Exception as e:
-                        logger.debug("prompt_variant resolution skipped: %s", e)
-
-                    asyncio.create_task(
-                        persist_rag_trace(
-                            db_session_factory=SessionLocal,
-                            session_id=UUID(raw_session),
-                            user_id=UUID(user_id),
-                            query=request.prompt,
-                            selected_strategy=selected_strategy,
-                            strategy_type="orchestrator" if use_orchestrator else "strategy",
-                            mode="agentic",
-                            confidence=strategy_confidence,
-                            reasoning=strategy_reasoning,
-                            query_characteristics=query_chars,
-                            selected_orchestrator=selected_strategy if use_orchestrator else None,
-                            graph_traversal_stats=None,  # Agentic RAG uses tool-based agent, not tri-modal orchestrator
-                            latency_ms=_agentic_latency_ms,
-                            routing_tier=_routing_tier,
-                            routing_tier_name=_routing_tier_name,
-                            prompt_variant=_prompt_variant,
-                        )
-                    )
-                except Exception as trace_err:
-                    logger.debug("Failed to dispatch RAG trace persistence: %s", str(trace_err))
-
-            # Decide execution path based on source selection
-            source_selection = orchestration_result.source_selection
-
-            # Normalize primary_sources: LLM may return collection names instead of "documents"
-            # Any source that isn't "web" or "llm" is treated as a document source
-            normalized_sources = []
-            has_document_source = False
-            for src in source_selection.primary_sources:
-                src_lower = src.lower().strip()
-                if src_lower in ("web", "llm"):
-                    normalized_sources.append(src_lower)
-                else:
-                    has_document_source = True
-                    if "documents" not in normalized_sources:
-                        normalized_sources.append("documents")
-            if has_document_source:
-                logger.info("Normalized primary_sources %s -> %s", source_selection.primary_sources, normalized_sources)
-                source_selection.primary_sources = normalized_sources
-
-            # If documents are selected, proceed with document RAG (strategy_selection may be None if strategy router errored)
-            if "documents" in source_selection.primary_sources and effective_collection_ids:
-                # Grep activation Trigger 2: extract author_names from
-                # the strategy router's QueryCharacteristics so _process_document_rag
-                # can resolve them to document_ids and prefer grep over dense.
-                _author_names: list[str] = []
-                try:
-                    _sr = orchestration_result.strategy_selection
-                    if _sr is not None and getattr(_sr, "query_characteristics", None) is not None:
-                        _author_names = list(getattr(_sr.query_characteristics, "author_names", []) or [])
-                except Exception as e:
-                    logger.debug("author_names extraction skipped: %s", e)
-
-                _selected_strategy = orchestration_result.strategy_selection.selected_strategy if orchestration_result.strategy_selection else None
-                _query_intent = getattr(orchestration_result.query_analysis, "intent", None) if orchestration_result.query_analysis else None
-                async for packet in _process_document_rag(
-                    request=request,
-                    emitter=emitter,
-                    main_instance=main_instance,
-                    subscription_tier=subscription_tier,
-                    db=db,
-                    user_id=user_id,
-                    assistant_message_id=assistant_message_id,
-                    effective_collection_ids=effective_collection_ids,
-                    author_names=_author_names,
-                    selected_strategy=_selected_strategy,
-                    query_intent=_query_intent,
-                ):
-                    yield packet
-
-            else:
-                # Handle other source selections (web, direct LLM, or fallback with intent-aware RAG)
-                async for packet in _process_non_document_sources(
-                    request=request,
-                    emitter=emitter,
-                    current_user=current_user,
-                    source_selection=source_selection,
-                    orchestration_result=orchestration_result,
-                    result=result,
-                    main_instance=main_instance,
-                    subscription_tier=subscription_tier,
-                    db=db,
-                    assistant_message_id=assistant_message_id,
-                ):
-                    yield packet
+            logger.info("No document scope in CE agentic RAG; routing to direct LLM chat")
+            async for packet in process_direct_llm_chat(request, current_user.id, emitter):
+                yield packet
 
     except Exception as agentic_rag_error:
         logger.exception("Error in agentic RAG processing: %s", str(agentic_rag_error))
@@ -1525,6 +1111,7 @@ async def _backfill_summaries(document_id: UUID, user_id: str) -> None:
         logger.warning("Background summary backfill failed for %s: %s", document_id, str(e))
 
 
+
 async def _process_document_rag(
     request: ChatRequest,
     emitter: PacketEmitter,
@@ -1538,40 +1125,36 @@ async def _process_document_rag(
     selected_strategy: str | None = None,
     query_intent: str | None = None,
 ) -> AsyncGenerator[str, None]:
-    """Process document-based RAG using tool-based agent.
+    """Community Edition document RAG: basic similarity-search retrieval + synthesis.
 
-    Grep activation: when `request.document_ids` is non-empty
-    (Trigger 1 — user @-mentioned) OR `author_names` resolves to one or more
-    documents (Trigger 2 — author-scoped), `deps.grep_preferred` is set True
-    and the resolved scope is merged into `deps.document_ids` so grep_search /
-    cat_document fire against the right slice of `documents.content`.
+    The hosted edition runs a multi-agent tool loop (grep/cat/dense tools, MCP
+    toolsets, strategy presets, cross-book comparison, charts). Those are removed
+    in the Community Edition. Here we run a single pgvector similarity search over
+    the selected collections (and any @-tagged documents), then synthesize a cited
+    answer with the user's chat model. ``author_names`` / ``selected_strategy`` /
+    ``query_intent`` are accepted for call-site compatibility but ignored — there is
+    no router or grep activation in CE.
     """
-    from src.main.service.agents.rag_agents.tool_based_rag_agent import create_rag_agent
-    from src.main.service.agents.tools.base import RAGToolDependencies
     from src.main.service.retriever.retriever_manager import retriever_manager
-    from src.main.utils.llm.agent_model_utils import get_system_agent_model
+    from src.main.service.streaming.citation_processor import StreamingCitationProcessor
 
     _doc_rag_start = time.monotonic()
 
-    # Fetch document summaries for context enhancement
-    document_summaries = {}
+    # Fetch book-level summaries for the documents in scope — cheap context that
+    # helps the model frame the answer. Does not depend on any deleted module.
+    document_summaries: dict[str, dict] = {}
     try:
         from sqlmodel import select
 
         from src.main.models.sqlmodel_models import Document, DocumentSummary
 
-        # Get all documents in the selected collections
         if request.document_ids:
-            # Use specific document IDs if provided
             doc_ids_to_summarize = [uuid.UUID(str(doc_id)) for doc_id in request.document_ids]
         else:
-            # Get all documents from selected collections
             # noinspection PyUnresolvedReferences
             docs_query = select(Document.id).where(Document.collection_id.in_(effective_collection_ids))
-            doc_results = db.exec(docs_query).all()
-            doc_ids_to_summarize = [doc_id for doc_id in doc_results]
+            doc_ids_to_summarize = list(db.exec(docs_query).all())
 
-        # Fetch book summaries for these documents
         if doc_ids_to_summarize:
             summaries_query = (
                 select(DocumentSummary)
@@ -1579,17 +1162,13 @@ async def _process_document_rag(
                 .where(DocumentSummary.document_id.in_(doc_ids_to_summarize))
                 .where(DocumentSummary.summary_type == "book")
             )
-            summaries = db.exec(summaries_query).all()
-
-            for summary in summaries:
-                # Get document info
+            for summary in db.exec(summaries_query).all():
                 doc = db.get(Document, summary.document_id)
                 if doc:
                     document_summaries[str(summary.document_id)] = {
                         "title": doc.title or doc.filename,
                         "summary": summary.summary_text,
                     }
-
             if document_summaries:
                 logger.info("Retrieved %d document summaries for context enhancement", len(document_summaries))
                 yield emitter.emit_status(
@@ -1599,7 +1178,7 @@ async def _process_document_rag(
     except Exception as e:
         logger.warning("Could not fetch document summaries: %s", str(e))
 
-    # Get the model for document-based RAG
+    # Acquire the user's chat model for synthesis.
     orchestrator_llm = await main_instance.llm_manager.get_llm(
         model_name=request.model_name,
         provider_type=request.provider_type,
@@ -1609,723 +1188,168 @@ async def _process_document_rag(
         user_id=str(user_id),
         message_id=str(assistant_message_id),
     )
-
     if not orchestrator_llm:
         logger.error(
-            "Failed to get LLM for agentic RAG: %s (Provider: %s)",
+            "Failed to get LLM for document RAG: %s (Provider: %s)",
             request.model_name,
             request.provider_type,
         )
-        error_content = f"Failed to initialize LLM for agentic RAG: {request.model_name}"
         yield emitter.emit_error(
-            error_content,
+            f"Failed to initialize LLM for document search: {request.model_name}",
             error_code=ErrorCode.SERVICE_UNAVAILABLE.value,
         )
         duration_ms = int((time.monotonic() - _doc_rag_start) * 1000)
         yield emitter.emit_stream_end(reason="error", duration_ms=duration_ms)
         return
 
-    # Resolve the strategy preset up-front: it decides which optional tool
-    # categories the agent gets, AND therefore which retrievers we must pay to
-    # initialize. graph_search lives in the 'context' category, so neo4j is only
-    # needed when 'context' is requested.
-    from src.main.service.rag.strategy_presets import get_strategy_preset
-
-    strategy_preset = get_strategy_preset(selected_strategy)
-    _tool_categories = strategy_preset.get("tool_categories") or []
-    logger.info(
-        "Strategy preset for '%s': categories=%s",
-        selected_strategy or "(default)",
-        _tool_categories,
-    )
-
-    # Use tool-based RAG agent with ExecutionPlan architecture
-    # Get pgvector retriever for vector search tools
-    retriever = await retriever_manager.get_retriever(
-        user_id=str(user_id),
-        retriever_type="pgvector",
-    )
-
-    # Get neo4j retriever ONLY when the strategy can call graph_search (the
-    # 'context' category). A cold neo4j init costs ~14s (driver handshake +
-    # reasoning-model load), so for pure 'query' strategies (RAGMultiQuery,
-    # RAGDecomposition, …) we skip it entirely and keep it off the critical path.
-    graph_retriever = None
-    if "context" in _tool_categories:
-        try:
-            graph_retriever = await retriever_manager.get_retriever(
-                user_id=str(user_id),
-                retriever_type="neo4j",
-            )
-        except Exception as e:
-            logger.debug("Neo4j retriever not available: %s", str(e))
-    else:
-        logger.info(
-            "Skipping neo4j retriever init — strategy '%s' has no graph tools",
-            selected_strategy or "(default)",
+    # Basic pgvector similarity search over the selected scope.
+    retriever = await retriever_manager.get_retriever(user_id=str(user_id), retriever_type="pgvector")
+    if retriever is None:
+        logger.error("pgvector retriever unavailable for document RAG")
+        yield emitter.emit_error(
+            "Document search is temporarily unavailable.",
+            error_code=ErrorCode.SERVICE_UNAVAILABLE.value,
         )
-
-    # Get system-configured agent model (from config.yaml, not user's chat model)
-    agent_config = get_system_agent_model(agent_type="agentic_rag")
-    model = agent_config.get_pydantic_ai_model()
-
-    # Delegation path: when the QueryAnalyzer semantically flags the query as a
-    # comparison, fan out one subagent per book in parallel and synthesize,
-    # instead of one tool-agent. Only for multi-collection-capable document RAG;
-    # the orchestrator degrades gracefully to a single-book summary if <2 books
-    # are actually in scope.
-    # The QueryAnalyzer labels intent freely ("compare", "Comparison", "comparing",
-    # …); normalize its OWN semantic label rather than keyword-matching the query.
-    _is_comparison = bool(query_intent) and query_intent.strip().lower().startswith("compar")
-    if _is_comparison and effective_collection_ids:
-        from src.main.service.rag.orchestrators.cross_book_comparison import cross_book_comparison_stream
-
-        logger.info("Routing to cross-book comparison (intent=%s, %d collections)", query_intent, len(effective_collection_ids))
-        async for _pkt in cross_book_comparison_stream(
-            query=request.prompt,
-            collection_ids=list(effective_collection_ids),
-            user_id=str(user_id),
-            db=db,
-            emitter=emitter,
-            retriever=retriever,
-            model=model,
-        ):
-            yield _pkt
+        duration_ms = int((time.monotonic() - _doc_rag_start) * 1000)
+        yield emitter.emit_stream_end(reason="error", duration_ms=duration_ms)
         return
 
-    # Create tool-based RAG agent with dynamic tool filtering
-    # Pass query for semantic tool selection (~8-12 tools instead of 24).
-    # Pass UI language so the agent answers in the user's locale even when the
-    # question or sources are English (otherwise hr/de/es users see English).
-    # Pass user's response_length preference (from settings_general) so prompt
-    # instructs the model to write short / medium / long answers.
-    # Pass rag_augmentation so the agent knows whether it may add a labeled
-    # general-knowledge paragraph alongside the cited content.
-    response_length = _read_response_length(db, str(user_id))
-    rag_augmentation = _read_rag_augmentation(db, str(user_id))
-    # Settings → Prompts → Custom Templates: the chat toolbar popover
-    # injects the picked template's name into request.metadata. Forward
-    # to create_rag_agent so Layer 6 of the system-prompt chain can
-    # resolve the template body.
-    prompt_template_name: str | None = None
-    if request.metadata and isinstance(request.metadata, dict):
-        raw = request.metadata.get("prompt_template_name")
-        if isinstance(raw, str) and raw.strip():
-            prompt_template_name = raw.strip()
-    # Option-2 unification: the router's chosen strategy is a PRESET (resolved
-    # above) that configures the single shared tool-agent — which optional tool
-    # categories it gets + a one-line posture nudge.
-    rag_agent = create_rag_agent(
-        model=model,
-        query=request.prompt,
-        language=request.language,
-        response_length=response_length,
-        rag_augmentation=rag_augmentation,
-        # Pass the effective collection scope so the
-        # agent's system prompt can be layered with per-collection
-        # custom_instructions read from collection_workspace_map.
-        collection_ids=effective_collection_ids,
-        db=db,
-        user_id=str(user_id),
-        prompt_template_name=prompt_template_name,
-        strategy_preset=strategy_preset,
+    document_ids = [uuid.UUID(str(d)) for d in request.document_ids] if request.document_ids else None
+
+    yield emitter.emit_status(
+        StructuredStatusCode.context_enhancement("retrieving"),
+        stage=StatusCode.PREPARATION.value,
     )
-
-    # Grep activation — resolve author-scoped document scope and merge
-    # with the @-mention scope before constructing deps.
-    base_document_ids: list = list(request.document_ids) if request.document_ids else []
-    grep_preferred = bool(base_document_ids)
-    if author_names:
-        try:
-            from src.main.service.agents.tools.grep_tools import (
-                resolve_authors_to_document_ids,
-            )
-
-            resolved_author_doc_ids = resolve_authors_to_document_ids(
-                db=db,
-                user_id=str(user_id),
-                author_names=author_names,
-                collection_ids=effective_collection_ids,
-            )
-            if resolved_author_doc_ids:
-                existing = {str(d) for d in base_document_ids}
-                base_document_ids = base_document_ids + [d for d in resolved_author_doc_ids if d not in existing]
-                grep_preferred = True
-                logger.info(
-                    "grep activation: author_names=%s resolved to %d docs (total scope=%d)",
-                    author_names,
-                    len(resolved_author_doc_ids),
-                    len(base_document_ids),
-                )
-            else:
-                logger.info(
-                    "grep activation: author_names=%s resolved to 0 docs — falling through to default routing",
-                    author_names,
-                )
-        except Exception as e:
-            logger.warning("Author resolution failed; continuing without grep activation: %s", e)
-
-    # Pull document_hierarchy for any tagged docs — gives the agent a
-    # navigable chapter map alongside the summary blurbs. Agent uses it
-    # to drive cat_document(start, end) extracts when the user asks
-    # about a specific section, chapter title, or topic location.
-    document_hierarchies: dict = {}
-    if base_document_ids:
-        try:
-            from src.main.models.sqlmodel_models import Document
-
-            for doc_id in base_document_ids:
-                doc_row = db.get(Document, uuid.UUID(str(doc_id)))
-                if doc_row and getattr(doc_row, "document_hierarchy", None):
-                    document_hierarchies[str(doc_id)] = doc_row.document_hierarchy
-        except Exception as e:
-            logger.warning("Could not load document_hierarchy for tagged docs: %s", e)
-
-    metadata: dict = {}
-    if document_summaries:
-        metadata["document_summaries"] = document_summaries
-    if document_hierarchies:
-        metadata["document_hierarchies"] = document_hierarchies
-
-    # Prepare dependencies with both retrievers and document summaries
-    deps = RAGToolDependencies(
-        retriever=retriever,
-        llm=orchestrator_llm,
-        collection_ids=effective_collection_ids,
-        document_ids=base_document_ids if base_document_ids else None,
-        user_id=str(user_id),
-        emitter=emitter,
-        db=db,
-        # Workspace scope lets inventory tools (list_collections/list_documents)
-        # resolve what the user can access for "what books do I have?" questions.
-        # Agentic RAG always sets request.workspace_id upstream (it bails out
-        # otherwise), so this is reliably populated on this path.
-        workspace_id=str(request.workspace_id) if getattr(request, "workspace_id", None) else None,
-        graph_retriever=graph_retriever,
-        metadata=metadata,
-        grep_preferred=grep_preferred,
-        # Propagate the gRPC session id so file-artifact delivery
-        # can scope artifacts per chat turn. ChatRequest.session_id arrives
-        # as "userId:sessionId"; we keep the composite as-is for the store key.
-        session_id=getattr(request, "session_id", None) or None,
-    )
-
-    # Enrich prompt with document context when user @-tagged specific documents
-    enriched_prompt = request.prompt
-    if request.document_ids:
-        doc_context_parts = []
-        if document_summaries:
-            for summary_info in document_summaries.values():
-                doc_context_parts.append(f"- {summary_info['title']}")
-        else:
-            # Fallback: look up document filenames from DB
-            from src.main.models.sqlmodel_models import Document
-
-            for doc_id in request.document_ids:
-                doc = db.get(Document, uuid.UUID(str(doc_id)))
-                if doc:
-                    doc_context_parts.append(f"- {doc.title or doc.filename}")
-        if doc_context_parts:
-            doc_list = "\n".join(doc_context_parts)
-            hierarchy_hint = (
-                " A `document_hierarchies` map is available in the deps metadata — use it to "
-                "locate chapter/section ranges before calling `cat_document(start, end)`."
-                if document_hierarchies
-                else ""
-            )
-            enriched_prompt = (
-                f"[User explicitly tagged these documents: {doc_list}]\n"
-                f"Lexical tools (grep_search, cat_document) are PREFERRED for this scope. "
-                f"Run grep_search(pattern, document_ids=deps.document_ids) first for any literal "
-                f"token, name, number, quoted phrase, or verbatim identifier in the question — "
-                f"it is millisecond-fast against a 1-3 document subset and the surrounding text "
-                f"window beats dense_search chunks for narrative answers. Use cat_document for "
-                f"long contiguous passages (chapters, sections).{hierarchy_hint} "
-                f"Fall back to dense_search only for pure synthesis questions "
-                f"('summarize the author's argument…').\n\n"
-                f"{request.prompt}"
-            )
-            logger.info(
-                "Enriched prompt with %d tagged document(s), grep_preferred=%s, hierarchies=%d",
-                len(doc_context_parts),
-                grep_preferred,
-                len(document_hierarchies),
-            )
-
-    # Prepend prior-conversation context so follow-ups ("continue on this
-    # topic") keep the thread — the agentic path otherwise ignores history.
-    conversation_prefix = _build_conversation_prefix(request)
-    if conversation_prefix:
-        enriched_prompt = f"{conversation_prefix}\n\n### Current Question:\n{enriched_prompt}"
-
-    # Run agent with streaming and citation processing
-    from src.main.service.streaming.citation_processor import StreamingCitationProcessor
-
-    citation_processor = None
-
-    # Attach the user's enabled MCP integrations as additional toolsets for this
-    # turn — the agent gains each remote server's tools. Empty when the user has
-    # none enabled; per-server failures are logged and skipped (never break chat).
-    from src.main.service.agents.mcp_toolsets import build_mcp_toolsets
-
-    mcp_toolsets = build_mcp_toolsets(db, user_id)
-
-    # The agentic emitter runs in buffer_mode (set by GenerateAgenticRAG), so
-    # every emit() is appended to emitter.buffer. The retrieval tools
-    # (dense_search, sparse_search, reranker) already emit live progress through
-    # deps.emitter — but nothing DRAINED that buffer during the agent run, so the
-    # progress was lost and the UI sat frozen for the whole ~retrieval+rerank
-    # phase. Run the agent in a background task and forward buffered packets in
-    # real time so tool progress and answer tokens stream as they happen.
-    if emitter.buffer is None:  # defensive: make the drain work for any caller
-        emitter.buffer_mode = True
-        emitter.buffer = []
-
-    async def _produce() -> None:
-        nonlocal citation_processor
-        message_started = False
-
-        async def _run_agent_stream(prompt_text: str) -> bool:
-            """Stream ONE agent run. Returns True if it produced answer text.
-
-            Shared by the first attempt and the forced-tool retry below, so both
-            init the citation processor (once retrieval has populated
-            ``deps.retrieved_documents``), emit a single message_start, and track
-            usage identically.
-            """
-            nonlocal citation_processor, message_started
-            produced = False
-            async with rag_agent.run_stream(prompt_text, deps=deps, toolsets=mcp_toolsets or None) as result:
-                async for text in result.stream_text(delta=True):
-                    if not text:
-                        continue
-                    # message_start once before the first answer token, for protocol
-                    # parity with the llm/direct path.
-                    if not message_started:
-                        emitter.emit_message_start()
-                        message_started = True
-                    # Initialize citation processor on first text token AFTER tools ran.
-                    if citation_processor is None and deps.retrieved_documents:
-                        # Use the FULL retrieved list IN ORDER — the model numbers
-                        # its [n] markers against the sources it actually saw (the
-                        # ranked tool results, one entry per retrieved chunk), so
-                        # the processor must validate against the SAME list. The
-                        # old dedup-by-document_id shrank max_citation_num below the
-                        # model's range, so legitimate high markers like [12]/[13]
-                        # were rejected as "Invalid citation number" and the
-                        # citation was silently dropped (the claim stayed,
-                        # ungrounded). Snapshot it — the list is stable once tools
-                        # have run for this answer.
-                        context_docs = list(deps.retrieved_documents)
-                        citation_processor = StreamingCitationProcessor(
-                            context_docs=context_docs,
-                            max_citation_num=len(context_docs),
-                            user_query=request.prompt,
-                        )
-                        emitter.emit_citation_start()
-                        logger.info("Initialized citation processor with %d retrieved sources for agentic RAG", len(context_docs))
-
-                    produced = True
-
-                    if citation_processor:
-                        display_text, citations = citation_processor.process_token(text)
-                        for citation in citations:
-                            emitter.emit(citation)
-                        if display_text:
-                            emitter.emit_message_delta(display_text)
-                    else:
-                        emitter.emit_message_delta(text)
-
-                # Fallback: stream_text() yielded nothing (tools-only run).
-                if not produced:
-                    try:
-                        final_output = await result.get_output()
-                        if final_output:
-                            if not message_started:
-                                emitter.emit_message_start()
-                                message_started = True
-                            emitter.emit_message_delta(str(final_output))
-                            produced = True
-                    except Exception as fallback_err:
-                        logger.warning("Could not get agent result output: %s", str(fallback_err))
-
-                from src.main.utils.llm.usage_tracker import track_stream_usage
-
-                track_stream_usage(result, agent_type="agentic_rag", model=agent_config.get_pydantic_ai_model_string())
-            return produced
-
-        produced = await _run_agent_stream(enriched_prompt)
-
-        # Anti-"preamble-only" guard. The model sometimes ends its turn with just
-        # a plan ("Prvo da provjerim koje knjige imaš … pa ću potražiti") and
-        # NEVER calls a retrieval tool — so deps.retrieved_documents is empty, no
-        # citation processor was created, and the user gets an ungrounded
-        # non-answer. In the document path retrieval is mandatory, so re-run ONCE
-        # with a hard nudge; the grounded answer continues after the short
-        # preamble. (tools-only runs set citation_processor/retrieved_documents,
-        # so this never fires on a legitimately-grounded reply.)
-        if produced and citation_processor is None and not deps.retrieved_documents:
-            logger.warning("Agentic RAG produced an answer with ZERO retrieval (preamble-only); retrying with forced tool use")
-            emitter.emit_message_delta("\n\n")
-            forced_prompt = (
-                enriched_prompt + "\n\nCRITICAL: Do NOT answer with only a plan or an 'I will check / "
-                "let me search' preamble. In THIS turn you MUST call the retrieval "
-                "tools and then answer strictly from the retrieved sources, with "
-                "inline [n] citations."
-            )
-            await _run_agent_stream(forced_prompt)
-
-        # Flush remaining citation buffer (after the final run completes).
-        if citation_processor:
-            final_text, final_citations = citation_processor.flush()
-            for citation in final_citations:
-                emitter.emit(citation)
-            if final_text:
-                emitter.emit_message_delta(final_text)
-
-            # Fallback (C): no inline [N] markers — attribute top docs as
-            # document-level citations so the answer is still grounded.
-            for citation in citation_processor.fallback_cite_top_docs():
-                emitter.emit(citation)
-
-            # Smart Citations (Scite): re-emit with stance classification.
-            try:
-                updated_citations = await citation_processor.classify_stance_batch()
-                for citation in updated_citations:
-                    emitter.emit(citation)
-            except Exception as stance_err:
-                logger.warning("Stance classification skipped: %s", stance_err)
-
-        # Chart data packet (agent called generate_chart()).
-        if deps.chart_data:
-            from src.main.dto.streaming import ChartDataPacket
-
-            chart = deps.chart_data
-            # noinspection PyTypeChecker
-            emitter.emit(
-                ChartDataPacket(
-                    chart_type=chart.get("chart_type", "bar"),
-                    title=chart.get("title", ""),
-                    labels=chart.get("labels", []),
-                    datasets=chart.get("datasets", []),
-                    x_label=chart.get("x_label", ""),
-                    y_label=chart.get("y_label", ""),
-                )
-            )
-            logger.info("Emitted ChartDataPacket: type=%s, title=%s", chart.get("chart_type"), chart.get("title"))
-
-        duration_ms = int((time.monotonic() - _doc_rag_start) * 1000)
-        from src.main.service.llm.token_metrics_callback import extract_token_metrics_from_llm
-
-        token_metrics = extract_token_metrics_from_llm(orchestrator_llm)
-        emitter.emit_stream_end(reason="completed", duration_ms=duration_ms, **token_metrics)
-        logger.info("Tool-based agentic RAG completed in %dms", duration_ms)
-
-    # Drop packets already streamed by the caller (orchestration narration, setup
-    # status) so the drain starts clean, then forward buffered packets as the
-    # background agent produces them.
-    emitter.buffer.clear()
-    producer = asyncio.create_task(_produce())
-
-    # Heartbeat narration: each retrieval/rerank/synthesis tool emits a status at
-    # its START but nothing during the multi-second await, so the panel froze on
-    # one line for tens of seconds. The event loop stays free during those awaits
-    # (verified: websocket heartbeats keep ticking), so we emit a rotating "still
-    # working" reasoning line every few seconds of silence. Buffered like any
-    # other packet → drained on the next pop.
-    _hb_hr = [
+    yield _narrate(
+        emitter,
+        request.language,
         "Pretražujem tvoju knjižnicu po sadržaju…",
-        "Probiram najrelevantnije odlomke…",
-        "Rangiram pronađene izvore po važnosti…",
-        "Slažem odgovor i povezujem citate…",
-    ]
-    _hb_en = [
         "Searching your library by content…",
-        "Selecting the most relevant passages…",
-        "Ranking the retrieved sources by relevance…",
-        "Composing the answer and linking citations…",
-    ]
-    _hb_idx = 0
-    _heartbeat_s = 6.0
-    _last_packet_at = time.monotonic()
+    )
+
+    retrieved_docs: list = []
     try:
-        while True:
-            drained_any = False
-            while emitter.buffer:
-                yield emitter.buffer.pop(0)
-                drained_any = True
-            if drained_any:
-                _last_packet_at = time.monotonic()
-            if producer.done():
-                break
-            # Phase phrases tick at the base cadence; the neutral filler that
-            # follows ticks more slowly so a long wait doesn't pile up lines.
-            _hb_threshold = _heartbeat_s if _hb_idx < len(_hb_hr) else 15.0
-            if time.monotonic() - _last_packet_at >= _hb_threshold:
-                # Show each phase phrase AT MOST ONCE; cycling them modulo-N
-                # re-printed the same "Searching… Selecting… Ranking… Composing…"
-                # block over and over (and falsely claimed "Composing" while still
-                # searching). Once the four are shown, fall back to a neutral
-                # elapsed-time tick — distinct every time, so it conveys progress
-                # without duplicating the phase narration.
-                if _hb_idx < len(_hb_hr):
-                    _narrate(emitter, request.language, _hb_hr[_hb_idx], _hb_en[_hb_idx])
-                else:
-                    _elapsed_s = int(time.monotonic() - _doc_rag_start)
-                    _narrate(
-                        emitter,
-                        request.language,
-                        f"Još radim na tvom odgovoru… ({_elapsed_s} s)",
-                        f"Still working on your answer… ({_elapsed_s}s)",
-                    )
-                _hb_idx += 1
-                _last_packet_at = time.monotonic()
-            await asyncio.sleep(0.05)
-        while emitter.buffer:
-            yield emitter.buffer.pop(0)
-        await producer  # surface any exception raised inside the agent run
-    except asyncio.CancelledError:
-        producer.cancel()
-        try:
-            await producer
-        except asyncio.CancelledError:
-            pass
-        raise
-
-
-async def _process_non_document_sources(
-    request: ChatRequest,
-    emitter: PacketEmitter,
-    current_user: User,
-    source_selection: Any,
-    orchestration_result: Any,
-    result: AgenticRAGResult,
-    main_instance: Any = None,
-    subscription_tier: str = "free",
-    db: Any = None,
-    assistant_message_id: Any = None,
-) -> AsyncGenerator[str, None]:
-    """Process non-document sources (web, direct LLM, or fallback)."""
-    # Check if agent decided to use direct LLM or web (no documents)
-    if "documents" not in source_selection.primary_sources:
-        selected_sources = source_selection.primary_sources
-        is_web = "web" in selected_sources
-
-        if is_web and main_instance and db:
-            # Route to web search
-            logger.info("Agent selected web search: %s", selected_sources)
-
-            yield emitter.emit_status(
-                StructuredStatusCode.intelligent_routing(*selected_sources, "web_search"),
-                stage=StatusCode.SOURCE_ROUTING.value,
-            )
-
-            from src.main.service.chat.chat_web_search import process_web_search
-
-            cancellation_event = asyncio.Event()
-            # noinspection PyTypeChecker
-            async for packet in process_web_search(
-                request=request,
-                emitter=emitter,
-                main_instance=main_instance,
-                subscription_tier=subscription_tier,
-                db=db,
-                user_id=str(current_user.id),
-                _assistant_message_id=assistant_message_id,
-                cancellation_event=cancellation_event,
-            ):
-                yield packet
-        elif is_web:
-            # Web search selected but missing dependencies, fall back to LLM
-            logger.warning("Agent selected web search but missing main_instance/db. Falling back to direct LLM.")
-
-            yield emitter.emit_status(
-                StructuredStatusCode.intelligent_routing(*selected_sources, "web_fallback_llm"),
-                stage=StatusCode.SOURCE_ROUTING.value,
-            )
-
-            from src.main.service.rag.rag_utils import process_direct_llm_chat
-
-            async for packet in process_direct_llm_chat(request, current_user.id, emitter):
-                yield packet
-        else:
-            # Direct LLM — but check if query needs tool calling (e.g., chart generation)
-            logger.info("Agent selected direct LLM chat (no RAG needed): %s", selected_sources)
-
-            # Check for chart intent — route through tool-based agent for tool calling
-            chart_keywords = {
-                "chart",
-                "graph",
-                "plot",
-                "visualize",
-                "visualise",
-                "visualization",
-                "bar chart",
-                "line chart",
-                "pie chart",
-                "scatter",
-                "diagram",
-                "trend",
-                "compare visually",
-                "show me a chart",
-                "draw",
-            }
-            query_lower = request.prompt.lower()
-            has_chart_intent = any(kw in query_lower for kw in chart_keywords)
-
-            if has_chart_intent:
-                logger.info("Chart intent detected in direct LLM path, routing through tool-based agent")
-                async for packet in _process_chart_only_agent(
-                    request=request,
-                    emitter=emitter,
-                    _main_instance=main_instance,
-                    db=db,
-                    user_id=str(current_user.id),
-                ):
-                    yield packet
-            else:
-                yield emitter.emit_status(
-                    StructuredStatusCode.intelligent_routing(*selected_sources, "direct_llm"),
-                    stage=StatusCode.SOURCE_ROUTING.value,
-                )
-
-                from src.main.service.rag.rag_utils import process_direct_llm_chat
-
-                async for packet in process_direct_llm_chat(request, current_user.id, emitter):
-                    yield packet
-
-    else:
-        # 'documents' was selected but the caller routed here because there is
-        # NO document scope to search — effective_collection_ids was empty (see
-        # the `and effective_collection_ids` guard at the _process_document_rag
-        # call site). This happens when the user's active workspace holds no
-        # collections (e.g. a fresh "My Workspace", or shared workspaces they
-        # haven't switched into).
-        #
-        # This branch used to only stage `result.agentic_strategy_info` and
-        # yield NOTHING, on the assumption that traditional document RAG runs
-        # afterwards. Nothing downstream consumes that info, so the stream ended
-        # with no answer at all and the UI recorded a `streamingError`. Always
-        # produce a response instead: the direct-LLM path (web supplement +
-        # model insight + direct answer) is exactly the no-collection flow.
-        logger.info(
-            "Documents selected but no collections in scope (%s); routing to direct LLM chat",
-            source_selection.primary_sources,
+        retrieved_docs = await retriever.similarity_search(
+            prompt=request.prompt,
+            k=15,
+            collection_ids=list(effective_collection_ids) if effective_collection_ids else None,
+            document_ids=document_ids,
         )
-        yield emitter.emit_status(
-            StructuredStatusCode.intelligent_routing(*source_selection.primary_sources, "direct_llm"),
-            stage=StatusCode.SOURCE_ROUTING.value,
-        )
+    except Exception as e:
+        logger.warning("similarity_search failed in CE document RAG: %s", str(e))
+        retrieved_docs = []
 
+    # No grounded sources — fall back to a plain direct LLM answer rather than
+    # fabricating citations.
+    if not retrieved_docs:
+        logger.info("No documents retrieved; falling back to direct LLM chat")
         from src.main.service.rag.rag_utils import process_direct_llm_chat
 
-        async for packet in process_direct_llm_chat(request, current_user.id, emitter):
+        async for packet in process_direct_llm_chat(request, user_id, emitter):
             yield packet
+        return
 
+    logger.info("Retrieved %d chunks for CE document RAG", len(retrieved_docs))
 
-async def _process_chart_only_agent(
-    request: ChatRequest,
-    emitter: PacketEmitter,
-    _main_instance: Any,
-    db: Any,
-    user_id: str,
-) -> AsyncGenerator[str, None]:
-    """Run a lightweight tool-based agent with only chart generation tool.
+    # Build the numbered context block the model cites against.
+    context_parts: list[str] = []
+    for idx, doc in enumerate(retrieved_docs, start=1):
+        title = ""
+        try:
+            title = doc.metadata.get("title") or doc.metadata.get("document_title") or ""
+        except Exception as meta_err:
+            logger.debug("Could not read doc metadata: %s", meta_err)
+        snippet = (getattr(doc, "page_content", "") or "")[:1500]
+        header = f"[{idx}]" + (f" {title}" if title else "")
+        context_parts.append(f"{header}\n{snippet}")
+    context_block = "\n\n".join(context_parts)
+    if len(context_block) > 14000:
+        context_block = context_block[:14000] + "\n\n[Content truncated...]"
 
-    Used when query has chart intent but no document collections are selected.
-    The agent uses the system-configured model (not user's chat model) for reliable tool calling.
-    """
-    from pydantic_ai import Agent
-    from pydantic_ai.toolsets import FunctionToolset
+    summary_block = ""
+    if document_summaries:
+        lines = [f"- {info['title']}: {info['summary'][:300]}" for info in document_summaries.values()]
+        summary_block = "Document overviews:\n" + "\n".join(lines) + "\n\n"
 
-    from src.main.service.agents.tools.base import RAGToolDependencies
-    from src.main.service.agents.tools.chart_generation_tools import generate_chart
-    from src.main.utils.llm.agent_model_utils import get_system_agent_model
+    response_length = _read_response_length(db, str(user_id))
+    length_hint = {
+        "short": "Keep the answer concise (a few sentences).",
+        "medium": "Write a focused answer of a few paragraphs.",
+        "long": "Write a thorough, well-structured answer with context.",
+    }.get(response_length, "Write a thorough, well-structured answer with context.")
 
-    # Use user's chat model from request (system agent model may be quota-exhausted)
-    # noinspection PyBroadException
+    conversation_prefix = _build_conversation_prefix(request)
+    prefix_block = f"{conversation_prefix}\n\n" if conversation_prefix else ""
+
+    llm_prompt = (
+        "Answer the user's question using ONLY the numbered sources below. "
+        "Cite the sources you use with inline markers like [1], [2]. "
+        f"{length_hint}\n"
+        f"{_language_directive(request.language, prompt=request.prompt)}\n\n"
+        f"{prefix_block}"
+        f"{summary_block}"
+        f"---\nSources:\n{context_block}\n---\n\n"
+        f"Question: {request.prompt}"
+    )
+
+    yield emitter.emit_status(
+        StructuredStatusCode.context_enhancement("generating_answer"),
+        stage=StatusCode.PREPARATION.value,
+    )
+
+    citation_processor = StreamingCitationProcessor(
+        context_docs=list(retrieved_docs),
+        max_citation_num=len(retrieved_docs),
+        user_query=request.prompt,
+    )
+
+    message_started = False
     try:
-        model_str = f"{request.provider_type}:{request.model_name}" if request.provider_type and request.model_name else None
-        if not model_str:
-            agent_config = get_system_agent_model(agent_type="agentic_rag")
-            model = agent_config.get_pydantic_ai_model()
-        else:
-            from pydantic_ai.models import infer_model
+        # Stream the synthesized answer, routing tokens through the citation
+        # processor so inline [n] markers become structured citation packets.
+        async for chunk in orchestrator_llm.astream(llm_prompt):
+            text = chunk.content if hasattr(chunk, "content") else str(chunk)
+            if not text:
+                continue
+            if not message_started:
+                yield emitter.emit_message_start()
+                yield emitter.emit_citation_start()
+                message_started = True
+            display_text, citations = citation_processor.process_token(text)
+            for citation in citations:
+                yield emitter.emit(citation)
+            if display_text:
+                yield emitter.emit_message_delta(display_text)
 
-            model = infer_model(model_str)
-    except Exception:
-        agent_config = get_system_agent_model(agent_type="agentic_rag")
-        model = agent_config.get_pydantic_ai_model()
-
-    chart_toolset = FunctionToolset(tools=[generate_chart])
-    lang_code = request.language or "en"
-    lang_names = {"hr": "Croatian", "en": "English", "de": "German", "fr": "French", "es": "Spanish", "it": "Italian"}
-    lang_name = lang_names.get(lang_code, lang_code)
-    lang_instruction = f" Always respond in {lang_name}." if lang_code != "en" else ""
-    agent = Agent(
-        model=model,
-        deps_type=RAGToolDependencies,
-        system_prompt=(
-            "You are a data visualization assistant. When the user asks for a chart, "
-            "extract or generate the data and call the generate_chart tool. "
-            "Always call the tool — never just describe the chart in text."
-            f"{lang_instruction}"
-        ),
-        toolsets=[chart_toolset],
-    )
-
-    deps = RAGToolDependencies(
-        retriever=None,
-        llm=None,
-        collection_ids=[],
-        user_id=user_id,
-        emitter=emitter,
-        db=db,
-    )
-
-    _start = time.monotonic()
-    has_content = False
-
-    # Carry prior-conversation context into chart follow-ups ("make it a bar
-    # chart instead", "now show it by year") so they aren't context-blind.
-    chart_prefix = _build_conversation_prefix(request)
-    chart_prompt = f"{chart_prefix}\n\n### Current Question:\n{request.prompt}" if chart_prefix else request.prompt
-
-    async with agent.run_stream(chart_prompt, deps=deps) as result:
-        async for text_chunk in result.stream_text(delta=True):
-            if text_chunk:
-                if not has_content:
-                    yield emitter.emit_message_start()
-                has_content = True
-                yield emitter.emit_message_delta(text_chunk)
-
-        if not has_content:
-            try:
-                final_output = result.output
-                if final_output:
-                    yield emitter.emit_message_start()
-                    yield emitter.emit_message_delta(str(final_output))
-            except Exception as e:
-                logger.debug("Suppressed exception: %s", e)
-
-    # Emit chart data if agent called generate_chart()
-    if deps.chart_data:
-        from src.main.dto.streaming import ChartDataPacket
-
-        chart = deps.chart_data
-        # noinspection PyTypeChecker
-        yield emitter.emit(
-            ChartDataPacket(
-                chart_type=chart.get("chart_type", "bar"),
-                title=chart.get("title", ""),
-                labels=chart.get("labels", []),
-                datasets=chart.get("datasets", []),
-                x_label=chart.get("x_label", ""),
-                y_label=chart.get("y_label", ""),
+        # Flush any buffered tail + fall back to document-level citations.
+        final_text, final_citations = citation_processor.flush()
+        for citation in final_citations:
+            yield emitter.emit(citation)
+        if final_text:
+            yield emitter.emit_message_delta(final_text)
+        for citation in citation_processor.fallback_cite_top_docs():
+            yield emitter.emit(citation)
+    except Exception as gen_err:
+        logger.warning("Streaming synthesis failed, falling back to single invoke: %s", str(gen_err))
+        if not message_started:
+            yield emitter.emit_message_start()
+        try:
+            response = await orchestrator_llm.ainvoke(llm_prompt)
+            answer = response.content if hasattr(response, "content") else str(response)
+            for i in range(0, len(answer), 50):
+                yield emitter.emit_message_delta(answer[i : i + 50])
+        except Exception as invoke_err:
+            logger.exception("Document RAG synthesis failed: %s", str(invoke_err))
+            yield emitter.emit_error(
+                "Failed to generate an answer from the retrieved documents.",
+                error_code=ErrorCode.PROCESS_FAILED.value,
             )
-        )
-        logger.info("Emitted ChartDataPacket from chart-only agent: %s", chart.get("title"))
+            yield emitter.emit_stream_end(reason="error")
+            return
 
-    duration_ms = int((time.monotonic() - _start) * 1000)
-    yield emitter.emit_stream_end(reason="completed", duration_ms=duration_ms)
-    logger.info("Chart-only agent completed in %dms", duration_ms)
+    duration_ms = int((time.monotonic() - _doc_rag_start) * 1000)
+    from src.main.service.llm.token_metrics_callback import extract_token_metrics_from_llm
+
+    token_metrics = extract_token_metrics_from_llm(orchestrator_llm)
+    yield emitter.emit_stream_end(reason="completed", duration_ms=duration_ms, **token_metrics)
+    logger.info("CE document RAG completed in %dms", duration_ms)

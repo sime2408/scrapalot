@@ -1233,20 +1233,9 @@ class PGVectorRetriever(Retriever):
 
         # Rerank documents using MMR algorithm
         reranked = await self._rerank_documents_with_mmr(prompt, all_documents, k=k)
-        # Optional PageRank boost. No-op unless the
-        # operator has flipped `rag.pagerank_boost.enabled=true`. Shipped off
-        # so we never silently change retrieval for an existing workspace.
-        from src.main.service.graph.pagerank_boost import apply_pagerank_boost
-
-        reranked = apply_pagerank_boost(reranked)
-        # Optional bridge augmentation. No-op unless
-        # `rag.bridge_mode.enabled=true`, ≥ 2 collections selected, and the
-        # centroids are "distant" per FingerprintService. Adds tagged bridge
-        # chunks after the vector-seed set so synthesis can render them with
-        # origin badges.
-        from src.main.service.graph.bridge_orchestrator import augment_retrieval
-
-        reranked = await augment_retrieval(prompt, collection_id_strs, reranked)
+        # PageRank boost and cross-collection bridge augmentation are
+        # knowledge-graph features removed in the Community Edition — the basic
+        # similarity + rerank result is returned as-is.
         return reranked
 
     async def _rerank_documents_with_mmr(self, query: str, all_documents: list[Document], k: int = 10) -> list[Document]:
@@ -1274,15 +1263,14 @@ class PGVectorRetriever(Retriever):
         skip_threshold = resolved_config.get("defaults", {}).get("reranker", {}).get("skip_threshold", 3)
         if len(all_documents) > skip_threshold:
             try:
-                # Inject document_priority from DB into chunk metadata for reranker weighting
+                # Inject document_priority from DB into chunk metadata for weighting.
                 await self._inject_document_priorities(all_documents)
 
-                from src.main.service.retriever.reranker_manager import get_reranker_manager
-
-                reranker_manager = get_reranker_manager()
-                reranked_docs = await reranker_manager.rerank_documents(query, all_documents, top_n=k)
-                reranked_docs = self._cap_passages_per_document(reranked_docs)
-                logger.info("Reranked %d documents, returning top %d", len(all_documents), len(reranked_docs))
+                # The cross-encoder reranker_manager is removed in the Community
+                # Edition. Degrade to the existing similarity-ordered candidate set,
+                # capped per document and truncated to top-k.
+                reranked_docs = self._cap_passages_per_document(all_documents[:k])
+                logger.info("Returning %d documents (CE basic ordering, no cross-encoder rerank)", len(reranked_docs))
                 return reranked_docs
 
             except Exception as e:

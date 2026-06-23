@@ -548,38 +548,11 @@ def _process_heavy_body(
 
 
 def _post_upload_build_graph(document_id: str, collection_id: str, user_id: str) -> None:
-    """Create Neo4j hierarchy for a freshly processed doc and dispatch
-    entity extraction to the fast queue.
-
-    Intentionally best-effort: any failure is logged but doesn't fail
-    the parent task. The user still has a working embedded document;
-    the graph can be retried from the UI "Build graph" action.
+    """Neo4j hierarchy + entity extraction is a hosted-only feature and is not
+    available in the Community Edition. The document is already parsed, chunked
+    and embedded (RAG-searchable); this graph step is a no-op in CE.
     """
-    try:
-        from src.main.config.database import SessionLocal
-        from src.main.service.document_processing.documents import _build_document_hierarchy
-        from src.main.service.graph.graph_integration_service import GraphIntegrationService
-
-        graph_svc = GraphIntegrationService()
-        if not graph_svc.is_graph_enabled():
-            logger.info("Skipping build_graph for %s: graph module disabled", document_id[:8])
-            return
-
-        import asyncio as _aio
-
-        db = SessionLocal()
-        try:
-            _aio.run(_build_document_hierarchy(db, document_id, collection_id, user_id, graph_svc))
-        finally:
-            db.close()
-
-        celery_app.send_task(
-            "scrapalot.extract_entities",
-            args=[document_id, user_id, collection_id],
-        )
-        logger.info("Graph hierarchy + entity extraction dispatched for %s", document_id[:8])
-    except Exception as exc:
-        logger.warning("Post-upload build_graph failed for %s: %s", document_id[:8], exc)
+    logger.debug("Post-upload build_graph skipped (hosted-only) in CE for %s", document_id[:8])
 
 
 def _post_upload_generate_summary(document_id: str, user_id: str) -> None:
@@ -602,21 +575,10 @@ def _post_upload_generate_summary(document_id: str, user_id: str) -> None:
             )
             logger.info("Summary generated for %s", document_id[:8])
 
-            # A fresh book summary changes the collection's overall makeup → rebuild
-            # its memory digest (debounced, so a bulk upload collapses to one run).
-            try:
-                from sqlalchemy import text as _sa_text
-
-                cid_row = db.execute(
-                    _sa_text("SELECT collection_id FROM documents WHERE id = :did"),
-                    {"did": document_id},
-                ).fetchone()
-                if cid_row and cid_row[0]:
-                    from src.main.workers.tasks.graph_housekeeping_tasks import enrich_collection_summary_task
-
-                    enrich_collection_summary_task.delay(collection_id=str(cid_row[0]))
-            except Exception as _exc:
-                logger.warning("Could not dispatch collection digest for %s: %s", document_id[:8], _exc)
+            # Collection memory-digest enrichment lives in the graph housekeeping
+            # tasks, which are a hosted-only feature absent from the Community
+            # Edition. The per-document summary above is still generated.
+            logger.debug("Collection digest dispatch skipped (hosted-only) in CE for %s", document_id[:8])
         finally:
             db.close()
     except Exception as exc:
@@ -1088,30 +1050,11 @@ def _process_single_in_batch(
     except Exception as e:
         logger.warning("Failed to inject embedding UUIDs: %s", e)
 
-    # Step 5: Graph integration (hierarchy + entity extraction dispatch)
-    import os
-
-    from src.main.utils.graph.service import get_graph_service_for_worker, process_document_graph_integration
-
-    graph_service = get_graph_service_for_worker()
-    skip_graph = os.getenv("SKIP_GRAPH_IN_BATCH", "true").lower() == "true"
-    if graph_service and graph_service.is_graph_enabled() and not skip_graph:
-        job.progress = 75.0
-        job.description = "creatingGraphStructure"
-        db.commit()
-        publish_job_progress(
-            job_id,
-            document_id,
-            user_id,
-            collection_id,
-            75.0,
-            "creatingGraphStructure",
-            "processing",
-            filename,
-        )
-
-        document_data = document_service.get_document_metadata_sync(document_id, file_path)
-        process_document_graph_integration(graph_service, document_id, collection_id, workspace_id, document_data, enriched_documents)
+    # Step 5: Graph integration (hierarchy + entity extraction) is a hosted-only
+    # feature and is not available in the Community Edition. The document is
+    # already parsed, chunked and embedded above (RAG-searchable); this step is
+    # skipped in CE.
+    logger.debug("Graph integration skipped (hosted-only) in CE for %s", document_id[:8])
 
     # Step 6: Mark BOTH job + document completed in ONE transaction.
     #
@@ -1679,15 +1622,9 @@ def _reprocess_heavy_body(
             db.close()
         logger.info("Pre-reprocess cleanup done for doc %s", document_id[:8])
 
-        # Step 4: Delete Neo4j hierarchy (preserve Entity nodes)
-        try:
-            from src.main.service.graph.graph_structure_service import GraphStructureService
-
-            gs = GraphStructureService()
-            deleted = loop.run_until_complete(gs.delete_document_hierarchy_only(UUID(document_id)))
-            logger.info("Deleted %d hierarchy nodes for doc %s", deleted, document_id[:8])
-        except Exception as graph_err:
-            logger.warning("Hierarchy cleanup failed (non-fatal): %s", graph_err)
+        # Step 4: Neo4j hierarchy cleanup is a hosted-only feature absent from
+        # the Community Edition — there is no graph to delete.
+        logger.debug("Hierarchy cleanup skipped (hosted-only) in CE for doc %s", document_id[:8])
 
         # force_graph_build is gated on Neo4j reachability. Earlier this
         # was hard-coded True with the rationale "we just deleted the old
@@ -1707,19 +1644,14 @@ def _reprocess_heavy_body(
         # gets tied up in a 30+ min entity-extraction step that the parse
         # phase neither owns nor verifies — the sibling graph skill
         # (scrapalot-postprocess-graph) rebuilds the Neo4j layer later.
-        from src.main.utils.graph.service import get_graph_service_for_worker as _probe_graph
-
-        _graph_alive = (_probe_graph() is not None) and not skip_graph_build
-        if skip_graph_build:
-            logger.info(
-                "Reprocess doc %s: skip_graph_build=True — parse-only path (chunks + JSONB hierarchy only, no Neo4j writes)",
-                document_id[:8],
-            )
-        elif not _graph_alive:
-            logger.warning(
-                "Reprocess doc %s: Neo4j unreachable, skipping graph build (chunks + JSONB hierarchy will still be written)",
-                document_id[:8],
-            )
+        # Knowledge-graph build is a hosted-only feature absent from the
+        # Community Edition. The reprocess always runs the parse-only path
+        # (chunks + JSONB hierarchy), never a Neo4j build.
+        _graph_alive = False
+        logger.debug(
+            "Reprocess doc %s: graph build skipped (hosted-only) in CE — parse-only path",
+            document_id[:8],
+        )
 
         process_uploaded_document(
             job_id=job_id,
@@ -1735,18 +1667,9 @@ def _reprocess_heavy_body(
             markdown_content=content_fallback if (use_content_only or not file_on_disk) else None,
         )
 
-        # Step 4: Rebuild entity links (re-link preserved entities to new chunks)
-        if _graph_alive:
-            try:
-                from src.main.service.graph.graph_structure_service import GraphStructureService
-
-                gs2 = GraphStructureService()
-                links = loop.run_until_complete(gs2.rebuild_entity_links(UUID(document_id)))
-                logger.info("Rebuilt entity links for doc %s: %s", document_id[:8], links)
-            except Exception as link_err:
-                logger.warning("Entity link rebuild failed (non-fatal): %s", link_err)
-        else:
-            logger.info("Reprocess doc %s: skipping entity-link rebuild (Neo4j unreachable)", document_id[:8])
+        # Step 4: Entity-link rebuild is a hosted-only feature absent from the
+        # Community Edition — there is no graph to re-link.
+        logger.debug("Reprocess doc %s: entity-link rebuild skipped (hosted-only) in CE", document_id[:8])
 
         # Final completion guarantee. process_uploaded_document SHOULD
         # have set `processing_status='completed'` already (its Step 7);
@@ -2158,226 +2081,14 @@ def sync_document_hierarchy_to_neo4j_task(self, document_id: str) -> dict:
     Workspace/Collection/Book/Chapter/Section/Chunk nodes — safe to re-run.
     Entity extraction is NOT performed here; dispatch
     `scrapalot.extract_entities` separately on the same doc afterwards.
+
+    Neo4j knowledge-graph sync is a hosted-only feature and is not available in
+    the Community Edition. The task stays registered so dispatchers don't fail,
+    but it is a no-op here — the document remains fully chunked, embedded and
+    RAG-searchable in pgvector.
     """
-    from uuid import UUID
-
-    from langchain_core.documents import Document as LCDocument
-    from sqlalchemy import text as sa_text
-
-    from src.main.config.database import SessionLocal
-    from src.main.service.graph.graph_integration_service import GraphIntegrationService
-    from src.main.utils.documents.hierarchy import (
-        rebuild_hierarchy_from_chunk_metadata,
-        store_document_hierarchy,
-    )
-
-    logger.info("sync_document_hierarchy_to_neo4j_task: doc=%s", document_id[:8])
-
-    # Publish job_progress so the UI banner sees this background rebuild as
-    # live activity. Without these
-    # events the rebuild was completely invisible — the user opened the UFO
-    # library mid-rebuild and saw "Nema aktivnog workera" because the task
-    # never emitted a single progress event. Mirrors the pattern in
-    # extract_entities_task (`_publish_entity_progress` start/end).
-    # `collection_id` and `user_id` aren't task args here, so we resolve them
-    # from the doc row once we have it (see below). Until then publish a
-    # placeholder with empty IDs so the start event still surfaces under
-    # `job_id=sync_hier_{doc8}` in the UI.
-    from src.main.utils.jobs.active import register_bg_job, unregister_bg_job, update_bg_job_progress
-    from src.main.utils.jobs.progress import publish_job_progress as _pjp
-
-    _bg_job_id = f"sync_hier_{document_id[:8]}"
-    _bg_user_id = ""  # resolved from doc row below; until then registry skips (empty user_id is no-op)
-
-    def _publish_sync(progress: float, message: str, status: str, *, user_id: str = "", collection_id: str = "") -> None:
-        try:
-            _pjp(
-                job_id=_bg_job_id,
-                document_id=document_id,
-                user_id=user_id,
-                collection_id=collection_id,
-                progress=progress,
-                message=message,
-                status=status,
-            )
-        except Exception:
-            logger.debug("sync_hierarchy publish failed for doc=%s", document_id[:8])
-        # Mirror progress into the cross-process registry so the snapshot
-        # endpoint surfaces this work even for clients connecting AFTER the
-        # start event fired.
-        if user_id and status == "processing":
-            update_bg_job_progress(user_id, _bg_job_id, progress, message)
-
-    _publish_sync(0.0, "Sync hierarchy started", "processing")
-
-    db = SessionLocal()
-    try:
-        doc_uuid = UUID(document_id)
-        # Pull doc + collection row in a single query
-        row = db.execute(
-            sa_text(
-                "SELECT d.title, d.collection_id::text, d.file_metadata, "
-                "       d.extracted_metadata, d.document_hierarchy, d.file_type, "
-                "       cwm.workspace_id::text, cwm.owner_user_id::text "
-                "  FROM documents d "
-                "  JOIN collection_workspace_map cwm ON cwm.collection_id = d.collection_id "
-                " WHERE d.id = :did"
-            ),
-            {"did": doc_uuid},
-        ).fetchone()
-        if not row:
-            _publish_sync(0.0, "Document not found", "failed")
-            return {"success": False, "document_id": document_id, "error": "doc_not_found"}
-        title, cid, file_meta, ext_meta, hierarchy, file_type, wid, owner_uid = row
-        _bg_user_id = owner_uid or ""
-        # Now that we know the owner, register the bg job so /jobs/active sees it.
-        if _bg_user_id:
-            register_bg_job(
-                _bg_user_id,
-                _bg_job_id,
-                {
-                    "document_id": document_id,
-                    "collection_id": cid or "",
-                    "task_name": "sync_document_hierarchy_to_neo4j",
-                    "status": "processing",
-                    "progress": 20.0,
-                    "message": "Loading chunks from pgvector",
-                    "filename": title or "",
-                },
-            )
-        _publish_sync(20.0, "Loading chunks from pgvector", "processing", user_id=_bg_user_id, collection_id=cid or "")
-
-        # Backfill JSONB hierarchy if missing
-        if hierarchy is None:
-            hierarchy = rebuild_hierarchy_from_chunk_metadata(db, doc_uuid)
-            if hierarchy is None:
-                return {"success": False, "document_id": document_id, "error": "no_chunks_for_hierarchy"}
-            store_document_hierarchy(db, doc_uuid, hierarchy)
-            logger.info("Backfilled JSONB hierarchy for %s (%d top-level chapters)", document_id[:8], len(hierarchy))
-
-        # Load chunks ordered by chunk_index — convert to LangChain Document shape
-        rows = db.execute(
-            sa_text(
-                "SELECT id::text, document, cmetadata FROM langchain_pg_embedding "
-                " WHERE cmetadata->>'document_id' = :did "
-                " ORDER BY (cmetadata->>'chunk_index')::int"
-            ),
-            {"did": str(doc_uuid)},
-        ).fetchall()
-        if not rows:
-            return {"success": False, "document_id": document_id, "error": "no_chunks"}
-
-        # Backfill two metadata keys legacy ingests often omitted:
-        #   - `chapter_number`: derived from `chapter_title` ("Chapter N" → N,
-        #     front-matter labels → 0). Required by
-        #     `node_factory._validate_chunk_metadata_quality` (≥30% coverage).
-        #   - `chunk_id`: the pgvector row UUID. Required by
-        #     `node_factory.create_chunk_node` — without it the call short-
-        #     circuits with "Skipping to avoid orphan Chunk node" and no
-        #     Section→Chunk edges are written.
-        _ch_num_re = re.compile(r"^\s*chapter\s+(\d+)\b", re.IGNORECASE)
-        _front_matter_titles = ("introduction", "preface", "foreword", "prologue", "acknowledgments", "acknowledgements")
-        enriched_documents = []
-        for chunk_id, content, raw_meta in rows:
-            meta = dict(raw_meta or {})
-            meta["chunk_id"] = chunk_id
-            if "chapter_number" not in meta:
-                title = (meta.get("chapter_title") or "").strip()
-                if title:
-                    m = _ch_num_re.match(title)
-                    if m:
-                        meta["chapter_number"] = int(m.group(1))
-                    elif title.lower() in _front_matter_titles:
-                        meta["chapter_number"] = 0
-            enriched_documents.append(LCDocument(page_content=content or "", metadata=meta))
-
-        # Resolve author from extracted_metadata
-        author = ""
-        if ext_meta:
-            resolved = ext_meta.get("resolved") if isinstance(ext_meta, dict) else None
-            if isinstance(resolved, dict):
-                authors_field = resolved.get("authors")
-                if isinstance(authors_field, list) and authors_field:
-                    author = str(authors_field[0])
-                elif isinstance(authors_field, str):
-                    author = authors_field
-                elif resolved.get("author"):
-                    author = str(resolved["author"])
-            if not author and isinstance(ext_meta, dict) and ext_meta.get("author"):
-                author = str(ext_meta["author"])
-
-        document_data = {
-            "id": document_id,
-            "title": title or "",
-            "original_filename": (file_meta or {}).get("original_filename", "") if isinstance(file_meta, dict) else "",
-            "content_type": file_type or "",
-            "author": author,
-        }
-
-        # Dispatch via GraphIntegrationService — canonical path used by
-        # upload pipeline. Looks up workspace/collection names from
-        # collection_workspace_map and calls node_factory MERGE bulk write.
-        # We probe Neo4j directly here rather than going through
-        # `get_graph_service_for_worker()` which keys off a `neo4j_service`
-        # attribute that GraphIntegrationService doesn't expose (it holds
-        # `_graph_query_service` instead, so the probe always returns None
-        # even when Neo4j is healthy).
-        from src.main.service.graph.neo4j_service import get_neo4j_service
-
-        neo4j = get_neo4j_service()
-        if neo4j is None or not neo4j.is_connected():
-            _publish_sync(0.0, "Neo4j unreachable", "failed", user_id=_bg_user_id, collection_id=cid or "")
-            return {"success": False, "document_id": document_id, "error": "neo4j_unreachable"}
-
-        gis = GraphIntegrationService()
-        if not gis.is_graph_enabled():
-            _publish_sync(0.0, "Graph service disabled", "failed", user_id=_bg_user_id, collection_id=cid or "")
-            return {"success": False, "document_id": document_id, "error": "graph_service_disabled"}
-        _publish_sync(60.0, "Writing Book/Chapter/Section/Chunk nodes", "processing", user_id=_bg_user_id, collection_id=cid or "")
-        result = gis.create_document_hierarchy(
-            document_id=document_id,
-            collection_id=cid,
-            workspace_id=wid,
-            document_data=document_data,
-            enriched_documents=enriched_documents,
-        )
-        status = result.get("status")
-        nodes = result.get("nodes", {})
-        logger.info(
-            "sync_document_hierarchy_to_neo4j_task: doc=%s status=%s nodes=%d",
-            document_id[:8],
-            status,
-            len(nodes) if isinstance(nodes, dict) else 0,
-        )
-        _publish_sync(
-            100.0,
-            f"Hierarchy synced ({len(nodes) if isinstance(nodes, dict) else 0} nodes)",
-            "completed" if status == "success" else "failed",
-            user_id=_bg_user_id,
-            collection_id=cid or "",
-        )
-        return {
-            "success": status == "success",
-            "document_id": document_id,
-            "chunks": len(enriched_documents),
-            "chapters": len(hierarchy),
-            "nodes_created": len(nodes) if isinstance(nodes, dict) else 0,
-        }
-    except SoftTimeLimitExceeded:
-        logger.warning("sync_document_hierarchy_to_neo4j_task: soft time limit on %s", document_id[:8])
-        _publish_sync(0.0, "Soft time limit exceeded", "failed", user_id=_bg_user_id)
-        raise
-    except Exception as exc:
-        logger.exception("sync_document_hierarchy_to_neo4j_task failed for %s: %s", document_id[:8], exc)
-        _publish_sync(0.0, f"Failed: {str(exc)[:120]}", "failed", user_id=_bg_user_id)
-        return {"success": False, "document_id": document_id, "error": str(exc)}
-    finally:
-        # Always unregister so the snapshot endpoint doesn't surface a
-        # zombie entry — the hash TTL is the last-line defense if this
-        # finally itself never runs (worker SIGKILL).
-        if _bg_user_id:
-            unregister_bg_job(_bg_user_id, _bg_job_id)
-        db.close()
+    logger.debug("sync_document_hierarchy_to_neo4j_task skipped (hosted-only) in CE for %s", document_id[:8])
+    return {"success": True, "document_id": document_id, "skipped": "hosted_only_in_ce"}
 
 
 # ──────────────────────────────────────────────
@@ -2413,7 +2124,6 @@ def backfill_document_metadata_task(self, document_id: str) -> dict:
     - Leaves existing fields untouched (idempotent: re-running is a no-op
       when metadata is already populated).
     """
-    import asyncio as _aio
     import json
     import re as _re
     from uuid import UUID
@@ -2421,7 +2131,6 @@ def backfill_document_metadata_task(self, document_id: str) -> dict:
     from sqlalchemy import text as sa_text
 
     from src.main.config.database import SessionLocal
-    from src.main.service.document.openlibrary_title_resolver import resolve_via_openlibrary
 
     logger.info("backfill_document_metadata_task: doc=%s", document_id[:8])
     db = SessionLocal()
@@ -2458,28 +2167,10 @@ def backfill_document_metadata_task(self, document_id: str) -> dict:
             except Exception as exc:
                 logger.debug("identifier extraction skipped for %s: %s", document_id[:8], exc)
 
-        # OpenLibrary resolution (skip when resolved already populated).
-        # Fall back to Google Books on miss — Google indexes the
-        # niche/conspiracy/UFO/occult long tail OpenLibrary lacks.
-        if not current_meta.get("resolved"):
-            try:
-                _loop = _aio.new_event_loop()
-                _aio.set_event_loop(_loop)
-                ol_result = _loop.run_until_complete(resolve_via_openlibrary(filename, fallback_title=title))
-                if ol_result:
-                    current_meta["resolved"] = ol_result
-                    current_meta["enrichment_status"] = "resolved"
-                    changes.append(f"resolved={ol_result.get('title', '')!r} conf={ol_result.get('confidence', 0)} src=openlibrary")
-                else:
-                    from src.main.service.document.google_books_resolver import resolve_via_google_books
-
-                    gb_result = _loop.run_until_complete(resolve_via_google_books(filename, fallback_title=title))
-                    if gb_result:
-                        current_meta["resolved"] = gb_result
-                        current_meta["enrichment_status"] = "resolved"
-                        changes.append(f"resolved={gb_result.get('title', '')!r} conf={gb_result.get('confidence', 0)} src=google_books")
-            except Exception as exc:
-                logger.debug("Metadata resolution skipped for %s: %s", document_id[:8], exc)
+        # OpenLibrary / Google Books bibliographic resolution is a hosted-only
+        # feature absent from the Community Edition. Identifier scan,
+        # page_count, publication_year and word_count backfill below still run.
+        logger.debug("Bibliographic resolution skipped (hosted-only) in CE for %s", document_id[:8])
 
         # Persist extracted_metadata if any change
         if changes:
@@ -2566,34 +2257,9 @@ def backfill_document_metadata_task(self, document_id: str) -> dict:
 def restore_book_from_annas_task(self, document_id: str) -> dict:
     """Recover a document's source artifact from Anna's Archive by ISBN.
 
-    Wraps `AnnasRestoreService.restore` so admin / cleanup scripts can
-    fan-out restores across multiple docs without blocking the caller.
-    Uses the `fast` queue because the work is mostly network-bound and
-    quick (search + 5-20 MB download); the heavy reprocess step is
-    dispatched separately by the service to the `documents` queue.
+    Anna's Archive source restoration is a hosted-only feature and is not
+    available in the Community Edition. The task stays registered so any
+    dispatcher keeps working, but it is a no-op here.
     """
-    from uuid import UUID
-
-    from src.main.service.document_processing.annas_restore_service import (
-        AnnasRestoreError,
-        restore_book_from_annas_sync,
-    )
-
-    logger.info("restore_book_from_annas_task: doc=%s", document_id[:8])
-    try:
-        result = restore_book_from_annas_sync(UUID(document_id))
-        logger.info(
-            "restore_book_from_annas_task: doc=%s → status=%s",
-            document_id[:8],
-            result.get("status"),
-        )
-        return result
-    except AnnasRestoreError as cfg_err:
-        logger.error("restore_book_from_annas_task: config error for %s: %s", document_id[:8], cfg_err)
-        return {"success": False, "document_id": document_id, "error": str(cfg_err)}
-    except SoftTimeLimitExceeded:
-        logger.warning("restore_book_from_annas_task: soft time limit on %s", document_id[:8])
-        raise
-    except Exception as exc:
-        logger.exception("restore_book_from_annas_task failed for %s: %s", document_id[:8], exc)
-        return {"success": False, "document_id": document_id, "error": str(exc)}
+    logger.debug("restore_book_from_annas_task skipped (hosted-only) in CE for %s", document_id[:8])
+    return {"success": False, "document_id": document_id, "error": "hosted_only_in_ce"}

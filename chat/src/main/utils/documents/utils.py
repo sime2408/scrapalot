@@ -1654,12 +1654,9 @@ def is_valid_document_type(filename: str, allowed_extensions: list = None) -> bo
     """
     if allowed_extensions is None:
         # Default allowed document types (synced with frontend and document processors).
-        # Audio/video are transcribed to text in the ingestion pipeline (Whisper),
-        # then ride the normal chunk/embed/RAG path like any other document.
-        from src.main.service.speech.stt_constants import TRANSCRIBABLE_MEDIA_EXTENSIONS
-
-        media = [e.lstrip(".") for e in TRANSCRIBABLE_MEDIA_EXTENSIONS]
-        allowed_extensions = ["pdf", "epub", "docx", "md", "txt", "csv", "tsv", "xlsx", "xls", "rtf", *media]
+        # Audio/video transcription (Whisper) is not available in this edition,
+        # so only text-based document formats are accepted.
+        allowed_extensions = ["pdf", "epub", "docx", "md", "txt", "csv", "tsv", "xlsx", "xls", "rtf"]
 
     ext = extract_file_extension(filename)
     return ext in allowed_extensions

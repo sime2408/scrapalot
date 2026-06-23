@@ -133,30 +133,6 @@ async def _yield_single_message(emitter, msg: str) -> AsyncIterator[str]:
     yield emitter.emit_stream_end()
 
 
-async def _yield_tutor_tokens(
-    emitter,
-    db,
-    user_id,
-    curriculum_id,
-    user_message: str,
-    locale: str,
-) -> AsyncIterator[str]:
-    """7.8 v3 — bridge the tutor orchestrator's plain-string token
-    stream into PacketEmitter message_delta + stream_end packets so
-    the existing chat UI renders tutor output without changes."""
-    from src.main.service.tutor.tutor_orchestrator import run_tutor_turn
-
-    async for token in run_tutor_turn(
-        db,
-        user_id=user_id,
-        curriculum_id=curriculum_id,
-        user_message=user_message,
-        locale=locale,
-    ):
-        yield emitter.emit_message_delta(token)
-    yield emitter.emit_stream_end()
-
-
 def _apply_thought_partner_prepend(prompt: str, request) -> str:
     """7.7 — replace the user's prompt with a Thought Partner system
     block + their query so the LLM responds with 3-5 numbered probing
@@ -207,7 +183,7 @@ def _resolve_saved_search_ids(saved_search_ids, user_id) -> list:
     if not saved_search_ids:
         return []
     # noinspection PyUnresolvedReferences
-    from src.main.config.db_config import grpc_db_session
+    from src.main.grpc.grpc_utils import grpc_db_session
     from src.main.service.search.saved_search_service import evaluate_saved_search
 
     doc_ids = set()
@@ -568,9 +544,6 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
                 # we already have — real routing facts when present, otherwise the
                 # strategy's own preset — so it is informative instead of an empty
                 # expander. No extra LLM call: that would defeat the point of manual.
-                from src.main.service.rag.strategy_presets import get_strategy_preset
-
-                _preset = get_strategy_preset(rag_strategy_name)
                 _t_sources = (
                     list(routing.source_analysis.primary_sources)
                     if (routing.source_analysis and routing.source_analysis.primary_sources)
@@ -595,9 +568,9 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
                             "filters_applied": _t_filters,
                             "sources_queried": _t_sources,
                             "strategy_name": rag_strategy_name,
-                            # Prefer the router's own reasoning; fall back to the
-                            # strategy preset's description of how it retrieves.
-                            "rationale": (routing.reasoning or _preset.get("prompt_bias")) or None,
+                            # Prefer the router's own reasoning (CE has no strategy
+                            # presets to fall back to).
+                            "rationale": routing.reasoning or None,
                             # In the sync path the named strategy actually executes
                             # retrieval (unlike the agentic tool-agent path), so leave
                             # executor unset rather than imply the agentic note.
@@ -612,11 +585,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
                 rag_emitter = PacketEmitter(buffer_mode=False)
                 strategy_kwargs = dict(retriever=user_retriever, llm=request_llm, packet_emitter=rag_emitter)
 
-                # Inject neo4j_service for orchestrators that support graph search (e.g., EnhancedTriModal)
-                if "neo4j_service" in inspect.signature(rag_strategy_class.__init__).parameters:
-                    from src.main.service.graph.neo4j_service import get_neo4j_service
-
-                    strategy_kwargs["neo4j_service"] = get_neo4j_service()
+                # (CE) Knowledge-graph search is hosted-only — no neo4j_service injection.
 
                 # Inject db_session for strategies that need database access (e.g., SectionExpansion, AgenticExpansion)
                 if "db_session" in inspect.signature(rag_strategy_class.__init__).parameters:
@@ -816,41 +785,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
                 ):
                     yield packet
 
-                # Fire-and-forget: persist RAG evaluation trace (existing)
-                _graph_stats = getattr(rag_strategy_instance, "graph_traversal_stats", None)
-                if rag_strategy_name and request.session_namespace:
-                    try:
-                        from src.main.service.evaluation.rag_evaluation_service import persist_rag_trace
-
-                        _raw_session = request.session_namespace
-                        if ":" in _raw_session:
-                            _raw_session = _raw_session.split(":", 1)[1]
-
-                        _rag_latency_ms = int((time.time() - _rag_start_time) * 1000)
-                        _rag_token_count = None
-                        if _trace_data:
-                            _se_tokens = _trace_data.get("stream_end", {})
-                            _rag_token_count = _se_tokens.get("total_tokens")
-                        asyncio.create_task(
-                            persist_rag_trace(
-                                db_session_factory=SessionLocal,
-                                session_id=UUID(_raw_session),
-                                user_id=UUID(request.user_id),
-                                query=request.prompt,
-                                selected_strategy=rag_strategy_name,
-                                strategy_type=strategy_type or "strategy",
-                                mode="hybrid" if web_context else "sync_selection",
-                                confidence=routing.confidence,
-                                selected_orchestrator=rag_strategy_name if strategy_type == "orchestrator" else None,
-                                graph_traversal_stats=_graph_stats,
-                                latency_ms=_rag_latency_ms,
-                                token_count=_rag_token_count,
-                                routing_tier=routing.routing_tier,
-                                routing_tier_name=routing.routing_tier_name,
-                            )
-                        )
-                    except Exception as trace_err:
-                        logger.debug("Failed to dispatch RAG trace persistence: %s", str(trace_err))
+                # (CE) RAG evaluation tracing is a hosted-only analytics feature — omitted.
 
                 # Fire-and-forget: persist LLM trace (new tracing system)
                 if _tracing_enabled and _trace_data:
@@ -947,54 +882,16 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             request.language,
         )
 
+        # (CE) The 5-phase deep research engine (multi-agent planning, web +
+        # corpus synthesis, AI Scientist papers) is a hosted-only feature.
         try:
-            from src.main.main import Main
-            from src.main.service.chat.chat_deep_research import process_deep_research
             from src.main.service.streaming.packet_emitter import PacketEmitter
 
-            with grpc_sqlmodel_session() as db:
-                main_instance = Main.get_instance()
-                emitter = PacketEmitter(buffer_mode=True)
-                cancellation_event = asyncio.Event()
-
-                chat_request = _build_chat_request_dto(
-                    prompt=request.prompt,
-                    user_id=request.user_id,
-                    model_name=request.model_name,
-                    provider_type=request.provider_type,
-                    language=request.language,
-                    session_namespace=request.session_namespace,
-                    subscription_tier=request.subscription_tier,
-                    collection_ids=list(request.collection_ids),
-                    document_ids=list(request.document_ids),
-                    deep_research_enabled=True,
-                    research_breadth=request.research_breadth,
-                    research_depth=request.research_depth,
-                    conversation_history=list(request.conversation_history),
-                    is_repeat=request.is_repeat,
-                    attachments=list(request.attachments),
-                    metadata=dict(request.metadata) if request.metadata else None,
-                )
-
-                assistant_message_id = UUID(request.assistant_message_id) if request.assistant_message_id else None
-                chat_session_id = UUID(request.session_id) if request.session_id else None
-
-                async for packet in _stream_packets(
-                    process_deep_research(
-                        request=chat_request,
-                        emitter=emitter,
-                        main_instance=main_instance,
-                        subscription_tier=request.subscription_tier or "researcher",
-                        db=db,
-                        user_id=request.user_id or "",
-                        chat_session_id=chat_session_id,
-                        assistant_message_id=assistant_message_id,
-                        cancellation_event=cancellation_event,
-                    ),
-                    context,
-                ):
-                    yield packet
-
+            emitter = PacketEmitter(buffer_mode=False)
+            msg = "Deep Research is available on the hosted Scrapalot plans, not in the Community Edition."
+            counter = [0]
+            async for packet in _stream_packets(_yield_single_message(emitter, msg), context, counter=counter):
+                yield packet
         except Exception as e:
             logger.exception("Error in GenerateDeepResearch: %s", str(e))
             await context.abort(grpc.StatusCode.INTERNAL, "Deep research failed: %s" % str(e))
@@ -1439,44 +1336,16 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             len(request.prompt or ""),
         )
 
+        # (CE) The curriculum tutor (Leiden-community lessons + Socratic state
+        # machine) is a hosted-only feature. Surface a soft message instead.
         try:
             from src.main.service.streaming.packet_emitter import PacketEmitter
-            from src.main.service.tutor.curriculum_extractor import (
-                build_curriculum_for_collection,
-            )
 
-            with grpc_sqlmodel_session() as db:
-                curriculum_id = build_curriculum_for_collection(db, UUID(request.collection_id), rebuild=False)
-                if curriculum_id is None:
-                    # No reported communities yet — surface a soft
-                    # message so the UI can prompt the user to run
-                    # community detection on this collection first.
-                    emitter = PacketEmitter(buffer_mode=False)
-                    msg = "Tutor mode is not yet available for this collection — run community detection first."
-                    counter = [0]
-                    async for packet in _stream_packets(_yield_single_message(emitter, msg), context, counter=counter):
-                        yield packet
-                    return
-
-                # Stream tutor turn tokens through the standard
-                # message_delta packet flow so the existing chat UI
-                # renders them without changes.
-                emitter = PacketEmitter(buffer_mode=False)
-                counter = [0]
-                async for packet in _stream_packets(
-                    _yield_tutor_tokens(
-                        emitter,
-                        db,
-                        UUID(request.user_id),
-                        curriculum_id,
-                        request.prompt or "",
-                        request.language or "en",
-                    ),
-                    context,
-                    counter=counter,
-                ):
-                    yield packet
-
+            emitter = PacketEmitter(buffer_mode=False)
+            msg = "Tutor mode is available on the hosted Scrapalot plans, not in the Community Edition."
+            counter = [0]
+            async for packet in _stream_packets(_yield_single_message(emitter, msg), context, counter=counter):
+                yield packet
         except Exception as e:
             logger.exception("Error in GenerateChatTutor: %s", str(e))
             await context.abort(grpc.StatusCode.INTERNAL, "Tutor failed: %s" % str(e))

@@ -566,21 +566,7 @@ class DocumentSummaryService:
 
             logger.info("Document summarization complete: %s", result)
 
-            # : Sync chapter summaries to Neo4j Chapter nodes
-            if chapter_summaries:
-                try:
-                    from src.main.service.graph.hierarchy_sync_service import HierarchySyncService
-
-                    sync_service = HierarchySyncService(self.db)
-                    sync_stats = sync_service.sync_chapter_summaries_for_document(document_id=str(document_id), force_resync=False)
-
-                    logger.info("Synced chapter summaries to Neo4j: %s", sync_stats)
-
-                    result["neo4j_sync"] = sync_stats
-
-                except Exception as sync_error:
-                    logger.warning("Failed to sync chapter summaries to Neo4j: %s", str(sync_error))
-                    result["neo4j_sync_error"] = str(sync_error)
+            # Community Edition: knowledge-graph chapter-summary sync is not bundled.
 
             return result
 

@@ -794,30 +794,10 @@ class DocumentExtrasServiceServicer(document_extras_pb2_grpc.DocumentExtrasServi
                                 os.remove(fp)
                                 logger.info("Memory-only: deleted temp file %s after processing", fp)
 
-                        # Post-processing: hierarchy + entity extraction AFTER document is processed
+                        # Community Edition: knowledge-graph hierarchy + entity
+                        # extraction are not bundled, so graph build is skipped.
                         if build_graph:
-                            try:
-                                from src.main.config.database import SessionLocal
-                                from src.main.service.graph.graph_integration_service import GraphIntegrationService
-                                from src.main.workers.celery_app import celery_app
-
-                                # Step 1: Create hierarchy (Collection→Book→Chapter→Section→Chunk)
-                                graph_svc = GraphIntegrationService()
-                                if graph_svc.is_graph_enabled():
-                                    bg_db = SessionLocal()
-                                    try:
-                                        await _build_document_hierarchy(bg_db, doc_id, cid, uid, graph_svc)
-                                    finally:
-                                        bg_db.close()
-
-                                # Step 2: Dispatch entity extraction to Celery worker
-                                celery_app.send_task(
-                                    "scrapalot.extract_entities",
-                                    args=[doc_id, uid, cid],
-                                )
-                                logger.info("Dispatched hierarchy + entity extraction for doc %s", doc_id)
-                            except Exception as graph_err:
-                                logger.warning("Failed to build graph for doc %s: %s", doc_id, str(graph_err))
+                            logger.info("Knowledge graph not available in this edition - skipping graph build for doc %s", doc_id)
 
                         if gen_summary:
                             try:
@@ -1194,7 +1174,7 @@ class DocumentExtrasServiceServicer(document_extras_pb2_grpc.DocumentExtrasServi
             from sqlalchemy import text
 
             from src.main.config.database import SessionLocal
-            from src.main.service.document.docx_processor import DOCXProcessor
+            from src.main.service.document.document_processor_docx import DOCXProcessor
 
             db = SessionLocal()
             try:
@@ -3433,78 +3413,16 @@ class DocumentExtrasServiceServicer(document_extras_pb2_grpc.DocumentExtrasServi
             request.target_document_id,
             request.relationship_type,
         )
-        try:
-            from src.main.service.document.relation_service import create_relation
-
-            note = request.note if request.HasField("note") else None
-
-            with grpc_db_session() as db:
-                result = create_relation(
-                    db,
-                    source_document_id=request.source_document_id,
-                    target_document_id=request.target_document_id,
-                    relationship_type=request.relationship_type,
-                    user_id=request.user_id,
-                    workspace_id=request.workspace_id,
-                    note=note,
-                )
-                if result is None:
-                    context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-                    context.set_details("Invalid relationship type or creation failed")
-                    return document_extras_pb2.DocumentRelationResponse(success=False)
-
-                return document_extras_pb2.DocumentRelationResponse(
-                    success=True,
-                    id=result.get("id", "") or "",
-                    relationship_type=result.get("type", ""),
-                )
-        except Exception as e:
-            logger.exception("Error in CreateDocumentRelation: %s", str(e))
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(str(e))
-            return document_extras_pb2.DocumentRelationResponse(success=False)
+        # Community Edition: document relations are not bundled.
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Document relations are not available in this edition")
+        return document_extras_pb2.DocumentRelationResponse(success=False)
 
     async def ListDocumentRelations(self, request, context):
         """List all relations for a document."""
         logger.info("DocumentExtras.ListDocumentRelations - doc=%s", request.document_id)
-        try:
-            from src.main.service.document.relation_service import list_relations
-
-            with grpc_db_session() as db:
-                result = list_relations(db, request.document_id)
-
-                outgoing = [
-                    document_extras_pb2.RelationEntry(
-                        id=r["id"],
-                        document_id=r["document_id"],
-                        relationship_type=r["type"],
-                        note=r.get("note", "") or "",
-                        created_at=r.get("created_at", ""),
-                        title=r.get("title", "") or "",
-                    )
-                    for r in result.get("outgoing", [])
-                ]
-                incoming = [
-                    document_extras_pb2.RelationEntry(
-                        id=r["id"],
-                        document_id=r["document_id"],
-                        relationship_type=r["type"],
-                        note=r.get("note", "") or "",
-                        created_at=r.get("created_at", ""),
-                        title=r.get("title", "") or "",
-                    )
-                    for r in result.get("incoming", [])
-                ]
-
-                return document_extras_pb2.ListRelationsResponse(
-                    outgoing=outgoing,
-                    incoming=incoming,
-                )
-        except Exception as e:
-            logger.exception("Error in ListDocumentRelations: %s", str(e))
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(str(e))
-            return document_extras_pb2.ListRelationsResponse()
+        # Community Edition: document relations are not bundled.
+        return document_extras_pb2.ListRelationsResponse(outgoing=[], incoming=[])
 
     async def DeleteDocumentRelation(self, request, context):
         """Delete a relation and its inverse (by relation_id or by src/tgt/type)."""
@@ -3517,29 +3435,10 @@ class DocumentExtrasServiceServicer(document_extras_pb2_grpc.DocumentExtrasServi
                 else f"src={request.source_document_id}, tgt={request.target_document_id}, type={request.relationship_type}"
             ),
         )
-        try:
-            from src.main.service.document.relation_service import delete_relation, delete_relation_by_id
-
-            with grpc_db_session() as db:
-                if use_id:
-                    success = delete_relation_by_id(db, relation_id=request.relation_id)
-                else:
-                    success = delete_relation(
-                        db,
-                        source_document_id=request.source_document_id,
-                        target_document_id=request.target_document_id,
-                        relationship_type=request.relationship_type,
-                        user_id=request.user_id,
-                    )
-                if not success:
-                    context.set_code(grpc.StatusCode.INTERNAL)
-                    context.set_details("Failed to delete relation")
-                return google.protobuf.empty_pb2.Empty()
-        except Exception as e:
-            logger.exception("Error in DeleteDocumentRelation: %s", str(e))
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(str(e))
-            return google.protobuf.empty_pb2.Empty()
+        # Community Edition: document relations are not bundled.
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Document relations are not available in this edition")
+        return google.protobuf.empty_pb2.Empty()
 
     # ── Saved Searches ────────────────────────────────────────────────
 

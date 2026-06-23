@@ -162,9 +162,10 @@ async def _describe_one(
                 timeout=_llm_timeout(),
             )
             if info is None:
-                error_message = "agent returned no output"
-            else:
-                info_payload = info.model_dump()
+                counters["skipped"] += 1
+                _mark_status(db, element_id, "indexed")
+                return
+            info_payload = info.model_dump()
         elif element_type == "table":
             if not _tables_enabled():
                 counters["skipped"] += 1
@@ -176,9 +177,10 @@ async def _describe_one(
                 timeout=_llm_timeout(),
             )
             if info is None:
-                error_message = "agent returned no output"
-            else:
-                info_payload = info.model_dump()
+                counters["skipped"] += 1
+                _mark_status(db, element_id, "indexed")
+                return
+            info_payload = info.model_dump()
         elif element_type == "equation":
             if not _equations_enabled() or not content_text:
                 counters["skipped"] += 1
@@ -189,9 +191,10 @@ async def _describe_one(
                 timeout=_llm_timeout(),
             )
             if info is None:
-                error_message = "agent returned no output"
-            else:
-                info_payload = info.model_dump()
+                counters["skipped"] += 1
+                _mark_status(db, element_id, "indexed")
+                return
+            info_payload = info.model_dump()
         else:
             counters["skipped"] += 1
             _mark_status(db, element_id, "failed", error="unknown element type")
@@ -211,33 +214,18 @@ async def _describe_one(
 
 
 async def _run_image_agent(storage_path: str, caption, footnotes, *, context: str | None = None):
-    from src.main.service.agents.multimodal.image_description_agent import describe_image
-
-    media_type = "image/webp" if storage_path.endswith(".webp") else "image/png"
-    return await describe_image(
-        image_path=storage_path,
-        media_type=media_type,
-        caption=caption,
-        footnotes=footnotes or [],
-        context=context,
-    )
+    # Community Edition: advanced multimodal description agents are not bundled.
+    return None
 
 
 async def _run_table_agent(markdown: str, caption, footnotes, *, context: str | None = None):
-    from src.main.service.agents.multimodal.table_analysis_agent import analyze_table
-
-    return await analyze_table(
-        table_markdown=markdown or "",
-        caption=caption,
-        footnotes=footnotes or [],
-        context=context,
-    )
+    # Community Edition: advanced multimodal description agents are not bundled.
+    return None
 
 
 async def _run_equation_agent(latex: str, *, context: str | None = None):
-    from src.main.service.agents.multimodal.equation_description_agent import describe_equation
-
-    return await describe_equation(equation_latex=latex, context=context)
+    # Community Edition: advanced multimodal description agents are not bundled.
+    return None
 
 
 def _persist_description(db: Session, element_id, element_type: str, payload: dict) -> None:

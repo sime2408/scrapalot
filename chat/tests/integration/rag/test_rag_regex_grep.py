@@ -317,32 +317,8 @@ def test_regex_grep_citation_metadata_shape(seeded_regex_grep_corpus):
         assert doc.metadata.get("regex_match_count", 0) >= 1
 
 
-# =============================================================================
-# Test 5 — Tier-1 router routes verbatim identifiers to RAGRegexGrep
-# =============================================================================
-
-
-@pytest.mark.integration
-def test_tiered_router_routes_identifier_to_regex_grep():
-    """Verbatim-identifier queries trigger Rule 0 → RAGRegexGrep."""
-    from src.main.service.rag.tiered_router import RuleBasedRouter
-
-    router = RuleBasedRouter()
-
-    cases = [
-        "Where does the doc mention commit 7f3a9c1?",
-        "Find references to ISO-9001:2015 in the corpus",
-        "What does the text say about DOI 10.1145/3461702.3462624?",
-        "Look up CVE-2024-1234 in the security folder",
-        'Find the passage that quotes "the only way out is through"',
-    ]
-    for query in cases:
-        result = router.route(query)
-        assert result is not None, f"router missed: {query!r}"
-        assert result.strategy_name == "RAGRegexGrep", (
-            f"query {query!r} routed to {result.strategy_name!r}, expected RAGRegexGrep (rule={result.rule_id})"
-        )
-        assert result.rule_id == "regex_grep_identifiers"
+# (CE) Test 5 removed — it exercised the hosted-only tiered router
+# (RuleBasedRouter). The RAGRegexGrep strategy itself is covered below.
 
 
 # =============================================================================

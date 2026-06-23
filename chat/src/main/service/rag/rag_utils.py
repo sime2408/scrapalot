@@ -613,29 +613,10 @@ async def process_chat_request_base(
             # Pick a category-conditioned prefix to prepend to the
             # system template. Routes to "default" (empty prefix) when the
             # dynamic-variants flag is off or no QueryCharacteristics arrived.
+            # Community Edition removes dynamic prompt variants (prompt_variants);
+            # always use the neutral "default" prefix (empty string).
             _variant_name = "default"
             _variant_prefix = ""
-            if query_characteristics is not None:
-                from src.main.service.rag.prompt_variants import variant_prefix_for
-
-                _variant_name, _variant_prefix = variant_prefix_for(query_characteristics)
-                if _variant_name != "default":
-                    logger.info(
-                        "process_chat_request_base: prompt variant=%s prefix_chars=%d",
-                        _variant_name,
-                        len(_variant_prefix),
-                    )
-                    # Surface the decision to the UI / trace pipeline so a
-                    # reviewer can see why the LLM behaved a certain way on
-                    # a given query. Custom packet — UI ignores it gracefully
-                    # if no handler is wired.
-                    yield emitter.emit_custom(
-                        packet_type="prompt_variant_selected",
-                        content={
-                            "variant": _variant_name,
-                            "has_prefix_text": bool(_variant_prefix),
-                        },
-                    )
 
             # Build messages list manually (no LangChain prompt template to avoid flash)
             messages = []
@@ -852,91 +833,15 @@ async def _process_direct_llm_with_library_tools(
     can search the user's library on demand (e.g. "do you have anything from my
     books") instead of refusing like a tool-less model.
 
-    The agent decides semantically whether to call a search tool — general
-    questions still answer directly (no tool call → fast). Raises
-    `_NoLibraryTools` before streaming when there is nothing to search; once the
-    first delta is yielded it commits to this path (no mid-stream fallback, which
-    would double-emit).
+    Community Edition removes the tool-enabled RAG agent (create_rag_agent /
+    RAGToolDependencies), so the library-aware path is unavailable. This always
+    raises `_NoLibraryTools` before yielding anything, which makes the caller fall
+    back to the plain tool-less LLM stream.
     """
-    import uuid as _uuid
-
-    from src.main.config.database import SessionLocal
-    from src.main.service.agents.rag_agents.tool_based_rag_agent import create_rag_agent
-    from src.main.service.agents.tools.base import RAGToolDependencies
-    from src.main.service.chat.chat_agentic_rag import _build_conversation_prefix
-    from src.main.service.retriever.retriever_manager import retriever_manager
-    from src.main.utils.llm.agent_model_utils import get_system_agent_model
-    from src.main.utils.workspaces.access import get_user_accessible_collections
-
-    db = SessionLocal()
-    try:
-        collections = get_user_accessible_collections(db, str(user_id), workspace_id)
-        if not collections:
-            raise _NoLibraryTools()
-        collection_ids = [_uuid.UUID(c["id"]) for c in collections]
-
-        retriever = await retriever_manager.get_retriever(user_id=str(user_id), retriever_type="pgvector")
-        if retriever is None:
-            raise _NoLibraryTools()
-
-        model = get_system_agent_model(agent_type="agentic_rag").get_pydantic_ai_model()
-        rag_agent = create_rag_agent(
-            model=model,
-            query=request.prompt,
-            language=request.language,
-            collection_ids=collection_ids,
-            db=db,
-            user_id=str(user_id),
-        )
-        deps = RAGToolDependencies(
-            retriever=retriever,
-            llm=None,
-            collection_ids=collection_ids,
-            user_id=str(user_id),
-            emitter=emitter,
-            db=db,
-            workspace_id=workspace_id,
-        )
-
-        # Prepend prior-conversation context so follow-ups keep the thread.
-        prefix = _build_conversation_prefix(request)
-        prompt = f"{prefix}\n\n### Current Question:\n{request.prompt}" if prefix else request.prompt
-
-        logger.info(
-            "Direct chat: library-aware path (workspace=%s, collections=%d)",
-            workspace_id,
-            len(collection_ids),
-        )
-
-        # Progress beat: the tool agent is about to search + cross-encoder-rerank
-        # across the user's collections, which can take many seconds (CPU rerank,
-        # worse under concurrent reprocess load). Without a beat the user stares
-        # at "Calculating..." with no signal. Stream it as a reasoning delta so it
-        # lands in the thinking panel alongside the other narration.
-        _n_cols = len(collection_ids)
-        if (request.language or "").lower().startswith("hr"):
-            _search_beat = (
-                f"Pretražujem tvoje knjige ({_n_cols} "
-                f"{'kolekcija' if _n_cols == 1 else 'kolekcije/kolekcija'}) i rangiram "
-                f"rezultate po relevantnosti — ovo može potrajati nekoliko sekundi."
-            )
-        else:
-            _search_beat = (
-                f"Searching your library ({_n_cols} "
-                f"{'collection' if _n_cols == 1 else 'collections'}) and ranking the "
-                f"results by relevance — this can take a few seconds."
-            )
-        yield emitter.emit_reasoning_delta(_search_beat)
-
-        # Past this point we have committed to the tool path — do not raise
-        # _NoLibraryTools (the caller may have already received deltas).
-        async with rag_agent.run_stream(prompt, deps=deps) as result:
-            async for chunk in result.stream_text(delta=True):
-                if chunk:
-                    yield emitter.emit_message_delta(chunk)
-        yield emitter.emit_stream_end(reason="completed")
-    finally:
-        db.close()
+    raise _NoLibraryTools()
+    # Unreachable, but keeps this an async generator for the caller's
+    # `async for` contract.
+    yield ""  # pragma: no cover
 
 
 _DIRECT_WEB_GATE_DEFAULT = (

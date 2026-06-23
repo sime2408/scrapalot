@@ -417,69 +417,12 @@ class StreamingCitationProcessor:
         should re-emit these so the frontend can colour existing chips.
 
         Gracefully degrades: if user_query is None, or classifier fails, returns [].
+
+        Smart Citation stance classification lives in the notes_assistant feature
+        set, which is removed in the Community Edition. This method therefore
+        returns [] so callers fall back to plain (un-stanced) citation chips.
         """
-        if not self.user_query or not self._emitted_citations:
-            return []
-
-        try:
-            from src.main.service.notes_assistant.citation_stance_classifier import (
-                CitationCandidate,
-                classify_citations,
-            )
-        except Exception as e:
-            logger.warning("Citation stance classifier unavailable: %s", e)
-            return []
-
-        candidates: list[CitationCandidate] = []
-        for packet in self._emitted_citations:
-            context = (packet.text or "").strip()
-            if not context:
-                context = packet.document_title or ""
-            if not context:
-                continue
-            candidates.append(
-                CitationCandidate(
-                    citation_num=packet.citation_num,
-                    claim=self.user_query,
-                    context=f"{packet.document_title}\n\n{context[:800]}",
-                    # Pass chunk location so the classifier can fetch ±1 neighbour
-                    # chunks from pgvector for a wider reasoning window.
-                    document_id=packet.document_id,
-                    chunk_index=packet.chunk_index,
-                )
-            )
-
-        if not candidates:
-            return []
-
-        try:
-            classifications = await classify_citations(candidates)
-        except Exception as e:
-            logger.warning("Citation stance classification raised: %s", e)
-            return []
-
-        # Build updated packets
-        by_num = {c.citation_num: c for c in classifications}
-        updated: list[CitationInfoPacket] = []
-        for packet in self._emitted_citations:
-            c = by_num.get(packet.citation_num)
-            if c is None or c.confidence <= 0.0:
-                continue
-            updated.append(
-                packet.model_copy(
-                    update={
-                        "stance": c.stance,
-                        "stance_confidence": c.confidence,
-                        "stance_rationale": c.rationale,
-                    }
-                )
-            )
-        logger.info(
-            "Citation stance classified %d/%d citations",
-            len(updated),
-            len(self._emitted_citations),
-        )
-        return updated
+        return []
 
     def flush(self) -> tuple[str, list[CitationInfoPacket]]:
         """
