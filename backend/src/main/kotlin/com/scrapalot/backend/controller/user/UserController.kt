@@ -109,20 +109,8 @@ class UserController(
 
             val updatedUser = userService.adminUpdateUser(userId, updates)
 
-            // Assign subscription plan if specified (for billing-exempt users)
-            request.subscriptionPlanName?.let { planName ->
-                val plan =
-                    subscriptionService
-                        .getPlanByName(planName)
-                        .orNotFound("Subscription plan not found: $planName")
-                val planId = plan.id.orThrow("Plan ID")
-                subscriptionService.createSubscription(
-                    userId = userId,
-                    planId = planId,
-                    billingCycle = "monthly"
-                )
-                logger.info { "Admin assigned plan '$planName' to user $userId (billing_exempt=${request.billingExempt})" }
-            }
+            // Community Edition has no subscription plans / billing — every feature
+            // is available to every user, so the admin plan-assignment step is dropped.
 
             updatedUser.toResponse(subscriptionService)
         }.toResponseEntity()
