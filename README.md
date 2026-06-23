@@ -45,32 +45,9 @@ The **Community Edition** is the open-core heart of the product: a complete, sel
 
 Scrapalot is a small set of focused services behind a single gateway. The **Kotlin backend owns all your data and auth**; the **Python backend is a pure AI/ML worker** that never sees user tables — it receives only the IDs it needs over gRPC.
 
-```mermaid
-graph TB
-    User([👤 You])
-    UI["React UI<br/>:3000"]
-    GW["API Gateway<br/>Spring Cloud Gateway · :8080"]
-    BE["Kotlin Backend<br/>Spring Boot · :8091 · gRPC :9090<br/><br/>OWNS: auth · users · workspaces<br/>collections · notes · settings · chat sessions"]
-    PY["Python AI Backend<br/>gRPC :9091 · :8090<br/><br/>PURE AI/ML: RAG · LLM · embeddings<br/>document parsing · vector search"]
-    WK["Celery Workers<br/>document processing"]
-    PG[("PostgreSQL + pgvector<br/>:15432<br/>scrapalot_backend · scrapalot")]
-    RD[("Redis<br/>:6379<br/>cache · Streams SAGA")]
-
-    User -->|HTTPS| UI --> GW --> BE
-    BE -->|gRPC| PY
-    BE <-.->|Redis Streams| RD
-    PY <-.->|Redis Streams| RD
-    PY --> WK
-    BE --> PG
-    PY --> PG
-
-    style UI fill:#61DAFB,color:#000
-    style GW fill:#6DB33F,color:#fff
-    style BE fill:#7F52FF,color:#fff
-    style PY fill:#3776AB,color:#fff
-    style PG fill:#336791,color:#fff
-    style RD fill:#DC382D,color:#fff
-```
+<p align="center">
+  <img src="docs/architecture.svg" alt="Scrapalot architecture — UI to Gateway to Kotlin backend to Python AI backend, over Postgres+pgvector and Redis" width="660">
+</p>
 
 **Request flow** — the UI never talks to the AI backend directly:
 
