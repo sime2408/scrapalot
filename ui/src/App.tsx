@@ -69,14 +69,15 @@ import Index from './pages/Index';
 import NotFound from './pages/NotFound';
 import LoginPage from './pages/login';
 import SignUpPage from './pages/sign-up';
-import HomePage from './pages/home';
-// (CE) Pricing/billing is hosted-only — route renders nothing.
+// (CE) Marketing/store pages (home, pricing, buy-license, about, contact, shop, desktop)
+// are hosted-only — the Community Edition is the app, not the website. Root '/' redirects
+// straight to the dashboard; the remaining marketing routes render nothing.
+const HomePage = () => <Navigate to='/dashboard' replace />;
 const PricingPage = () => null;
-// (CE) buy-license / about / contact marketing pages are hosted-only — routes render nothing.
 const BuyLicensePage = () => null;
 const AboutPage = () => null;
-import Shop from './pages/Shop';
-import DesktopPage from './pages/desktop';
+const Shop = () => null;
+const DesktopPage = () => null;
 const ContactPage = () => null;
 import PrivacyPage from './pages/privacy';
 import DeleteAccountPage from './pages/delete-account';
