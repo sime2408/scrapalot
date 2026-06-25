@@ -28,6 +28,33 @@ The **Community Edition** is the open-core heart of the product: a complete, sel
 
 ---
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/chat.png" alt="RAG chat over your documents">
+      <br><sub><b>Grounded RAG chat</b> — ask questions, get answers cited from your own corpus.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/knowledge-library.png" alt="Document library">
+      <br><sub><b>Knowledge library</b> — organize documents into collections, ready to query.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/notes-editor.png" alt="Notes editor beside chat">
+      <br><sub><b>Notes + chat</b> — a rich, collaborative editor right next to the conversation.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/local-ai.png" alt="Local AI settings">
+      <br><sub><b>Local AI / BYOK</b> — bring your own key, or run a local model on your hardware.</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## Features
 
 - 📄 **Document ingestion** — PDF + common formats, OCR, structure-aware chunking, embeddings into pgvector
